@@ -1,0 +1,4 @@
+﻿__pycache__/
+*.pyc
+data/user_progress.json
+commit_message.txt

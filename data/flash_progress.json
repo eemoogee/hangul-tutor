@@ -1,0 +1,14 @@
+{
+  "correct": {},
+  "wrong": {
+    "ㅁ": 1,
+    "ㅅ": 3,
+    "ㄷ": 1,
+    "ㄱ": 1
+  },
+  "confusion_counts": {
+    "ㅅ|ㅊ": 1
+  },
+  "total_rounds": 6,
+  "best_streak": 0
+}
