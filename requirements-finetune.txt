@@ -1,0 +1,59 @@
+# ============================================================================
+# hangul-tutor — QLoRA fine-tuning environment (fresh dedicated venv)
+# Generated 2026-08-27. Target hardware: NVIDIA RTX 4050 Laptop GPU (6 GB VRAM),
+# driver 581.32, system Python 3.11, CUDA 12.4 toolkit present.
+#
+# ⚠️  DO NOT run `pip install -r requirements-finetune.txt` alone.
+#     It will NOT work. torch must be fetched from the PyTorch CUDA 12.4
+#     index (NOT PyPI), and torchao must be pinned BEFORE unsloth resolves
+#     it — otherwise pip pulls torchao 0.17.0, which needs torch>=2.7 and
+#     crashes `import unsloth` with:
+#       AttributeError: module 'torch.utils._pytree' has no attribute 'register_constant'
+#
+# Manual install sequence — follow these three steps IN ORDER:
+#
+#   STEP 1 — torch + torchvision from the CUDA 12.4 index:
+#     pip install torch==2.6.0 torchvision==0.21.0 \
+#         --index-url https://download.pytorch.org/whl/cu124
+#
+#   STEP 2 — pin torchao BEFORE unsloth, so the resolver keeps 0.9.0:
+#     pip install torchao==0.9.0
+#
+#   STEP 3 — everything else (unsloth + the pinned stack below):
+#     pip install -r requirements-finetune.txt
+#
+#   VERIFY after install (all four must pass):
+#     python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
+#     python -c "import unsloth; print(unsloth.__version__)"
+#     pip show torchao   # must still read 0.9.0, NOT 0.17.0
+#     python -c "import triton"   # optional; confirms triton-windows landed
+# ============================================================================
+
+# --- torch / torchvision -------------------------------------------------
+# Installed in STEP 1 from the cu124 index, NOT from this file. Listed here
+# for reference only — if uncommented and run via -r, pip would fetch a
+# generic PyPI build, which is wrong.
+# torch==2.6.0+cu124
+# torchvision==0.21.0+cu124
+
+# --- pinned dependencies (installed via STEP 3) --------------------------
+torchao==0.9.0          # torch-2.6-safe; 0.17.0 needs torch>=2.7 (register_constant)
+trl==0.24.0             # unsloth range: >=0.18.2,<=0.24.0 (max allowed)
+peft==0.19.1            # unsloth range: >=0.18.0,!=0.11.0
+bitsandbytes==0.49.2    # unsloth range: >=0.45.5,!=0.46.0,!=0.48.0
+transformers==5.5.0     # unsloth range: >=4.51.3,<=5.5.0 (ceiling; fallback 4.51.3)
+accelerate==1.13.0      # unsloth range: >=0.34.1
+datasets==4.3.0         # unsloth range: >=3.4.1,<4.4.0,!=4.0.*,!=4.1.0
+unsloth==2026.4.8
+unsloth_zoo==2026.4.9
+xformers==0.0.35        # unsloth range: >=0.0.27.post2 (win32)
+
+# --- triton-windows (performance optimization, NOT a blocker) ------------
+# Unpinned on purpose: Unsloth declares this dependency with NO version
+# constraint (bare `triton-windows`), and a grep of the installed unsloth /
+# unsloth_zoo source found no internal triton pin. It supplies Unsloth's fast
+# Triton kernels on Windows — QLoRA still works without it, just slower.
+# Latest on PyPI at audit time: 3.7.1.post27. If you hit Triton kernel
+# errors at train time, pin to 3.2.0.post21 (the Triton 3.2.x line that
+# torch 2.6.0 was built against):
+triton-windows
