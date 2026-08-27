@@ -16,6 +16,7 @@ Usage:
 
 import sys
 import os
+import re
 import argparse
 import json
 import subprocess
@@ -136,6 +137,73 @@ def generate_encouragement(streak: int, correct_pct: float, mode: str = "") -> s
 Give a short, warm encouragement. Mention something specific about their progress."""
 
     return ollama_chat(prompt, system, temperature=0.8, model=get_model("encouragement"))
+
+def build_session_data(quiz: HangulQuiz) -> dict:
+    """Build the session_data dict for generate_session_summary from the quiz
+    engine's existing state. strong/struggling letters are derived from
+    cumulative mastery confidence (0-5) as a proxy — no new tracking fields
+    are added to the engine."""
+    mastered = quiz.progress.get("mastered_letters", {})
+    return {
+        "questions_answered": quiz.session_total,
+        "accuracy_pct": round(100 * quiz.session_correct / max(1, quiz.session_total)),
+        "ending_streak": quiz.session_streak,
+        "strong_letters": [l for l, v in mastered.items() if v >= 4],
+        "struggling_letters": [l for l, v in mastered.items() if v <= 1],
+    }
+
+
+# ANSI escape sequences (terminal cursor/color codes) that small local models
+# sometimes emit into their output — stripped before returning the summary.
+_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+
+
+def generate_session_summary(session_data: dict) -> str:
+    """Generate a 2-3 sentence session summary via the local Ollama model.
+    Falls back to a deterministic template if Ollama is unavailable or errors."""
+    system = (
+        "You write short, warm session summaries for a Hangul learning app. "
+        "Use only the data provided. Do not invent letters, stats, or facts. "
+        "Never state a number of correct or wrong answers — the data does not include one. "
+        "Write in English. 2-3 sentences maximum."
+    )
+
+    parts = [f"The learner answered {session_data['questions_answered']} questions "
+             f"at {session_data['accuracy_pct']}% accuracy."]
+
+    if session_data["ending_streak"] >= 3:
+        parts.append(f"They ended on a {session_data['ending_streak']}-question streak.")
+
+    if session_data["strong_letters"]:
+        parts.append(f"Strong letters: {', '.join(session_data['strong_letters'])}.")
+
+    if session_data["struggling_letters"]:
+        parts.append(f"Letters to work on: {', '.join(session_data['struggling_letters'])}.")
+
+    prompt = " ".join(parts) + " Write a session summary."
+
+    result = ollama_chat(
+        prompt=prompt,
+        system=system,
+        temperature=0.75,
+        model=get_model("summary"),
+    )
+    if result.startswith("["):
+        # ollama_chat's convention for a failed call (not found / timeout /
+        # error) — fall back to a hardcoded template so the feature degrades
+        # gracefully instead of crashing.
+        strong = ", ".join(session_data["strong_letters"]) or None
+        weak = ", ".join(session_data["struggling_letters"]) or None
+
+        lines = [f"Session complete — {session_data['questions_answered']} questions "
+                 f"at {session_data['accuracy_pct']}%."]
+        if strong:
+            lines.append(f"Strong letters: {strong}.")
+        if weak:
+            lines.append(f"Worth revisiting: {weak}.")
+        return " ".join(lines)
+    # Strip ANSI escape sequences the model may emit (terminal cursor codes).
+    return _ANSI_RE.sub("", result).strip()
 
 # ── CLI ────────────────────────────────────────────────────────────────────
 
@@ -562,6 +630,11 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
     if summary['top_confusions']:
         print(f"   Practice these: {', '.join(c['pair'] for c in summary['top_confusions'])}")
 
+    # LLM-generated natural-language summary (falls back to a template if
+    # Ollama is unavailable). One call per session, on /quit only.
+    session_summary = generate_session_summary(build_session_data(quiz))
+    print(f"\n{session_summary}\n")
+
 # ── Entry point ────────────────────────────────────────────────────────────
 
 def main():
@@ -575,7 +648,7 @@ def main():
     parser.add_argument("--model", type=str, default=None,
                         help="Shared fallback Ollama model for all tasks (default: qwen2.5:1.5b). "
                              "Override individual tasks with HANGUL_MODEL_MNEMONIC / "
-                             "_ENCOURAGEMENT / _SENTENCE / _TRANSLATE env vars.")
+                             "_ENCOURAGEMENT / _SENTENCE / _TRANSLATE / _SUMMARY env vars.")
     args = parser.parse_args()
 
     # Only override the shared fallback if the user actually passed --model —

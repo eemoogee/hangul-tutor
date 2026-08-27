@@ -17,6 +17,7 @@ Tasks:
   encouragement  Streak/accuracy encouragement messages
   sentence       Constrained Korean sentence generation (mini-sentences, /talk)
   translate      English translation of a fixed (Tatoeba) Korean sentence
+  summary        End-of-session summary (hangul_cli.py generate_session_summary)
 
 Usage:
     from hangul_models import get_model, set_default_model, summarize_models
@@ -31,7 +32,7 @@ import os
 # env vars once you know which ones actually need more horsepower.
 DEFAULT_MODEL = "qwen2.5:1.5b"
 
-TASKS = ("mnemonic", "encouragement", "sentence", "translate")
+TASKS = ("mnemonic", "encouragement", "sentence", "translate", "summary")
 
 # Set at runtime by hangul_cli.py's --model flag. Only applies to tasks that
 # don't have their own HANGUL_MODEL_* override.
