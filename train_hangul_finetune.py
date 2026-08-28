@@ -14,7 +14,7 @@ torchao must be pinned before unsloth. Follow these three steps in order:
 
     1) pip install torch==2.6.0 torchvision==0.21.0 \
            --index-url https://download.pytorch.org/whl/cu124
-    2) pip install torchao==0.9.0        # must precede unsloth
+    2) pip install torchao==0.16.0 xformers==0.0.29.post3 triton-windows==3.2.0.post21  # must precede unsloth
     3) pip install -r requirements-finetune.txt
 
 Target hardware: NVIDIA RTX 4050 Laptop GPU (6 GB VRAM). Training runs in fp16
@@ -26,6 +26,8 @@ Usage:
                                                # tokenized sample, then exit
 """
 
+from unsloth import FastLanguageModel  # MUST be imported first — patches transformers/peft at import time
+
 import argparse
 import json
 import sys
@@ -34,7 +36,6 @@ from pathlib import Path
 import torch
 from datasets import Dataset
 from trl import SFTConfig, SFTTrainer
-from unsloth import FastLanguageModel
 
 # ---------------------------------------------------------------------------
 # Paths
