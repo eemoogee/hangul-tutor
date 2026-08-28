@@ -5,10 +5,18 @@
 #
 # ⚠️  DO NOT run `pip install -r requirements-finetune.txt` alone.
 #     It will NOT work. torch must be fetched from the PyTorch CUDA 12.4
-#     index (NOT PyPI), and torchao must be pinned BEFORE unsloth resolves
-#     it — otherwise pip pulls torchao 0.17.0, which needs torch>=2.7 and
-#     crashes `import unsloth` with:
-#       AttributeError: module 'torch.utils._pytree' has no attribute 'register_constant'
+#     index (NOT PyPI), and torchao, xformers, AND triton-windows must all be
+#     pinned BEFORE unsloth resolves them:
+#       • torchao  — unsloth_zoo requires torchao>=0.13.0, but torchao>=0.17.0
+#                    calls torch.utils._pytree.register_constant (torch>=2.7 only)
+#                    and crashes `import unsloth` with AttributeError. Pin 0.16.0
+#                    (highest that avoids register_constant). A 0.9.0 pin FAILS:
+#                    it is BELOW the >=0.13.0 floor, so pip upgrades it to 0.18.0.
+#       • xformers — 0.0.35 requires torch>=2.10; pip would upgrade torch 2.6.0 to
+#                    2.10.0 (CPU build, since the cu124 index is not in scope) to
+#                    satisfy it. Pin 0.0.29.post3 (torch==2.6.0, has win_amd64 cp311 wheel).
+#       • triton   — the unpinned latest (3.7.1.post27) drops AttrsDescriptor, which
+#                    torch 2.6.0's torch/_inductor imports. Pin 3.2.0.post21.
 #
 # Manual install sequence — follow these three steps IN ORDER:
 #
@@ -16,8 +24,8 @@
 #     pip install torch==2.6.0 torchvision==0.21.0 \
 #         --index-url https://download.pytorch.org/whl/cu124
 #
-#   STEP 2 — pin torchao BEFORE unsloth, so the resolver keeps 0.9.0:
-#     pip install torchao==0.9.0
+#   STEP 2 — pin torchao, xformers, AND triton-windows BEFORE unsloth:
+#     pip install torchao==0.16.0 xformers==0.0.29.post3 triton-windows==3.2.0.post21
 #
 #   STEP 3 — everything else (unsloth + the pinned stack below):
 #     pip install -r requirements-finetune.txt
@@ -25,8 +33,8 @@
 #   VERIFY after install (all four must pass):
 #     python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
 #     python -c "import unsloth; print(unsloth.__version__)"
-#     pip show torchao   # must still read 0.9.0, NOT 0.17.0
-#     python -c "import triton"   # optional; confirms triton-windows landed
+#     pip show torchao   # must still read 0.16.0, NOT 0.18.0
+#     python -c "import torchao; print(torchao.__version__)"   # 0.16.0
 # ============================================================================
 
 # --- torch / torchvision -------------------------------------------------
@@ -37,7 +45,7 @@
 # torchvision==0.21.0+cu124
 
 # --- pinned dependencies (installed via STEP 3) --------------------------
-torchao==0.9.0          # torch-2.6-safe; 0.17.0 needs torch>=2.7 (register_constant)
+torchao==0.16.0         # satisfies unsloth_zoo >=0.13.0; <0.17.0 avoids register_constant
 trl==0.24.0             # unsloth range: >=0.18.2,<=0.24.0 (max allowed)
 peft==0.19.1            # unsloth range: >=0.18.0,!=0.11.0
 bitsandbytes==0.49.2    # unsloth range: >=0.45.5,!=0.46.0,!=0.48.0
@@ -46,14 +54,15 @@ accelerate==1.13.0      # unsloth range: >=0.34.1
 datasets==4.3.0         # unsloth range: >=3.4.1,<4.4.0,!=4.0.*,!=4.1.0
 unsloth==2026.4.8
 unsloth_zoo==2026.4.9
-xformers==0.0.35        # unsloth range: >=0.0.27.post2 (win32)
+xformers==0.0.29.post3  # torch==2.6.0-compatible (0.0.35 needs torch>=2.10); win_amd64 cp311 wheel exists
 
-# --- triton-windows (performance optimization, NOT a blocker) ------------
-# Unpinned on purpose: Unsloth declares this dependency with NO version
-# constraint (bare `triton-windows`), and a grep of the installed unsloth /
-# unsloth_zoo source found no internal triton pin. It supplies Unsloth's fast
-# Triton kernels on Windows — QLoRA still works without it, just slower.
-# Latest on PyPI at audit time: 3.7.1.post27. If you hit Triton kernel
-# errors at train time, pin to 3.2.0.post21 (the Triton 3.2.x line that
-# torch 2.6.0 was built against):
-triton-windows
+# --- triton-windows (MUST be pinned — third silent breaker) -------------
+# torch 2.6.0's torch/_inductor/runtime/hints.py imports `AttrsDescriptor`
+# from triton.backends.compiler (fallback: triton.compiler.compiler). Triton
+# 3.3+ moved/removed AttrsDescriptor, so the UNPINNED latest (3.7.1.post27)
+# breaks BOTH `import torchao` and `import unsloth` with:
+#   ImportError: cannot import name 'AttrsDescriptor' from 'triton.compiler.compiler'
+# Unsloth declares this dep with NO version constraint, so pip pulls the
+# latest unless pinned. Pin the 3.2.x line torch 2.6.0 was built against
+# (3.2.0.post21 has AttrsDescriptor in triton/backends/compiler.py).
+triton-windows==3.2.0.post21
