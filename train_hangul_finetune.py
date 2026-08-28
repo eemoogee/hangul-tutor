@@ -3,8 +3,9 @@
 Train a QLoRA adapter on the Hangul factual dataset (145 Q&A pairs) and export
 a GGUF model for local inference (e.g. loading into Ollama).
 
-Loss masking: assistant-only. We fine-tune only on the assistant's answer tokens
-(not the user's question), via TRL's `assistant_only_loss=True`.
+Loss masking: completion-only. We fine-tune only on the assistant's answer
+tokens (not the user's question), via Unsloth/TRL's native
+`completion_only_loss=True` with a prompt/completion dataset split.
 
 SETUP (see requirements-finetune.txt for the full pinned version list)
 -----------------------------------------------------------------------
@@ -65,7 +66,7 @@ PER_DEVICE_BATCH_SIZE = 2
 GRADIENT_ACCUMULATION_STEPS = 4   # effective batch size = 2 * 4 = 8
 NUM_EPOCHS = 3
 LEARNING_RATE = 2e-4
-WARMUP_RATIO = 0.1
+WARMUP_STEPS = 6   # 10% warmup = 0.1 * ceil(145/8) * 3 epochs = 0.1 * 57 ≈ 6 steps
 LR_SCHEDULER_TYPE = "cosine"
 SEED = 42
 
@@ -88,48 +89,7 @@ def check_environment() -> None:
     print(f"[env] torch {torch.__version__}  CUDA {torch.version.cuda}")
 
 
-# Chat-template patch --------------------------------------------------------
-def enable_assistant_mask(tokenizer) -> None:
-    """
-    Add `{% generation %}` markers to the chat template so TRL's
-    `assistant_only_loss=True` can tell which tokens belong to the assistant.
-
-    Why this is needed: TRL computes the assistant mask with
-    `apply_chat_template(..., return_assistant_tokens_mask=True)`, which relies on
-    the `{% generation %}` Jinja block. Qwen2.5's shipped template does NOT have
-    that block, so the mask would come back all-zero and TRL would raise
-    "at least one example has no assistant tokens".
-
-    The markers are *pure tracking* — they emit no text, so the rendered prompt
-    and tokenization are byte-for-byte identical before and after this patch.
-    """
-    template = tokenizer.chat_template.replace("\r\n", "\n")
-
-    old = (
-        '    {%- if (message.role == "user") or (message.role == "system" and not loop.first) or (message.role == "assistant" and not message.tool_calls) %}\n'
-        "        {{- '<|im_start|>' + message.role + '\\n' + message.content + '<|im_end|>' + '\\n' }}\n"
-    )
-    new = (
-        '    {%- if (message.role == "user") or (message.role == "system" and not loop.first) %}\n'
-        "        {{- '<|im_start|>' + message.role + '\\n' + message.content + '<|im_end|>' + '\\n' }}\n"
-        '    {%- elif (message.role == "assistant" and not message.tool_calls) %}\n'
-        "        {{- '<|im_start|>' + message.role + '\\n' }}\n"
-        '        {%- generation %}\n'
-        "        {{- message.content + '<|im_end|>' + '\\n' }}\n"
-        '        {%- endgeneration %}\n'
-    )
-
-    if old not in template:
-        raise RuntimeError(
-            "Could not patch the Qwen2.5 chat template for assistant masking — "
-            "the template structure did not match expectations. (Check the model's "
-            "tokenizer_config.json chat_template.)"
-        )
-
-    tokenizer.chat_template = template.replace(old, new)
-
-
-# 4. Dataset loading ----------------------------------------------------------
+# 2. Dataset loading ----------------------------------------------------------
 def load_dataset(path: Path) -> Dataset:
     """Read the JSONL and return a Dataset with an un-tokenized `messages` column."""
     records = []
@@ -144,35 +104,55 @@ def load_dataset(path: Path) -> Dataset:
     return Dataset.from_list(records)
 
 
+def transform_to_prompt_completion(dataset: Dataset) -> Dataset:
+    """Split each `messages` record into `prompt` + `completion` columns for
+    Unsloth's native `completion_only_loss` path.
+
+    `prompt` holds the system + user turns (everything before the answer);
+    `completion` holds the assistant turns. The trainer masks every prompt
+    token, so we train only on the assistant's answer — the same outcome the
+    old `assistant_only_loss` approach aimed for, on a supported code path.
+    """
+    def split(example: dict) -> dict:
+        messages = example["messages"]
+        return {
+            "prompt": [m for m in messages if m["role"] != "assistant"],
+            "completion": [m for m in messages if m["role"] == "assistant"],
+        }
+
+    dataset = dataset.map(split, remove_columns=["messages"])
+    print(f"[data] split into prompt/completion columns ({len(dataset)} examples)")
+    return dataset
+
+
 # Dry-run helper ---------------------------------------------------------------
-def print_tokenized_sample(tokenizer, example: dict) -> None:
-    """Print one example's rendered prompt + tokenization (for --dry-run)."""
-    messages = example["messages"]
+def print_prompt_completion_sample(tokenizer, example: dict) -> None:
+    """Print one example's rendered prompt + completion (for --dry-run)."""
+    prompt = example["prompt"]
+    completion = example["completion"]
 
-    rendered = tokenizer.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=False
+    rendered_prompt = tokenizer.apply_chat_template(
+        prompt, tokenize=False, add_generation_prompt=True
     )
-    out = tokenizer.apply_chat_template(
-        messages,
-        tokenize=True,
-        return_dict=True,
-        add_generation_prompt=False,
-        return_assistant_tokens_mask=True,
-    )
-    input_ids = out["input_ids"]
-    mask = out.get("assistant_masks") or []
-    n_assistant = int(sum(mask))
+    prompt_ids = tokenizer.apply_chat_template(
+        prompt, tokenize=True, return_dict=True, add_generation_prompt=True
+    )["input_ids"]
+    full_ids = tokenizer.apply_chat_template(
+        prompt + completion, tokenize=True, return_dict=True, add_generation_prompt=False
+    )["input_ids"]
+    n_prompt = min(len(prompt_ids), len(full_ids))
+    n_completion = len(full_ids) - n_prompt
 
-    print("\n[dry-run] sample messages:")
-    for m in messages:
+    print("\n[dry-run] prompt messages:")
+    for m in prompt:
         print(f"    {m['role']}: {m['content']!r}")
-    print("\n[dry-run] rendered prompt (tokenize=False):")
-    print(rendered)
-    print(f"\n[dry-run] token count: {len(input_ids)}")
-    print(f"[dry-run] trainable (assistant) tokens: {n_assistant} / {len(input_ids)}")
-    if n_assistant:
-        assistant_ids = [tid for tid, m in zip(input_ids, mask) if m == 1]
-        print(f"[dry-run] decoded assistant tokens: {tokenizer.decode(assistant_ids)!r}")
+    print("\n[dry-run] completion messages:")
+    for m in completion:
+        print(f"    {m['role']}: {m['content']!r}")
+    print("\n[dry-run] rendered prompt (add_generation_prompt=True):")
+    print(rendered_prompt)
+    print(f"\n[dry-run] token counts — prompt: {n_prompt}, completion: {n_completion}, "
+          f"total: {len(full_ids)}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -199,9 +179,6 @@ def main() -> None:
         load_in_4bit=True,
     )
 
-    # Enables TRL's assistant-only loss (see function docstring).
-    enable_assistant_mask(tokenizer)
-
     # 3. Attach LoRA adapters ------------------------------------------------
     model = FastLanguageModel.get_peft_model(
         model,
@@ -214,14 +191,12 @@ def main() -> None:
         random_state=SEED,
     )
 
-    # 4. Load the (un-tokenized) dataset -------------------------------------
+    # 4. Load the dataset and split into prompt/completion columns ------------
     dataset = load_dataset(DATASET_PATH)
+    dataset = transform_to_prompt_completion(dataset)
 
-    # --dry-run: show one tokenized sample, then exit before training ---------
     if args.dry_run:
-        print_tokenized_sample(tokenizer, dataset[0])
-        print("\n[dry-run] exiting before training (--dry-run)")
-        return
+        print_prompt_completion_sample(tokenizer, dataset[0])
 
     # 5. Trainer -------------------------------------------------------------
     training_args = SFTConfig(
@@ -230,13 +205,13 @@ def main() -> None:
         gradient_accumulation_steps=GRADIENT_ACCUMULATION_STEPS,
         num_train_epochs=NUM_EPOCHS,
         learning_rate=LEARNING_RATE,
-        warmup_ratio=WARMUP_RATIO,
+        warmup_steps=WARMUP_STEPS,
         lr_scheduler_type=LR_SCHEDULER_TYPE,
         fp16=True,                    # NOT bf16 — RTX 4050 has no bf16 support
         seed=SEED,
         max_length=MAX_SEQ_LENGTH,
-        assistant_only_loss=True,     # mask the user turn; train only on the answer
-        logging_steps=10,             # 8. print loss every 10 steps (no tensorboard)
+        completion_only_loss=True,    # mask the prompt; train only on the completion
+        logging_steps=10,             # print loss every 10 steps (no tensorboard)
         optim="adamw_8bit",           # 8-bit Adam — lower VRAM (needs bitsandbytes)
         save_strategy="epoch",        # keep an adapter checkpoint per epoch
         report_to="none",             # no tensorboard / wandb
@@ -245,9 +220,16 @@ def main() -> None:
     trainer = SFTTrainer(
         model=model,
         processing_class=tokenizer,   # trl >=0.24 renamed this from `tokenizer=`
-        train_dataset=dataset,        # un-tokenized messages; trainer tokenizes + masks
+        train_dataset=dataset,        # prompt/completion columns; trainer tokenizes + masks
         args=training_args,
     )
+
+    # --dry-run: the trainer was constructed above (validating the full
+    #    completion_only_loss setup); exit before any training happens ---------
+    if args.dry_run:
+        print("\n[dry-run] SFTTrainer constructed OK — completion_only_loss path validated")
+        print("[dry-run] exiting before training (--dry-run)")
+        return
 
     # 6. Train ----------------------------------------------------------------
     trainer.train()
