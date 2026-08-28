@@ -31,6 +31,7 @@ from unsloth import FastLanguageModel  # MUST be imported first — patches tran
 
 import argparse
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -52,7 +53,7 @@ GGUF_OUTPUT_DIR = BASE_DIR / "hangul_expert_model"    # final merged model + GGU
 # ---------------------------------------------------------------------------
 LORA_R = 16
 LORA_ALPHA = 32
-LORA_DROPOUT = 0.0
+LORA_DROPOUT = 0.05
 TARGET_MODULES = [
     "q_proj", "k_proj", "v_proj", "o_proj",
     "gate_proj", "up_proj", "down_proj",
@@ -64,9 +65,9 @@ TARGET_MODULES = [
 MAX_SEQ_LENGTH = 512              # our Q&A pairs are short
 PER_DEVICE_BATCH_SIZE = 2
 GRADIENT_ACCUMULATION_STEPS = 4   # effective batch size = 2 * 4 = 8
-NUM_EPOCHS = 3
-LEARNING_RATE = 2e-4
-WARMUP_STEPS = 6   # 10% warmup = 0.1 * ceil(145/8) * 3 epochs = 0.1 * 57 ≈ 6 steps
+NUM_EPOCHS = 1
+LEARNING_RATE = 1e-4
+WARMUP_STEPS = 2   # 10% warmup = 0.1 * ceil(145/8) * 1 epoch = 0.1 * 19 ≈ 2 steps
 LR_SCHEDULER_TYPE = "cosine"
 SEED = 42
 
@@ -234,15 +235,33 @@ def main() -> None:
     # 6. Train ----------------------------------------------------------------
     trainer.train()
 
-    # 7. Save merged model + export GGUF (Q4_K_M) -----------------------------
-    #    save_pretrained_gguf merges the LoRA adapter back into the base weights,
-    #    writes a merged 16-bit copy, then converts to llama.cpp GGUF.
+    # 7. Merge LoRA into 16-bit + attempt GGUF export --------------------------
+    #    save_pretrained_gguf merges the adapter into the base weights and writes
+    #    model.safetensors correctly (save_pretrained_merged does NOT write the
+    #    merged weights in this Unsloth version). Its GGUF conversion step then
+    #    breaks on the master convert-script, so we convert to GGUF manually.
+
+    #    IMPORTANT: Unsloth silently REUSES an existing model.safetensors and
+    #    .cache/ in the output dir — it does NOT overwrite them. On a re-run this
+    #    would leave stale merged weights on disk, and the manual GGUF conversion
+    #    would quantize the OLD model while Ollama reports the same layer hash
+    #    (silent stale-export bug). Delete them first so the merge writes fresh.
+    for stale in (
+        GGUF_OUTPUT_DIR / "model.safetensors",
+        GGUF_OUTPUT_DIR / ".cache",
+    ):
+        if stale.is_dir():
+            shutil.rmtree(stale)
+            print(f"[cleanup] removed stale dir {stale}")
+        elif stale.is_file():
+            stale.unlink()
+            print(f"[cleanup] removed stale file {stale}")
+
     model.save_pretrained_gguf(
         str(GGUF_OUTPUT_DIR),
         tokenizer,
         quantization_method="q4_k_m",
     )
-    print(f"[done] merged model + GGUF saved to {GGUF_OUTPUT_DIR}")
 
 
 if __name__ == "__main__":
