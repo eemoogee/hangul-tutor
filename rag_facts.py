@@ -94,7 +94,7 @@ LETTER_FACTS = _build_letter_facts()
 # 1c. Retrieval
 # ---------------------------------------------------------------------------
 _MEMORY_HINTS = ("remember", "memory", "look like")
-_BATCHIM_HINTS = ("batchim", "받침", "final consonant", "bottom of")
+_BATCHIM_HINTS = ("batchim", "받침", "final consonant", "bottom of")  # "받침": reliable trigger — the romanization "batchim" is unreliable even at 7B
 
 
 def get_relevant_facts(question: str) -> list[str]:
