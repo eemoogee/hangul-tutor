@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Generate the batchim expansion for dataset v3.
+"""Generate the batchim expansion for dataset v4.
 
 Expands batchim coverage from 8 to 32 ChatML pairs, split into two independent
 single-sentence facts so each is retrievable on its own:
 
   Fact A — Definition (16 pairs):
-    "Batchim is the optional consonant at the bottom of a Korean syllable block."
+    "Batchim is the optional consonant that sits beneath the vowel in a Korean syllable."
 
   Fact B — Optional rule (16 pairs):
     "Not every syllable has a batchim; 아 has none, but 안 does (the ㄴ at the bottom)."
@@ -16,8 +16,12 @@ Constraints honoured:
     removed from the v2 t1t2 batchim answer). Rendered with a semicolon instead:
     "batchim; 아". Semicolons are not em dashes, so the constraint is satisfied.
   - One sentence per answer.
-  - No invented content: all references (batchim, syllable block, 아, 안, ㄴ) are
+  - No invented content: all references (batchim, vowel, syllable, 아, 안, ㄴ) are
     already established in the existing dataset.
+  - v4 de-block: batchim phrasing must NOT contain "syllable block". That phrase
+    co-anchored batchim with the syllable-block fact and made the model collapse
+    "What is batchim?" into "a syllable block". Fact A now says "beneath the
+    vowel" and the position questions say "syllable" instead of "syllable block".
 
 Output: hangul_finetune_v2_batchim_expansion.jsonl (ChatML, UTF-8).
 """
@@ -27,7 +31,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent
 OUT_JSONL = PROJECT_ROOT / "hangul_finetune_v2_batchim_expansion.jsonl"
 
-FACT_A_ANSWER = "Batchim is the optional consonant at the bottom of a Korean syllable block."
+FACT_A_ANSWER = "Batchim is the optional consonant that sits beneath the vowel in a Korean syllable."
 
 FACT_B_ANSWER = "Not every syllable has a batchim; 아 has none, but 안 does (the ㄴ at the bottom)."
 
@@ -39,9 +43,9 @@ FACT_A_QUESTIONS = [
     "What does the term 'batchim' mean?",
     "How would you describe batchim in a single sentence?",
     # position (what's at the bottom)
-    "What is the consonant at the bottom of a Korean syllable block called?",
-    "What sits at the bottom of a Korean syllable block?",
-    "What do you call the part that sits below the vowel in a syllable block?",
+    "What is the consonant at the bottom of a Korean syllable called?",
+    "What sits at the bottom of a Korean syllable?",
+    "What do you call the part that sits below the vowel in a syllable?",
     "Where in a Korean syllable does the batchim sit?",
     # name (what is it called)
     "What is the Korean word for the optional final consonant?",
@@ -66,7 +70,7 @@ FACT_B_QUESTIONS = [
     "Does every syllable have a batchim?",
     "Is there always a batchim in every Korean syllable?",
     "Do all syllables contain a batchim?",
-    "Is it true that every syllable block has a batchim?",
+    "Is it true that every syllable has a batchim?",
     # give an example with and without
     "Can you give me an example of a syllable with and without a batchim?",
     "Show me a syllable that has no batchim and one that does.",

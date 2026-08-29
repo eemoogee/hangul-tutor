@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Train a QLoRA adapter on the Hangul v3 dataset (276 Q&A pairs) and export
+Train a QLoRA adapter on the Hangul v4 dataset (276 Q&A pairs) and export
 a GGUF model for local inference (e.g. loading into Ollama).
 
 Loss masking: completion-only. We fine-tune only on the assistant's answer
@@ -44,7 +44,7 @@ from trl import SFTConfig, SFTTrainer
 # ---------------------------------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parent            # .../hangul-tutor
 MODEL_NAME = "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit"
-DATASET_PATH = BASE_DIR / "hangul_finetune_v3.jsonl"
+DATASET_PATH = BASE_DIR / "hangul_finetune_v4.jsonl"
 CHECKPOINT_DIR = BASE_DIR / "outputs"                 # trainer logs + adapter checkpoints
 GGUF_OUTPUT_DIR = BASE_DIR / "hangul_expert_model"    # final merged model + GGUF
 
@@ -65,9 +65,9 @@ TARGET_MODULES = [
 MAX_SEQ_LENGTH = 512              # our Q&A pairs are short
 PER_DEVICE_BATCH_SIZE = 2
 GRADIENT_ACCUMULATION_STEPS = 4   # effective batch size = 2 * 4 = 8
-NUM_EPOCHS = 1
+NUM_EPOCHS = 2
 LEARNING_RATE = 1e-4
-WARMUP_STEPS = 3  # 0.1 * ceil(276/8) * 1 epoch = 0.1 * 35 = 3.5 → 3
+WARMUP_STEPS = 7  # 0.1 * ceil(276/8) * 2 epochs = 0.1 * 70 = 7.0 → 7
 LR_SCHEDULER_TYPE = "cosine"
 SEED = 42
 
