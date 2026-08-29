@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Train a QLoRA adapter on the Hangul v2 dataset (252 Q&A pairs) and export
+Train a QLoRA adapter on the Hangul v3 dataset (276 Q&A pairs) and export
 a GGUF model for local inference (e.g. loading into Ollama).
 
 Loss masking: completion-only. We fine-tune only on the assistant's answer
@@ -44,7 +44,7 @@ from trl import SFTConfig, SFTTrainer
 # ---------------------------------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parent            # .../hangul-tutor
 MODEL_NAME = "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit"
-DATASET_PATH = BASE_DIR / "hangul_finetune_v2.jsonl"
+DATASET_PATH = BASE_DIR / "hangul_finetune_v3.jsonl"
 CHECKPOINT_DIR = BASE_DIR / "outputs"                 # trainer logs + adapter checkpoints
 GGUF_OUTPUT_DIR = BASE_DIR / "hangul_expert_model"    # final merged model + GGUF
 
