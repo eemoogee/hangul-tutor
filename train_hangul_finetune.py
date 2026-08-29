@@ -28,9 +28,10 @@ Usage:
 
 NOTE (batchim): native (no-RAG) recall of "batchim" fails on the 1.5B base
 model at <=2 epochs regardless of phrasing or example weighting (datasets
-v2-v5 all failed the no-RAG eval). RAG injection (rag_facts.py) is the
-intended production fix and answers batchim correctly every time. Revisit
-native recall only if/when moving to a ~7B base model.
+v2-v5 all failed the no-RAG eval); a raw 7B (qwen2.5:7b) also hallucinates
+"batchim" (it knows 받침, not the romanization). Scale alone does not fix
+native recall. RAG injection (rag_facts.py) is the production fix, and the
+right hardening is to key the concept on 받침 rather than "batchim".
 """
 
 from unsloth import FastLanguageModel  # MUST be imported first — patches transformers/peft at import time
