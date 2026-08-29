@@ -1,14 +1,24 @@
 #!/usr/bin/env python3
-"""Generate the batchim expansion for dataset v4.
+"""Generate the batchim expansion for dataset v5.
 
-Expands batchim coverage from 8 to 32 ChatML pairs, split into two independent
-single-sentence facts so each is retrievable on its own:
+Expands batchim coverage into two independent single-sentence facts so each is
+retrievable on its own:
 
-  Fact A — Definition (16 pairs):
-    "Batchim is the optional consonant that sits beneath the vowel in a Korean syllable."
+  Fact A — Definition (32 pairs = 16 phrasings x 2, duplicated for weighting):
+    "Batchim is the optional final consonant that sits at the bottom of a Korean syllable."
 
   Fact B — Optional rule (16 pairs):
     "Not every syllable has a batchim; 아 has none, but 안 does (the ㄴ at the bottom)."
+
+v5 changes from v4:
+  - Fact A answer reworded to lead with "final consonant" (the correct
+    definitional anchor) instead of "beneath the vowel", which co-anchored
+    batchim with "vowel" and made the model collapse "What is batchim?" into
+    "a syllabic vowel".
+  - Fact A question #7 reworded from "sits below the vowel in a syllable" to
+    "sits at the bottom of a syllable" so no batchim phrasing mentions "vowel".
+  - Fact A pairs doubled (16 -> 32) to raise batchim's weight from ~5.8% to
+    ~11% of the dataset.
 
 Constraints honoured:
   - No em dashes adjacent to Korean characters. The spec's Fact B answer used
@@ -16,14 +26,10 @@ Constraints honoured:
     removed from the v2 t1t2 batchim answer). Rendered with a semicolon instead:
     "batchim; 아". Semicolons are not em dashes, so the constraint is satisfied.
   - One sentence per answer.
-  - No invented content: all references (batchim, vowel, syllable, 아, 안, ㄴ) are
-    already established in the existing dataset.
-  - v4 de-block: batchim phrasing must NOT contain "syllable block". That phrase
-    co-anchored batchim with the syllable-block fact and made the model collapse
-    "What is batchim?" into "a syllable block". Fact A now says "beneath the
-    vowel" and the position questions say "syllable" instead of "syllable block".
+  - No invented content: all references (batchim, final consonant, syllable, 아,
+    안, ㄴ) are already established in the existing dataset.
 
-Output: hangul_finetune_v2_batchim_expansion.jsonl (ChatML, UTF-8).
+Output: hangul_finetune_v2_batchim_expansion.jsonl (ChatML, UTF-8, 48 pairs).
 """
 import json
 from pathlib import Path
@@ -31,7 +37,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent
 OUT_JSONL = PROJECT_ROOT / "hangul_finetune_v2_batchim_expansion.jsonl"
 
-FACT_A_ANSWER = "Batchim is the optional consonant that sits beneath the vowel in a Korean syllable."
+FACT_A_ANSWER = "Batchim is the optional final consonant that sits at the bottom of a Korean syllable."
 
 FACT_B_ANSWER = "Not every syllable has a batchim; 아 has none, but 안 does (the ㄴ at the bottom)."
 
@@ -45,7 +51,7 @@ FACT_A_QUESTIONS = [
     # position (what's at the bottom)
     "What is the consonant at the bottom of a Korean syllable called?",
     "What sits at the bottom of a Korean syllable?",
-    "What do you call the part that sits below the vowel in a syllable?",
+    "What do you call the part that sits at the bottom of a syllable?",
     "Where in a Korean syllable does the batchim sit?",
     # name (what is it called)
     "What is the Korean word for the optional final consonant?",
@@ -83,14 +89,17 @@ FACT_B_QUESTIONS = [
     "Between 아 and 안, which one has a batchim?",
 ]
 
+FACT_A_DUPLICATION = 2  # duplicate each Fact A pair for weighting
+
 
 def build_pairs():
     pairs = []
-    for q in FACT_A_QUESTIONS:
-        pairs.append({"messages": [
-            {"role": "user", "content": q},
-            {"role": "assistant", "content": FACT_A_ANSWER},
-        ]})
+    for _ in range(FACT_A_DUPLICATION):
+        for q in FACT_A_QUESTIONS:
+            pairs.append({"messages": [
+                {"role": "user", "content": q},
+                {"role": "assistant", "content": FACT_A_ANSWER},
+            ]})
     for q in FACT_B_QUESTIONS:
         pairs.append({"messages": [
             {"role": "user", "content": q},
@@ -136,9 +145,9 @@ def main():
                         if ("\uac00" <= prev <= "\ud7a3") or ("\uac00" <= nxt <= "\ud7a3"):
                             em_dash_adjacent += 1
 
-    n_a = len(FACT_A_QUESTIONS)
+    n_a = len(FACT_A_QUESTIONS) * FACT_A_DUPLICATION
     n_b = len(FACT_B_QUESTIONS)
-    ok = line_count == len(pairs) == 32 and not problems
+    ok = line_count == len(pairs) == 48 and not problems
     print(f"wrote {OUT_JSONL.name}")
     print(f"pairs written: {len(pairs)}  (Fact A: {n_a}, Fact B: {n_b})")
     print(f"lines read back: {line_count}")
