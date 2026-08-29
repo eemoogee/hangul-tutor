@@ -1,24 +1,24 @@
 #!/usr/bin/env python3
-"""Generate the batchim expansion for dataset v5.
+"""Generate the batchim/받침 expansion for dataset v6.
 
 Expands batchim coverage into two independent single-sentence facts so each is
 retrievable on its own:
 
-  Fact A — Definition (32 pairs = 16 phrasings x 2, duplicated for weighting):
+  Fact A — Definition (16 phrasings + 5 받침 variants = 21 pairs):
     "Batchim is the optional final consonant that sits at the bottom of a Korean syllable."
 
-  Fact B — Optional rule (16 pairs):
+  Fact B — Optional rule (16 phrasings + 13 받침 variants = 29 pairs):
     "Not every syllable has a batchim; 아 has none, but 안 does (the ㄴ at the bottom)."
 
-v5 changes from v4:
-  - Fact A answer reworded to lead with "final consonant" (the correct
-    definitional anchor) instead of "beneath the vowel", which co-anchored
-    batchim with "vowel" and made the model collapse "What is batchim?" into
-    "a syllabic vowel".
-  - Fact A question #7 reworded from "sits below the vowel in a syllable" to
-    "sits at the bottom of a syllable" so no batchim phrasing mentions "vowel".
-  - Fact A pairs doubled (16 -> 32) to raise batchim's weight from ~5.8% to
-    ~11% of the dataset.
+v6 changes from v5:
+  - 받침 variants: every question that names "batchim" gets a native-script twin
+    (5 Fact A + 13 Fact B = 18 pairs) with "batchim" swapped for "받침" on the
+    question side only. This teaches 받침 as a first-class retrieval trigger —
+    the romanization "batchim" is unreliable even at 7B. Answer text stays
+    English and unchanged.
+  - Fact A duplication (16 -> 32) removed. Oversampling moves from dataset
+    duplication to a WeightedRandomSampler (weight 2.0) in the training script,
+    keeping the dataset clean (no duplicate lines).
 
 Constraints honoured:
   - No em dashes adjacent to Korean characters. The spec's Fact B answer used
@@ -26,10 +26,10 @@ Constraints honoured:
     removed from the v2 t1t2 batchim answer). Rendered with a semicolon instead:
     "batchim; 아". Semicolons are not em dashes, so the constraint is satisfied.
   - One sentence per answer.
-  - No invented content: all references (batchim, final consonant, syllable, 아,
-    안, ㄴ) are already established in the existing dataset.
+  - No invented content: all references (batchim, 받침, final consonant, syllable,
+    아, 안, ㄴ) are already established in the existing dataset.
 
-Output: hangul_finetune_v2_batchim_expansion.jsonl (ChatML, UTF-8, 48 pairs).
+Output: hangul_finetune_v2_batchim_expansion.jsonl (ChatML, UTF-8, 50 pairs).
 """
 import json
 from pathlib import Path
@@ -89,22 +89,26 @@ FACT_B_QUESTIONS = [
     "Between 아 and 안, which one has a batchim?",
 ]
 
-FACT_A_DUPLICATION = 2  # duplicate each Fact A pair for weighting
+
+def _pair(question, answer):
+    return {"messages": [
+        {"role": "user", "content": question},
+        {"role": "assistant", "content": answer},
+    ]}
 
 
 def build_pairs():
+    """Build Fact A + Fact B pairs, adding a 받침 twin for every question that
+    names "batchim" (question side only; answer stays English and unchanged)."""
     pairs = []
-    for _ in range(FACT_A_DUPLICATION):
-        for q in FACT_A_QUESTIONS:
-            pairs.append({"messages": [
-                {"role": "user", "content": q},
-                {"role": "assistant", "content": FACT_A_ANSWER},
-            ]})
+    for q in FACT_A_QUESTIONS:
+        pairs.append(_pair(q, FACT_A_ANSWER))
+        if "batchim" in q:
+            pairs.append(_pair(q.replace("batchim", "받침"), FACT_A_ANSWER))
     for q in FACT_B_QUESTIONS:
-        pairs.append({"messages": [
-            {"role": "user", "content": q},
-            {"role": "assistant", "content": FACT_B_ANSWER},
-        ]})
+        pairs.append(_pair(q, FACT_B_ANSWER))
+        if "batchim" in q:
+            pairs.append(_pair(q.replace("batchim", "받침"), FACT_B_ANSWER))
     return pairs
 
 
@@ -118,6 +122,7 @@ def main():
     problems = []
     line_count = 0
     em_dash_adjacent = 0
+    receiving_questions = 0
     with open(OUT_JSONL, "r", encoding="utf-8") as f:
         for i, line in enumerate(f, 1):
             line_count += 1
@@ -137,6 +142,8 @@ def main():
                 c = m.get("content")
                 if not isinstance(c, str) or not c.strip():
                     problems.append(f"line {i}: empty content")
+                if m.get("role") == "user" and "받침" in c:
+                    receiving_questions += 1
                 # em dash adjacent to a Hangul char (U+AC00–U+D7A3)
                 for j, ch in enumerate(c):
                     if ch == "\u2014":
@@ -145,11 +152,19 @@ def main():
                         if ("\uac00" <= prev <= "\ud7a3") or ("\uac00" <= nxt <= "\ud7a3"):
                             em_dash_adjacent += 1
 
-    n_a = len(FACT_A_QUESTIONS) * FACT_A_DUPLICATION
-    n_b = len(FACT_B_QUESTIONS)
-    ok = line_count == len(pairs) == 48 and not problems
+    n_receiving_expected = sum(
+        1 for q in FACT_A_QUESTIONS + FACT_B_QUESTIONS if "batchim" in q
+    )
+    n_a = len(FACT_A_QUESTIONS) + sum(1 for q in FACT_A_QUESTIONS if "batchim" in q)
+    n_b = len(FACT_B_QUESTIONS) + sum(1 for q in FACT_B_QUESTIONS if "batchim" in q)
+    ok = (
+        line_count == len(pairs) == 50
+        and not problems
+        and receiving_questions == n_receiving_expected == 18
+    )
     print(f"wrote {OUT_JSONL.name}")
     print(f"pairs written: {len(pairs)}  (Fact A: {n_a}, Fact B: {n_b})")
+    print(f"받침 variants: {receiving_questions} (expected {n_receiving_expected})")
     print(f"lines read back: {line_count}")
     print(f"validation: {'PASS' if not problems else 'FAIL'} ({len(problems)} problem(s))")
     for p in problems:

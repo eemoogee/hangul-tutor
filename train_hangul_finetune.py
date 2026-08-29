@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Train a QLoRA adapter on the Hangul v5 dataset (292 Q&A pairs) and export
+Train a QLoRA adapter on the Hangul v6 dataset (294 Q&A pairs) and export
 a GGUF model for local inference (e.g. loading into Ollama).
 
 Loss masking: completion-only. We fine-tune only on the assistant's answer
@@ -32,6 +32,10 @@ v2-v5 all failed the no-RAG eval); a raw 7B (qwen2.5:7b) also hallucinates
 "batchim" (it knows 받침, not the romanization). Scale alone does not fix
 native recall. RAG injection (rag_facts.py) is the production fix, and the
 right hardening is to key the concept on 받침 rather than "batchim".
+
+v6 adds 받침 question variants (native-script trigger) plus a WeightedRandomSampler
+(weight 2.0 on batchim pairs) — one more training-time attempt at native recall,
+with RAG remaining the fallback.
 """
 
 from unsloth import FastLanguageModel  # MUST be imported first — patches transformers/peft at import time
@@ -45,6 +49,7 @@ from pathlib import Path
 
 import torch
 from datasets import Dataset
+from torch.utils.data import WeightedRandomSampler
 from trl import SFTConfig, SFTTrainer
 
 # ---------------------------------------------------------------------------
@@ -52,7 +57,7 @@ from trl import SFTConfig, SFTTrainer
 # ---------------------------------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parent            # .../hangul-tutor
 MODEL_NAME = "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit"
-DATASET_PATH = BASE_DIR / "hangul_finetune_v5.jsonl"
+DATASET_PATH = BASE_DIR / "hangul_finetune_v6.jsonl"
 CHECKPOINT_DIR = BASE_DIR / "outputs"                 # trainer logs + adapter checkpoints
 GGUF_OUTPUT_DIR = BASE_DIR / "hangul_expert_model"    # final merged model + GGUF
 
@@ -75,9 +80,19 @@ PER_DEVICE_BATCH_SIZE = 2
 GRADIENT_ACCUMULATION_STEPS = 4   # effective batch size = 2 * 4 = 8
 NUM_EPOCHS = 2
 LEARNING_RATE = 1e-4
-WARMUP_STEPS = 8  # ceil(0.1 * ceil(292/8) * 2) = ceil(0.1 * 37 * 2) = ceil(7.4) = 8
+WARMUP_STEPS = 8  # ceil(0.1 * ceil(294/8) * 2) = ceil(0.1 * 37 * 2) = ceil(7.4) = 8
 LR_SCHEDULER_TYPE = "cosine"
 SEED = 42
+
+# Answers that mark a "batchim concept" pair. These get oversampled at training
+# time via WeightedRandomSampler (weight BATCHIM_WEIGHT); every other pair is
+# weight 1.0. Kept as a set so the per-row weights array can be built at load
+# time without duplicating lines in the dataset.
+BATCHIM_ANSWERS = {
+    "Batchim is the optional final consonant that sits at the bottom of a Korean syllable.",
+    "Not every syllable has a batchim; 아 has none, but 안 does (the ㄴ at the bottom).",
+}
+BATCHIM_WEIGHT = 2.0
 
 
 # 1. Environment check -------------------------------------------------------
@@ -133,18 +148,30 @@ def check_vram_headroom() -> None:
 
 
 # 2. Dataset loading ----------------------------------------------------------
-def load_dataset(path: Path) -> Dataset:
-    """Read the JSONL and return a Dataset with an un-tokenized `messages` column."""
+def load_dataset(path: Path):
+    """Read the JSONL and return (dataset, weights).
+
+    `weights` is a per-row list aligned 1:1 with the dataset rows: 2.0 for
+    batchim-concept pairs (answer matches a BATCHIM_ANSWERS entry), 1.0
+    otherwise. WeightedRandomSampler oversamples batchim pairs at training
+    time without duplicating lines in the dataset.
+    """
     records = []
+    weights = []
     with open(path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line:
                 continue
-            records.append(json.loads(line))  # {"messages": [...]}
+            obj = json.loads(line)  # {"messages": [...]}
+            records.append(obj)
+            answer = obj["messages"][1]["content"]
+            weights.append(BATCHIM_WEIGHT if answer in BATCHIM_ANSWERS else 1.0)
 
-    print(f"[data] loaded {len(records)} examples from {path.name}")
-    return Dataset.from_list(records)
+    n_weighted = sum(1 for w in weights if w > 1.0)
+    print(f"[data] loaded {len(records)} examples from {path.name} "
+          f"({n_weighted} batchim-weighted at {BATCHIM_WEIGHT}x)")
+    return Dataset.from_list(records), weights
 
 
 def transform_to_prompt_completion(dataset: Dataset) -> Dataset:
@@ -166,6 +193,32 @@ def transform_to_prompt_completion(dataset: Dataset) -> Dataset:
     dataset = dataset.map(split, remove_columns=["messages"])
     print(f"[data] split into prompt/completion columns ({len(dataset)} examples)")
     return dataset
+
+
+class WeightedSFTTrainer(SFTTrainer):
+    """SFTTrainer that oversamples batchim pairs via a WeightedRandomSampler.
+
+    TRL 0.24.0's SFTTrainer has no native weighted-sampler hook — it inherits
+    transformers.Trainer._get_train_sampler(), which returns a plain
+    RandomSampler. Overriding that method is the canonical injection point.
+    """
+
+    def __init__(self, weights, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.weights = weights
+
+    def _get_train_sampler(self, train_dataset=None):
+        if train_dataset is None:
+            train_dataset = self.train_dataset
+        n = len(train_dataset)
+        assert len(self.weights) == n, (
+            f"weights length {len(self.weights)} != tokenized dataset length {n} "
+            f"— the per-row weight list is out of alignment with the dataset"
+        )
+        n_weighted = sum(1 for w in self.weights if w > 1.0)
+        print(f"[sampler] WeightedRandomSampler: {n} rows, "
+              f"{n_weighted} at weight {BATCHIM_WEIGHT}, rest at 1.0")
+        return WeightedRandomSampler(self.weights, num_samples=n, replacement=True)
 
 
 # Dry-run helper ---------------------------------------------------------------
@@ -242,7 +295,7 @@ def main() -> None:
     )
 
     # 4. Load the dataset and split into prompt/completion columns ------------
-    dataset = load_dataset(DATASET_PATH)
+    dataset, weights = load_dataset(DATASET_PATH)
     dataset = transform_to_prompt_completion(dataset)
 
     if args.dry_run:
@@ -267,16 +320,22 @@ def main() -> None:
         report_to="none",             # no tensorboard / wandb
     )
 
-    trainer = SFTTrainer(
+    trainer = WeightedSFTTrainer(
         model=model,
         processing_class=tokenizer,   # trl >=0.24 renamed this from `tokenizer=`
         train_dataset=dataset,        # prompt/completion columns; trainer tokenizes + masks
         args=training_args,
+        weights=weights,
     )
 
     # --dry-run: the trainer was constructed above (validating the full
     #    completion_only_loss setup); exit before any training happens ---------
     if args.dry_run:
+        # Force sampler construction to assert weights/tokenized-length alignment.
+        trainer._get_train_sampler()
+        n_w, n_ds = len(weights), len(trainer.train_dataset)
+        aligned = "aligned" if n_w == n_ds else "MISMATCH"
+        print(f"[dry-run] weights length {n_w} vs tokenized dataset length {n_ds} — {aligned}")
         print("\n[dry-run] SFTTrainer constructed OK — completion_only_loss path validated")
         print("[dry-run] exiting before training (--dry-run)")
         return
