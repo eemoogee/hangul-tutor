@@ -1,0 +1,1 @@
+FROM ./hangul_expert_model/hangul_expert-q4_k_m.gguf

@@ -2,3 +2,9 @@
 *.pyc
 data/user_progress.json
 commit_message.txt
+.venv_finetune/
+hangul_expert_model/
+outputs/
+unsloth_compiled_cache/
+*.log
+data/user_progress.backup-*.json
