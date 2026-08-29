@@ -31,7 +31,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 # 1a. Hardcoded concept facts
 # ---------------------------------------------------------------------------
 CONCEPT_FACTS = {
-    "batchim": "Batchim is the optional consonant that sits beneath the vowel in a Korean syllable.",
+    "batchim": "Batchim is the optional final consonant that sits at the bottom of a Korean syllable.",
     "batchim_optional": "Not every syllable has a batchim; 아 has none, but 안 does (the ㄴ at the bottom).",
     "syllable_blocks": "Korean syllables are written in blocks. Each block has an initial consonant, a vowel, and an optional final consonant called batchim. For example: 한 = ㅎ + ㅏ + ㄴ.",
     "ieung_silent": "ㅇ is silent at the start of a syllable — it is just a placeholder so the vowel has somewhere to attach.",
