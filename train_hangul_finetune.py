@@ -25,6 +25,12 @@ Usage:
     python train_hangul_finetune.py            # full training run
     python train_hangul_finetune.py --dry-run  # load model + dataset, show one
                                                # tokenized sample, then exit
+
+NOTE (batchim): native (no-RAG) recall of "batchim" fails on the 1.5B base
+model at <=2 epochs regardless of phrasing or example weighting (datasets
+v2-v5 all failed the no-RAG eval). RAG injection (rag_facts.py) is the
+intended production fix and answers batchim correctly every time. Revisit
+native recall only if/when moving to a ~7B base model.
 """
 
 from unsloth import FastLanguageModel  # MUST be imported first — patches transformers/peft at import time
@@ -32,6 +38,7 @@ from unsloth import FastLanguageModel  # MUST be imported first — patches tran
 import argparse
 import json
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -88,6 +95,40 @@ def check_environment() -> None:
     vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
     print(f"[env] GPU: {gpu_name} ({vram_gb:.1f} GB VRAM)")
     print(f"[env] torch {torch.__version__}  CUDA {torch.version.cuda}")
+
+
+def check_vram_headroom() -> None:
+    """Abort if the GPU already has significant VRAM in use before training.
+
+    The 6 GB RTX 4050 needs most of its VRAM for QLoRA training; a full card
+    OOMs the fused cross-entropy loss. The usual culprit is Ollama, whose
+    llama-server.exe children survive `ollama stop` (and a killed ollama.exe)
+    and keep models resident. Fail fast with a fixable message instead of
+    crashing mid-run. Override with --skip-vram-check.
+    """
+    try:
+        out = subprocess.check_output(
+            ["nvidia-smi", "--query-gpu=memory.used",
+             "--format=csv,noheader,nounits"],
+            text=True, timeout=10,
+        )
+        used_mib = int(out.strip().splitlines()[0].strip())
+    except Exception as e:
+        print(f"[vram] nvidia-smi unavailable ({e}); skipping pre-flight check")
+        return
+
+    if used_mib > 1024:
+        print(
+            f"[vram] ABORT: {used_mib} MiB already in use on the GPU.\n"
+            "  Likely Ollama is holding models resident. Free it with:\n"
+            "    ollama stop <model>   # and if llama-server.exe survives:\n"
+            "    tasklist | grep -i llama   then   taskkill //F //PID <pid>\n"
+            "  Re-run once 'nvidia-smi' shows ~0 MiB used, or pass\n"
+            "  --skip-vram-check to override."
+        )
+        sys.exit(1)
+
+    print(f"[vram] OK: {used_mib} MiB in use, headroom available")
 
 
 # 2. Dataset loading ----------------------------------------------------------
@@ -163,12 +204,19 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Load the model and dataset, print one tokenized sample, then exit without training.",
     )
+    parser.add_argument(
+        "--skip-vram-check",
+        action="store_true",
+        help="Skip the GPU VRAM headroom pre-flight check.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     check_environment()
+    if not args.skip_vram_check:
+        check_vram_headroom()
 
     # 2. Load the 4-bit base model + tokenizer via Unsloth -------------------
     #    load_in_4bit=True keeps the base weights in 4-bit NF4 (QLoRA). dtype
