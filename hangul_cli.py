@@ -20,6 +20,7 @@ import re
 import argparse
 import json
 import subprocess
+import time
 from pathlib import Path
 
 # Add project root to path
@@ -68,14 +69,8 @@ def generate_mnemonic(letter: str, user_context: str = "") -> str:
     with open(curriculum_path, encoding='utf-8') as f:
         curriculum = json.load(f)
 
-    # Find the letter's pronunciation and description
-    info = ""
-    for lesson in curriculum["lessons"]:
-        if letter in lesson.get("letters", []):
-            pron = lesson.get("pronunciation", {}).get(letter, "")
-            strokes = lesson.get("stroke_order", {}).get(letter, [])
-            info = f"Pronunciation: {pron}\nShape: {', '.join(strokes)}"
-            break
+    pron, strokes = _lookup_letter_info(curriculum, letter)
+    info = f"Pronunciation: {pron}\nShape: {', '.join(strokes)}" if pron else ""
 
     system = "You are a creative Hangul teacher. Generate short, memorable mnemonics."
     prompt = f"""Create a mnemonic for the Korean letter '{letter}'.
@@ -221,6 +216,375 @@ RESET = "\033[0m"
 def styled(text: str, *styles) -> str:
     return ''.join(styles) + text + RESET
 
+# ── Stroke animation ──────────────────────────────────────────────────────
+# A small 5x5 ASCII grid used to animate each letter being "drawn" stroke
+# by stroke, in the terminal, no external images needed. These are
+# deliberately STYLIZED approximations, not calligraphy-accurate — the
+# goal is a recognizable, satisfying reveal that matches each letter's
+# real stroke COUNT and general direction (per curriculum.json where
+# available), not a pixel-perfect font renderer.
+_GRID_SIZE = 5
+
+def _h(row, c1, c2):
+    """Horizontal segment on one row, from column c1 to c2 inclusive."""
+    return [(row, c) for c in range(c1, c2 + 1)]
+
+def _v(col, r1, r2):
+    """Vertical segment on one column, from row r1 to r2 inclusive."""
+    return [(r, col) for r in range(r1, r2 + 1)]
+
+def _d(r1, c1, r2, c2):
+    """Straight diagonal between two points, stepped one cell at a time."""
+    steps = max(abs(r2 - r1), abs(c2 - c1))
+    return [(round(r1 + (r2 - r1) * i / steps), round(c1 + (c2 - c1) * i / steps))
+            for i in range(steps + 1)]
+
+_CIRCLE = [(0, 1), (0, 2), (0, 3), (1, 0), (1, 4), (2, 0), (2, 4),
+           (3, 0), (3, 4), (4, 1), (4, 2), (4, 3)]
+_CIRCLE_LOWER = [(2, 1), (2, 2), (2, 3), (3, 0), (3, 4), (4, 1), (4, 2), (4, 3)]
+
+# Each letter maps to a list of strokes; each stroke is a list of grid
+# cells revealed together in one animation frame (a "hooking"/bent stroke
+# combines two segments into one frame, since it's one continuous pen
+# movement). Consonants first (dictionary order), then vowels.
+LETTER_STROKES = {
+    "ㄱ": [_h(0, 0, 3), _v(3, 0, 4)],
+    "ㄴ": [_v(0, 0, 4), _h(4, 0, 3)],
+    "ㄷ": [_h(0, 0, 3), _v(0, 0, 4), _h(4, 0, 3)],
+    "ㄹ": [_h(0, 0, 3), _v(3, 0, 2), _h(2, 0, 3), _v(0, 2, 4) + _h(4, 0, 3)],
+    "ㅁ": [_v(0, 0, 4), _h(0, 0, 3), _v(3, 0, 4), _h(4, 0, 3)],
+    "ㅂ": [_v(0, 0, 4), _v(3, 0, 4), _h(1, 0, 3), _h(4, 0, 3)],
+    "ㅅ": [_d(0, 2, 4, 0), _d(0, 2, 4, 4)],
+    "ㅇ": [_CIRCLE],
+    "ㅈ": [_h(0, 0, 3), _d(0, 3, 4, 0)],
+    "ㅊ": [_h(0, 1, 2), _h(1, 0, 3), _d(1, 3, 4, 0)],
+    "ㅋ": [_h(0, 0, 3) + _v(3, 0, 4), _h(2, 1, 3)],
+    "ㅌ": [_h(0, 0, 3) + _v(0, 0, 4) + _h(4, 0, 3), _h(2, 0, 3)],
+    "ㅍ": [_h(0, 0, 3), _v(0, 0, 4), _v(3, 0, 4)],
+    "ㅎ": [_h(0, 1, 2), _h(1, 0, 3), _CIRCLE_LOWER],
+    "ㅏ": [_v(1, 0, 4), _h(2, 2, 3)],
+    "ㅑ": [_v(1, 0, 4), _h(1, 2, 3), _h(3, 2, 3)],
+    "ㅓ": [_h(2, 1, 2), _v(3, 0, 4)],
+    "ㅕ": [_v(3, 0, 4), _h(1, 1, 2), _h(3, 1, 2)],
+    "ㅗ": [_v(2, 0, 2), _h(2, 0, 4)],
+    "ㅛ": [_v(1, 0, 2), _v(3, 0, 2), _h(2, 0, 4)],
+    "ㅜ": [_h(2, 0, 4), _v(2, 2, 4)],
+    "ㅠ": [_h(2, 0, 4), _v(1, 2, 4), _v(3, 2, 4)],
+    "ㅡ": [_h(2, 0, 4)],
+    "ㅣ": [_v(2, 0, 4)],
+}
+
+def animate_letter_strokes(letter: str, pause: float = 0.8, final_hold: float = 0.5):
+    """Draw a letter stroke by stroke in the terminal — a small ASCII grid
+    that fills in one stroke at a time, redrawn in place so it looks like
+    an animation rather than a stack of printed frames. Silently does
+    nothing if the letter has no defined shape (e.g. compound vowels
+    outside the basic 24) — callers should treat that as 'no animation
+    available' and just move on to the text info. final_hold adds extra
+    time on the completed shape before returning, so it doesn't rush
+    straight into the text info underneath."""
+    strokes = LETTER_STROKES.get(letter)
+    if not strokes:
+        return
+
+    filled = set()
+    frame_height = _GRID_SIZE + 1  # grid rows + the letter/step caption line
+    for i, stroke in enumerate(strokes, start=1):
+        filled |= set(stroke)
+        lines = [f"   {styled(letter, BOLD, CYAN)}  (stroke {i}/{len(strokes)})"]
+        for r in range(_GRID_SIZE):
+            row_str = "   " + "".join(
+                styled("██", CYAN) if (r, c) in filled else "· "
+                for c in range(_GRID_SIZE)
+            )
+            lines.append(row_str)
+        print("\n".join(lines))
+        time.sleep(pause + final_hold if i == len(strokes) else pause)
+        if i < len(strokes):
+            # Move the cursor back up to overwrite this frame with the next
+            # one, instead of scrolling — that's what makes it read as an
+            # animation. sys.stdout used directly since this needs to write
+            # without a trailing newline before the next frame redraws.
+            sys.stdout.write(f"\033[{frame_height}F")
+            sys.stdout.flush()
+
+
+def _lookup_letter_info(curriculum: dict, letter: str) -> tuple:
+    """Find a letter's pronunciation and stroke order by scanning the
+    curriculum's lessons. Factored out of generate_mnemonic (which used
+    to do this same scan inline) so there's one place that knows how to
+    find this data, reused by both the Ollama mnemonic prompt and the
+    alphabet walkthrough below."""
+    for lesson in curriculum["lessons"]:
+        if letter in lesson.get("letters", []):
+            pron = lesson.get("pronunciation", {}).get(letter, "")
+            strokes = lesson.get("stroke_order", {}).get(letter, [])
+            return pron, strokes
+    return "", []
+
+# The real, standard Hangul alphabet order — what every Korean dictionary,
+# keyboard layout, and textbook uses. NOT the same as curriculum.json's
+# lesson order (which groups letters by teaching difficulty across
+# separate lesson files, e.g. simple vowels in lesson 1 but y-vowels
+# tucked into lesson 6). This is consonants first, then vowels, each in
+# their canonical sequence — 14 + 10 = the 24 basic letters.
+ALPHABET_CONSONANTS = ["ㄱ", "ㄴ", "ㄷ", "ㄹ", "ㅁ", "ㅂ", "ㅅ", "ㅇ", "ㅈ", "ㅊ", "ㅋ", "ㅌ", "ㅍ", "ㅎ"]
+ALPHABET_VOWELS = ["ㅏ", "ㅑ", "ㅓ", "ㅕ", "ㅗ", "ㅛ", "ㅜ", "ㅠ", "ㅡ", "ㅣ"]
+
+# Hand-written, instant, visual/eye-catching shape mnemonics for the full
+# alphabet walkthrough. Deliberately NOT generated live via Ollama (unlike
+# generate_mnemonic elsewhere) — a brand-new learner's very first pass
+# through all 24 letters should feel snappy, not stall on 24 sequential
+# model calls (and not risk failing if Ollama isn't running yet). These
+# are fixed but still genuinely fun/memorable on their own.
+ALPHABET_MNEMONICS = {
+    "ㄱ": "Looks like a golf club mid-swing! ⛳",
+    "ㄴ": "A knee, bent and ready to kneel. 🦵",
+    "ㄷ": "A door, propped open on its hinge. 🚪",
+    "ㄹ": "A wiggly river, bending back and forth. 🌊",
+    "ㅁ": "A square mouth, lips pressed together, humming a low 'mmm'. 👄",
+    "ㅂ": "A tiny table standing on two legs. 🪑",
+    "ㅅ": "A mountain summit. ⛰️",
+    "ㅇ": "A balloon — round and silent as it floats... until it lands with a boiNG! 🎈",
+    "ㅈ": "A person mid-jump, leg kicking out behind. 🤸",
+    "ㅊ": "Jumping and cheering, with a little spark above! 🎉",
+    "ㅋ": "A key with an extra tooth. 🔑",
+    "ㅌ": "The middle prong of a trident. 🔱",
+    "ㅍ": "Goalposts on a soccer field. 🥅",
+    "ㅎ": "A face wearing a little top hat, tipped just so. 🎩",
+    "ㅏ": "An arm reaching right as your mouth opens — 'ah'! 👉",
+    "ㅑ": "Like ㅏ, but waving with both hands — 'ya ya ya!' 👋",
+    "ㅓ": "The mirror image of ㅏ — pointing left instead. 👈",
+    "ㅕ": "Like ㅓ, waving both hands the other way. 🙌",
+    "ㅗ": "A little flag, planted proudly on its pole. 🚩",
+    "ㅛ": "A flag with two flaps, fluttering. 🎏",
+    "ㅜ": "An umbrella, handle hanging down. ☂️",
+    "ㅠ": "An umbrella with two spokes — extra rainy. 🌧️",
+    "ㅡ": "A flat horizon line — no rounding, just a flat mouth. 〰️",
+    "ㅣ": "A person standing tall and thin, saying 'ee'. 🧍",
+}
+
+# Letters whose pronunciation genuinely depends on WHERE they sit in a
+# syllable, not just what they are — a fundamentally different kind of
+# fact than "here's how this letter sounds." Among the 24 basic letters,
+# only ㅇ has this (silent as an initial placeholder, 'ng' as a final
+# consonant/batchim); everything else sounds the same regardless of
+# position. Flagged separately and prominently rather than folded into
+# the normal pronunciation line, so it doesn't read as just one more
+# unremarkable fact among many.
+POSITIONAL_QUIRKS = {
+    "ㅇ": "SILENT at the start of a syllable — but sounds like 'ng' at the end!",
+}
+
+def run_alphabet_intro(quiz: HangulQuiz):
+    """The full 24-letter Hangul alphabet, front to back, in the real
+    canonical order — consonants then vowels — meant as THE first thing a
+    brand-new learner sees. Distinct from run_beginner_intro (which walks
+    just the current lesson's letters for reference/review): this is a
+    one-time, celebratory, extra-eye-catching first pass across the whole
+    alphabet, with a visual mnemonic for every letter and no lesson
+    boundaries to break the flow."""
+    curriculum = quiz.curriculum
+    roman_table = quiz.get_romanization_table()
+    ordered = [("Consonants", ALPHABET_CONSONANTS, "🔤"), ("Vowels", ALPHABET_VOWELS, "🎵")]
+    total = len(ALPHABET_CONSONANTS) + len(ALPHABET_VOWELS)
+
+    print(f"\n{styled('🇰🇷✨ The Hangul Alphabet ✨🇰🇷', BOLD, GREEN)}")
+    intro_line = f"{total} letters — 14 consonants, 10 vowels. Let's meet them all!"
+    print(f"{styled(intro_line, CYAN)}")
+    print(f"{styled('Press Enter for the next letter, or type its romanization to try it. /skip to jump to lesson picking anytime.', CYAN)}")
+
+    seen = 0
+    for section_name, letters, icon in ordered:
+        print(f"\n{styled(f'{icon}  {section_name}', BOLD, YELLOW)}")
+        for letter in letters:
+            seen += 1
+            roman = roman_table.get(letter, "")
+            pron, _ = _lookup_letter_info(curriculum, letter)
+            mnemonic = ALPHABET_MNEMONICS.get(letter, "")
+            quirk = POSITIONAL_QUIRKS.get(letter, "")
+
+            print(f"\n{styled(f'[{seen}/{total}]', BOLD)}\n")
+            animate_letter_strokes(letter)
+            print(f"\n      {styled(letter, BOLD, CYAN)}")
+            if roman:
+                print(f"      romanizes as: {styled(roman, BOLD)}")
+            if quirk:
+                print(f"      {styled('⚡ ' + quirk, BOLD, YELLOW)}")
+            if pron:
+                print(f"      sounds like: {pron}")
+            if mnemonic:
+                print(f"      {styled('💡 ' + mnemonic, GREEN)}")
+
+            try:
+                response = input(f"\n{styled('[Enter=next, or type romanization]', CYAN)} {styled('>', BOLD)} ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print(f"\n{styled('Alphabet walkthrough ended early — no worries, come back anytime with /alphabet.', YELLOW)}")
+                return
+            if response.lower() in ('/skip', 'skip'):
+                print(f"{styled('Skipping ahead to lesson picking!', YELLOW)}")
+                return
+            if response:
+                if response.lower() == roman.lower():
+                    print(f"   {styled('✅ Nailed it!', GREEN)}")
+                else:
+                    msg = f'Close — {letter} is "{roman}". No score kept, just practice!'
+                    print(f"   {styled(msg, YELLOW)}")
+
+    print(f"\n{styled('🎉 You have met the whole Hangul alphabet! 🎉', BOLD, GREEN)}")
+
+
+def _offer_lesson_picker(quiz: HangulQuiz) -> dict:
+    """Show the lesson list and let the learner pick where to go next,
+    instead of silently forcing a specific lesson order on them. Returns
+    the lesson_info for whatever they picked (or lesson 1 if they just
+    press Enter)."""
+    print(f"\n{styled('📚 Where would you like to start?', BOLD)}")
+    for l in quiz.list_lessons():
+        mark = styled('✓', GREEN) if l['completed'] else ''
+        print(f"   {l['id']:2}. {l['title']} {mark}")
+    try:
+        choice = input(f"\n{styled('Lesson number (or Enter for Lesson 1):', CYAN)} ").strip()
+    except (EOFError, KeyboardInterrupt):
+        choice = ""
+    try:
+        lid = int(choice) if choice else 1
+    except ValueError:
+        lid = 1
+    return quiz.start_lesson(lid)
+
+
+_HANGUL_WIDE_RANGES = (
+    (0x1100, 0x11FF),  # Hangul Jamo block
+    (0x3130, 0x318F),  # Hangul Compatibility Jamo — the standalone ㅎㅏㄴ etc. used throughout this app
+    (0xAC00, 0xD7A3),  # Hangul Syllables (composed blocks like 한, 글)
+)
+
+def _vwidth(s: str) -> int:
+    """Approximate terminal column width: Hangul jamo/syllables render
+    double-width in virtually every terminal, everything else single-
+    width. Naively aligning a Hangul line over a Latin-romanization line
+    at the same string INDEX drifts off, since 'ㅎ' occupies 2 columns
+    but 'h' occupies 1 — this is what makes width-aware padding below
+    actually necessary rather than cosmetic."""
+    return sum(2 if any(lo <= ord(c) <= hi for lo, hi in _HANGUL_WIDE_RANGES) else 1
+               for c in s)
+
+def _pad_to(s: str, width: int) -> str:
+    return s + " " * max(0, width - _vwidth(s))
+
+def _composition_rows(cells, connector=" + ", final_connector="   =   ", indent="   "):
+    """cells: list of (jamo, romanization) tuples, last entry is the
+    assembled result (e.g. ('한', 'han')). Every jamo/romanization pair
+    is padded to the same visual column width so the romanization line
+    lines up under its jamo in a real terminal. Only the actual jamo/
+    result characters get colored — connectors ('+', '=') stay plain, so
+    the color draws the eye to the letters themselves, not the notation
+    around them. Romanization is intentionally left fully monochrome:
+    the point is to keep visual focus on the Hangul, with romanization
+    as a quiet reference underneath rather than competing for attention.
+
+    Returns (jamo_pieces, roman_line, indent) — jamo_pieces is a list of
+    already-styled text units (one per jamo/connector), left unjoined so
+    a caller can reveal them one at a time for a typewriter effect;
+    roman_line is the plain, fully-joined monochrome line, shown all at
+    once beneath once the jamo line finishes revealing."""
+    n = len(cells)
+    jamo_pieces, roman_pieces = [], []
+    for i, (j, r) in enumerate(cells):
+        w = max(_vwidth(j), _vwidth(r))
+        is_result = (i == n - 1)
+        jamo_pieces.append(styled(_pad_to(j, w), BOLD, GREEN if is_result else CYAN))
+        roman_pieces.append(_pad_to(r, w))
+        if i < n - 1:
+            sep = final_connector if i == n - 2 else connector
+            jamo_pieces.append(sep)  # plain — not styled, distinct from the letters
+            roman_pieces.append(sep)
+    roman_line = indent + "".join(roman_pieces)  # fully monochrome
+    return jamo_pieces, roman_line, indent
+
+
+def print_title_screen():
+    """A quick startup banner with a light reveal effect. Shown on EVERY
+    launch (not just first-run), so it's deliberately brief — a couple
+    seconds total — rather than the slower, savor-it pacing used for the
+    alphabet/letter animations, which only play once per letter and can
+    afford to linger. Each composition row types out letter by letter
+    (dramatic but quick — well under a second per row) rather than
+    appearing all at once, then the romanization line beneath it appears
+    in full once the jamo line finishes.
+
+    Rather than just claim Hangul is rational and easy, this DEMONSTRATES
+    it: builds the word 한글 ('Hangul', the writing system's own name)
+    live from its component jamo (ㅎ+ㅏ+ㄴ=한, ㄱ+ㅡ+ㄹ=글) — the exact
+    same combining logic every syllable in the app uses — with
+    romanization aligned underneath each jamo so the sound-mapping is as
+    visible as the shape-mapping. Decomposition verified against the
+    actual Unicode Hangul syllable formula, not eyeballed."""
+    print()
+    rows = [
+        [("ㅎ", "h"), ("ㅏ", "a"), ("ㄴ", "n"), ("한", "han")],
+        [("ㄱ", "g"), ("ㅡ", "eu"), ("ㄹ", "l"), ("글", "geul")],
+    ]
+    for cells in rows:
+        jamo_pieces, roman_line, indent = _composition_rows(cells)
+        sys.stdout.write(indent)
+        for piece in jamo_pieces:
+            sys.stdout.write(piece)
+            sys.stdout.flush()
+            time.sleep(0.08)
+        print()  # close out the jamo line once fully revealed
+        print(roman_line)
+        time.sleep(0.2)
+    time.sleep(0.2)
+    print(f"\n   {styled('한글', BOLD, GREEN)}  —  \"Hangul\": literally, the great script")
+    time.sleep(0.35)
+    print(styled("\n✨  Learn to read Korean, one letter at a time  ✨", BOLD, GREEN))
+    print()
+
+
+def show_start_menu(quiz: HangulQuiz) -> dict:
+    """The real entry point for every launch — title screen, then a menu:
+    resume (default, one keystroke), the full alphabet walkthrough, or
+    the lesson list. Replaces the old behavior of always dropping
+    straight into Lesson 1's quiz, and replaces the earlier first-run-
+    only Y/n prompt (which only ever appeared once, on a completely
+    untouched profile) with something offered every time — so alphabet/
+    lesson-picking stay reachable without already knowing the slash
+    commands exist, while resuming stays the fast, one-keystroke path
+    once there's real progress to resume."""
+    print_title_screen()
+
+    # start_lesson() with no argument resumes to whatever current_lesson
+    # already is — same resume semantics as main()'s own default, just
+    # surfaced here so the menu can show WHERE that resume point is
+    # before asking the learner to commit to it.
+    resume_info = quiz.start_lesson()
+    has_progress = quiz.progress.get("total_questions_answered", 0) > 0
+    resume_label = "Continue" if has_progress else "Start"
+
+    print(f"{styled('📚 Where to?', BOLD)}")
+    print(f"   {styled('[Enter]', CYAN)} {resume_label} — Lesson {resume_info['id']}: {resume_info['title']}")
+    print(f"   {styled('[a]', CYAN)}     Alphabet Walkthrough — meet all 24 letters first")
+    print(f"   {styled('[l]', CYAN)}     Lesson list — pick any lesson")
+    print(f"   {styled('[q]', CYAN)}     Quit")
+
+    try:
+        choice = input(f"\n{styled('>', BOLD)} ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        choice = "q"
+
+    if choice == "q":
+        print(f"\n{styled('👋 안녕히 가세요! (Goodbye!)', GREEN)}")
+        sys.exit(0)
+    if choice == "a":
+        run_alphabet_intro(quiz)
+        return _offer_lesson_picker(quiz)
+    if choice == "l":
+        return _offer_lesson_picker(quiz)
+    return resume_info
+
+
 def print_lesson_intro(introduction: str = "", note: str = ""):
     """Print a lesson's 'introduction' and/or 'note' text, if it has any.
     These carry real teaching content (e.g. the ㅇ-placeholder rule) that
@@ -232,12 +596,14 @@ def print_lesson_intro(introduction: str = "", note: str = ""):
 
 def print_reference_table(lesson: dict):
     """Print a full reference table for the lesson's letters/content before
-    quizzing starts, so the learner sees every pronunciation (and stroke
-    order, where available) up front instead of picking it up one mnemonic
-    at a time. Picks whichever kind of reference data the lesson actually
-    has: per-letter pronunciation, batchim rules, or vocabulary."""
+    quizzing starts, so the learner sees every pronunciation up front
+    instead of picking it up one mnemonic at a time. Picks whichever kind
+    of reference data the lesson actually has: per-letter pronunciation,
+    batchim rules, or vocabulary. Stroke order is intentionally NOT shown
+    here — it's covered visually by the /alphabet and /intro animations,
+    and as text it was judged unnecessary clutter for this app's actual
+    purpose (letter recognition, not calligraphy)."""
     pronunciation = lesson.get("pronunciation") or {}
-    stroke_order = lesson.get("stroke_order") or {}
     batchim_pron = lesson.get("batchim_pronunciation") or {}
     batchim_rules = lesson.get("batchim_pronunciation_rules") or {}
     vocabulary = lesson.get("vocabulary") or []
@@ -248,13 +614,13 @@ def print_reference_table(lesson: dict):
         print(f"\n{styled('📋 Reference Table', BOLD, CYAN)}")
         for letter in lesson.get("letters", []):
             pron = pronunciation.get(letter, "")
-            strokes = stroke_order.get(letter, [])
             code = letter_romanization.get(letter, "")
             code_str = f" ({code})" if code else ""
             line = f"   {styled(letter, BOLD)}{code_str}  —  {pron}"
             print(line)
-            if strokes:
-                print(f"        Stroke order: {' → '.join(strokes)}")
+            quirk = POSITIONAL_QUIRKS.get(letter, "")
+            if quirk:
+                print(f"        {styled('⚡ ' + quirk, BOLD, YELLOW)}")
     elif batchim_pron:
         print(f"\n{styled('📋 Batchim Reference Table', BOLD, CYAN)}")
         for letter, pron in batchim_pron.items():
@@ -290,6 +656,61 @@ def print_romanization_key(quiz: HangulQuiz):
     print("   " + "   ".join(f"{l}={table[l]}" for l in vowels if l in table))
     print(f"   {styled('Batchim (final consonant):', BOLD)} appended after a dash using the")
     print(f"   same consonant codes above — e.g. 각 (ㄱ+ㅏ+ㄱ batchim) romanizes as 'ga-g'.")
+
+def run_beginner_intro(quiz: HangulQuiz, lesson: dict):
+    """Walk through the current lesson's letters one at a time — letter,
+    romanization, pronunciation, stroke order — at the learner's own pace.
+    After each letter, a single prompt covers both use cases: press Enter
+    to just move on (pure browsing), or type the romanization to try it
+    right there (untimed, not scored, no streak/progress impact — this is
+    a warm-up, not a quiz). Separate from print_reference_table, which
+    stays as a quick all-at-once lookup; this is the slower, guided
+    first-pass version for true beginners."""
+    letters = lesson.get("letters", [])
+    if not letters:
+        print(f"\n{styled('This lesson has no individual letters to walk through — try /table instead.', YELLOW)}")
+        return
+
+    pronunciation = lesson.get("pronunciation") or {}
+    letter_romanization = lesson.get("letter_romanization") or {}
+    roman_table = quiz.get_romanization_table()
+
+    print(f"\n{styled('🐣 Beginner Walkthrough', BOLD, GREEN)} — {len(letters)} letter(s) in this lesson")
+    print(f"{styled('Press Enter to move on, or type the romanization to try it. Type /skip to end early.', CYAN)}")
+
+    for i, letter in enumerate(letters, start=1):
+        roman = letter_romanization.get(letter) or roman_table.get(letter, "")
+        pron = pronunciation.get(letter, "")
+
+        print(f"\n{styled(f'Letter {i} of {len(letters)}', BOLD)}\n")
+        animate_letter_strokes(letter)
+        print(f"\n      {styled(letter, BOLD, CYAN)}")
+        if roman:
+            print(f"      romanizes as: {styled(roman, BOLD)}")
+        quirk = POSITIONAL_QUIRKS.get(letter, "")
+        if quirk:
+            print(f"      {styled('⚡ ' + quirk, BOLD, YELLOW)}")
+        if pron:
+            print(f"      sounds like: {pron}")
+
+        try:
+            response = input(f"\n{styled('[Enter=next, or type romanization]', CYAN)} {styled('>', BOLD)} ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print(f"\n{styled('Walkthrough ended early.', YELLOW)}")
+            return
+
+        if response.lower() in ('/skip', 'skip'):
+            print(f"{styled('Walkthrough ended early.', YELLOW)}")
+            return
+        if response:
+            if response.lower() == roman.lower():
+                print(f"   {styled('✅ Correct!', GREEN)}")
+            else:
+                msg = f'Not quite — {letter} is "{roman}".'
+                print(f"   {styled(msg, YELLOW)} (This one's just for practice, no score kept.)")
+
+    print(f"\n{styled('🐣 Walkthrough complete!', GREEN)} Type /table for a quick-reference recap anytime, or just answer the next question to start quizzing.")
+
 
 def print_question(q: QuizQuestion):
     """Display a question with styling."""
@@ -330,7 +751,7 @@ MODE_ALIASES = {
 KNOWN_ACTIONS = {
     'q', 'quit', 'exit', 'help', 'roman', 'romanize', 'romanization',
     'stats', 'lessons', 'lesson', 'mode', 'mnemonic', 'talk', 'template',
-    'konglish', 'kspell', 'hint', 'skip',
+    'konglish', 'kspell', 'hint', 'skip', 'intro', 'table', 'alphabet',
 }
 
 def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
@@ -387,7 +808,7 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
                 # is a blocking Ollama call — say so before it runs, or the
                 # terminal looks frozen (no prompt, no commands work) for
                 # however long the model takes to respond.
-                known = [l for l, v in quiz.progress.get("mastered_letters", {}).items() if v >= 3]
+                known = quiz.get_mastered_syllables(min_confidence=3)
                 if len(known) >= 3:
                     print(f"\n{styled('📖 Building a sentence from what you know...', YELLOW)}")
                     sentence = generate_mini_sentence(known, quiz)
@@ -437,6 +858,9 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
   {styled('/lessons', CYAN)}  — List all lessons
   {styled('/lesson N', CYAN)} — Jump to lesson N
   {styled('/mode NAME', CYAN)}— Lock quiz mode (spell, read, match, build, vowel, batchim, confusion, auto)
+  {styled('/alphabet', CYAN)} — Walk through all 24 basic letters, consonants then vowels
+  {styled('/intro', CYAN)}    — Walk through this lesson's letters one at a time (true-beginner mode)
+  {styled('/table', CYAN)}    — Show this lesson's reference table again
   {styled('/roman', CYAN)}    — Show the full romanization key (what "read aloud" grades you against)
   {styled('/mnemonic X', CYAN)}— Get a mnemonic for letter X
   {styled('/talk', CYAN)}     — Try reading a Korean sentence (uses your mastered syllables)
@@ -474,6 +898,12 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
                     print(f"   {info['description']}")
                     print_lesson_intro(info.get('introduction', ''), info.get('note', ''))
                     print_reference_table(info)
+                    # Keep the loop's 'lesson' variable in sync — previously
+                    # only the local 'info' was updated here, so /intro and
+                    # /table (which both read the outer 'lesson' var) would
+                    # keep showing whichever lesson was active at the start
+                    # of the session, not the one just jumped to.
+                    lesson = info
                     # Previously this didn't touch current_question, so
                     # jumping lessons left one leftover question from
                     # whatever lesson/mode was active before — mismatched
@@ -481,6 +911,15 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
                     current_question = None
                 except (ValueError, IndexError):
                     print(f"{styled('Invalid lesson number', RED)}")
+
+            elif action == 'intro':
+                run_beginner_intro(quiz, lesson)
+
+            elif action == 'alphabet':
+                run_alphabet_intro(quiz)
+
+            elif action == 'table':
+                print_reference_table(lesson)
 
             elif action == 'mode':
                 choice = cmd[1].lower() if len(cmd) > 1 else ""
@@ -523,7 +962,7 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
                     print(f"   {styled('Not enough syllables mastered yet — keep practicing!', YELLOW)}")
 
             elif action == 'template':
-                mastered = [s for s, v in quiz.progress.get("mastered_letters", {}).items() if v >= 3]
+                mastered = quiz.get_mastered_syllables(min_confidence=3)
                 turn = build_template_sentence(mastered, quiz)
                 print(f"\n{styled('📋 Read this Korean:', CYAN)}")
                 print(f"   {styled(turn['korean'], BOLD)}")
@@ -663,9 +1102,19 @@ def main():
         print(mnemonic)
         return
 
-    # Start quiz
+    # --lesson N is a direct power-user jump — skips the title/menu
+    # entirely and goes straight to that lesson, same as before. With no
+    # --lesson given, show_start_menu() handles both the fresh-profile
+    # and returning-user cases: title screen, then a menu with resume as
+    # the one-keystroke default (start_lesson(None) under the hood, same
+    # resume-from-progress logic as always) alongside the alphabet
+    # walkthrough and lesson list as visible, no-slash-command-needed
+    # options — not just a first-run-only prompt.
     quiz = HangulQuiz()
-    lesson_info = quiz.start_lesson(args.lesson or 1)
+    if args.lesson:
+        lesson_info = quiz.start_lesson(args.lesson)
+    else:
+        lesson_info = show_start_menu(quiz)
     interactive_loop(quiz, args, lesson_info)
 
 

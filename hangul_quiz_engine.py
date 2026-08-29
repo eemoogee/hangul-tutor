@@ -60,6 +60,14 @@ class QuizResult:
 
 _JAMO_CHARS = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ"
 
+# Bare vowel jamo can never stand alone in written Korean — they always
+# take the silent ㅇ placeholder (ㅏ -> 아). A bare jamo and its placeholder-
+# composed form are the SAME vowel, not two different letters, so anywhere
+# an answer is graded or a confusion pair is tracked, both forms need to
+# normalize to one before comparison. Single source of truth for that set,
+# used by HangulQuiz._compose_bare_vowel.
+_VOWEL_JAMO = "ㅏㅓㅗㅜㅡㅣㅑㅕㅛㅠㅐㅔㅒㅖㅘㅙㅚㅝㅞㅟㅢ"
+
 
 def _looks_like_hangul_target(s: str) -> bool:
     """True if s is a single Hangul syllable block or jamo letter — the
@@ -510,10 +518,8 @@ class HangulQuiz:
         # compose them with the silent ㅇ placeholder before ever showing
         # or requiring one as an answer (e.g. ㅓ vs ㅗ becomes 어 vs 오).
         # Consonants stay bare, since naming a consonant letter on its own
-        # is correct as-is.
-        VOWELS = "ㅏㅓㅗㅜㅡㅣㅑㅕㅛㅠㅐㅔㅒㅖㅘㅙㅚㅝㅞㅟㅢ"
-        def compose(s):
-            return self._letter_to_syllable(s) if s in VOWELS else s
+        # is correct as-is. See _compose_bare_vowel for the shared rule.
+        compose = self._compose_bare_vowel
 
         def is_lesson_relevant(pa: str, pb: str) -> bool:
             return (self._lesson_relevant(pa, self.current_lesson)
@@ -602,6 +608,21 @@ class HangulQuiz:
         user_clean = self.resolve_choice(user_input.strip(), question.choices)
         expected = question.correct_answer
 
+        # A bare vowel jamo and its silent-ㅇ-composed form are the same
+        # vowel (see _compose_bare_vowel) — normalize both sides before
+        # grading so typing 'ㅏ' when 아 is expected (or the reverse)
+        # counts as correct. Skipped for read_aloud, whose 'expected' is
+        # a romanization string like 'eo', not Hangul at all. ALSO
+        # skipped for missing_vowel: that mode's correct_answer and
+        # choices are deliberately bare vowel jamo representing a
+        # COMPONENT of a larger consonant+vowel+batchim formula (e.g.
+        # 'ㄱ + ? = guk'), never a free-standing composed syllable —
+        # composing 'ㅜ' into '우' here would show a "correct" answer
+        # that was never actually one of the options on screen.
+        if question.mode not in ("read_aloud", "missing_vowel"):
+            user_clean = self._compose_bare_vowel(user_clean)
+            expected = self._compose_bare_vowel(expected)
+
         is_correct = False
         feedback = ""
 
@@ -666,12 +687,34 @@ class HangulQuiz:
 
     # ── Progress & stats ──────────────────────────────────────────────
 
+    def get_mastered_syllables(self, min_confidence: int = 3) -> list[str]:
+        """Mastered letters/syllables at or above min_confidence, filtered
+        to valid single-Hangul-character keys — the same defensive check
+        get_progress_summary applies. Public so hangul_cli.py (which feeds
+        this into sentence generation) doesn't need to read
+        quiz.progress['mastered_letters'] raw and risk passing a stale
+        invalid key (e.g. the historical 'wrong' entry) into code that
+        expects an actual syllable, like has_real_consonant/
+        _decompose_syllable."""
+        return [k for k, v in self.progress.get("mastered_letters", {}).items()
+                if v >= min_confidence and _looks_like_hangul_target(k)]
+
     def get_progress_summary(self) -> dict:
+        # Defensively filter to valid single-Hangul-character keys only —
+        # same principle as _top_confusions/_confusion_drill_question re-
+        # validating old confusion pairs. mastered_letters had no such
+        # guard, so a stale invalid key from an already-fixed bug (e.g. a
+        # literal "wrong" from an old code path) could still inflate these
+        # counts if it ever reached >=3, even with no current way to write
+        # one. This makes the read side safe regardless of what's already
+        # sitting in a given user's saved progress file.
+        valid_mastered = {k: v for k, v in self.progress.get("mastered_letters", {}).items()
+                           if _looks_like_hangul_target(k)}
         return {
             "current_lesson": self.progress["current_lesson"],
             "completed_lessons": self.progress["completed_lessons"],
-            "mastered_count": sum(1 for v in self.progress.get("mastered_letters", {}).values() if v >= 3),
-            "total_mastered": len(self.progress.get("mastered_letters", {})),
+            "mastered_count": sum(1 for v in valid_mastered.values() if v >= 3),
+            "total_mastered": len(valid_mastered),
             "session_streak": self.session_streak,
             "session_score": f"{self.session_correct}/{self.session_total}",
             "session_pct": round(100 * self.session_correct / max(1, self.session_total)),
@@ -681,13 +724,32 @@ class HangulQuiz:
 
     def _top_confusions(self, n: int = 5) -> list:
         counts = self.progress.get("confusion_counts", {})
-        valid = {}
+
+        # See _compose_bare_vowel for why this normalization is needed
+        # before comparing or displaying pairs — a bare vowel jamo and its
+        # placeholder-composed form (ㅏ vs 아) are the same vowel, and
+        # without this, pairs like 'ㅏ↔아' showed up in "Practice these"
+        # as fake confusions.
+        compose = self._compose_bare_vowel
+
+        # Merge by unordered pair so 'a↔b' and 'b↔a' (or two raw keys that
+        # normalize to the same pair once composed) count as one entry
+        # rather than splitting the same confusion across display rows.
+        merged = {}
         for k, v in counts.items():
             parts = k.split("↔")
-            if len(parts) == 2 and all(_looks_like_hangul_target(p) for p in parts):
-                valid[k] = v
-        sorted_pairs = sorted(valid.items(), key=lambda x: -x[1])[:n]
-        return [{"pair": k, "count": v} for k, v in sorted_pairs]
+            if len(parts) != 2 or not all(_looks_like_hangul_target(p) for p in parts):
+                continue
+            pa, pb = compose(parts[0]), compose(parts[1])
+            if pa == pb:
+                continue  # degenerate — same vowel, different written form
+            key = frozenset((pa, pb))
+            if key not in merged:
+                merged[key] = [pa, pb, 0]
+            merged[key][2] += v
+
+        sorted_pairs = sorted(merged.values(), key=lambda x: -x[2])[:n]
+        return [{"pair": f"{pa}↔{pb}", "count": v} for pa, pb, v in sorted_pairs]
 
     def complete_lesson(self):
         """Mark the current lesson as completed."""
@@ -701,6 +763,19 @@ class HangulQuiz:
         return "No active lesson."
 
     # ── Helpers ────────────────────────────────────────────────────────
+
+    def _compose_bare_vowel(self, s: str) -> str:
+        """Normalize a bare vowel jamo to its silent-ㅇ-composed syllable
+        form (ㅏ -> 아); anything else (consonants, already-composed
+        syllables, multi-char strings) passes through unchanged. Single
+        source of truth for this — used when GRADING an answer (answer()),
+        when picking a confusion-drill pair (_confusion_drill_question),
+        and when summarizing confusion stats (_top_confusions) — so a
+        learner typing 'ㅏ' where 아 is expected is treated as the same
+        vowel everywhere in the app, not a wrong answer or a fake
+        confusion between two 'different' letters in some call sites and
+        not others."""
+        return self._letter_to_syllable(s) if s in _VOWEL_JAMO else s
 
     def _letter_to_syllable(self, letter: str) -> str:
         """Combine a letter with a default vowel/consonant to make a full syllable block."""

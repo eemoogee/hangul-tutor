@@ -279,7 +279,10 @@ def _ask_h2r(target, info, progress):
 
     try:
         answer = input().strip()
-    except (EOFError, KeyboardInterrupt):
+    except KeyboardInterrupt:
+        print()
+        raise SystemExit(0)
+    except EOFError:
         print()
         return False
 
@@ -321,7 +324,10 @@ def _ask_r2h(target, info, pool, confusion_counts, progress):
 
     try:
         answer = input().strip()
-    except (EOFError, KeyboardInterrupt):
+    except KeyboardInterrupt:
+        print()
+        raise SystemExit(0)
+    except EOFError:
         print()
         return False
 
