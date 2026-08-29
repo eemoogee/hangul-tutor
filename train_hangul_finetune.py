@@ -26,16 +26,14 @@ Usage:
     python train_hangul_finetune.py --dry-run  # load model + dataset, show one
                                                # tokenized sample, then exit
 
-NOTE (batchim): native (no-RAG) recall of "batchim" fails on the 1.5B base
-model at <=2 epochs regardless of phrasing or example weighting (datasets
-v2-v5 all failed the no-RAG eval); a raw 7B (qwen2.5:7b) also hallucinates
-"batchim" (it knows 받침, not the romanization). Scale alone does not fix
-native recall. RAG injection (rag_facts.py) is the production fix, and the
-right hardening is to key the concept on 받침 rather than "batchim".
-
-v6 adds 받침 question variants (native-script trigger) plus a WeightedRandomSampler
-(weight 2.0 on batchim pairs) — one more training-time attempt at native recall,
-with RAG remaining the fallback.
+NOTE (batchim): v6 achieved native (no-RAG) recall of both "batchim" and
+"받침" on the 1.5B base via two combined changes — a WeightedRandomSampler at
+2.0x (~29% effective batchim coverage) plus 받침 as a training-time question
+trigger. Datasets v2-v5 all failed no-RAG, and a raw 7B (qwen2.5:7b) still
+hallucinates "batchim" (it knows 받침, not the romanization); scale alone does
+not solve it — the romanization fix required the native-script alias in the
+training data. RAG injection (rag_facts.py) remains available and correct as
+an independent path.
 """
 
 from unsloth import FastLanguageModel  # MUST be imported first — patches transformers/peft at import time
