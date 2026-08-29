@@ -67,7 +67,7 @@ PER_DEVICE_BATCH_SIZE = 2
 GRADIENT_ACCUMULATION_STEPS = 4   # effective batch size = 2 * 4 = 8
 NUM_EPOCHS = 1
 LEARNING_RATE = 1e-4
-WARMUP_STEPS = 3  # 0.1 * ceil(252/8) * 1 epoch = 0.1 * 32 = 3.2 → 3
+WARMUP_STEPS = 3  # 0.1 * ceil(276/8) * 1 epoch = 0.1 * 35 = 3.5 → 3
 LR_SCHEDULER_TYPE = "cosine"
 SEED = 42
 
