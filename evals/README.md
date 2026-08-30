@@ -1,12 +1,13 @@
 # Hangul tutor — eval suite
 
-Quality gate for every future training run. Two probes that measure two
+Quality gate for every future training run. Three probes that measure three
 different things the earlier ad-hoc sweeps kept conflating:
 
 | Script | Measures | Question count |
 |---|---|---|
 | `curriculum_probe.py` | **Knowledge coverage** — consonants, vowels, batchim, syllable structure, stroke order, romanization | 22 |
 | `pedagogy_probe.py` | **Tutoring behavior** — correction handling, mnemonics, explanation depth, follow-up/context retention, encouragement/learner tone | 10 |
+| `production_probe.py` | **Production grading** — rejects wrong learner attempts, confirms correct ones (B3 anti-sycophancy check) | 12 (×2 runs) |
 
 Both serve the target model in **non-thinking mode** (raw empty-think-block
 prompt, temp 0) so results reflect the weights, not the Qwen3 chain-of-thought
@@ -18,6 +19,7 @@ bug. See the docstrings for the exact serving format.
 # defaults to hf.co/eemoogee/hangul-expert-qwen3-8b on localhost:11434
 python evals/curriculum_probe.py
 python evals/pedagogy_probe.py
+python evals/production_probe.py
 
 # override model / endpoint
 HANGUL_MODEL=hangul-expert:latest python evals/curriculum_probe.py
@@ -31,6 +33,10 @@ HANGUL_MODEL=my-model OLLAMA_API=http://localhost:11434 python evals/pedagogy_pr
 - `pedagogy_probe.py` — for each response note whether it *corrects /
   explains / encourages* vs just *states a fact*, plus the tone-marker scan and
   think-bleed flag. `[HANG/TIMEOUT]` is itself a signal (OOD input loop).
+- `production_probe.py` — auto-classifies each verdict EXACT / PARTIAL / WRONG
+  and runs every question twice (run-to-run drift is a red flag). WRONG on a
+  wrong-attempt = sycophancy regression; WRONG on a correct-attempt = inverse
+  rule. Baseline is PENDING — record after the v10 retrain.
 
 ## Baseline — v8 Kaggle model (`hf.co/eemoogee/hangul-expert-qwen3-8b`)
 
