@@ -1,0 +1,22 @@
+FROM hf.co/eemoogee/hangul-expert-qwen3-8b
+
+# CORRECT non-thinking serving template for Qwen3.
+#
+# The non-thinking signal is NOT "no think tokens" — it is the EMPTY, PRE-CLOSED
+# <think> block: "<|im_start|>assistant\n<think>\n\n</think>\n\n" (this is what
+# enable_thinking=False renders). A bare "<|im_start|>assistant\n" is Qwen3's
+# THINKING-mode prompt, so a plain template (no think block) still lets the CoT
+# prior fire. Verified: this template gives zero <think> bleed on the v8 weights.
+TEMPLATE """{{ if .System }}<|im_start|>system
+{{ .System }}<|im_end|>
+{{ end }}{{ if .Prompt }}<|im_start|>user
+{{ .Prompt }}<|im_end|>
+{{ end }}<|im_start|>assistant
+<think>
+
+</think>
+
+"""
+
+PARAMETER stop "<|im_start|>"
+PARAMETER stop "<|im_end|>"
