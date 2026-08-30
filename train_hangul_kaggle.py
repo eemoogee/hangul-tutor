@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Train a QLoRA adapter on the Hangul dataset (294 Q&A pairs) and export a GGUF
+Train a QLoRA adapter on the Hangul dataset (302 Q&A pairs) and export a GGUF
 model for local inference. Kaggle/Linux adaptation of train_hangul_finetune.py
 — same dataset and training recipe, re-targeted at Qwen3-8B on a
 Kaggle T4 x2 (16 GB) GPU.
@@ -68,7 +68,7 @@ BASE_DIR = Path(__file__).resolve().parent
 # plain repo (load_in_4bit=True quantizes on load with fp16 compute).
 MODEL_NAME = "Qwen/Qwen3-8B"
 
-DEFAULT_DATASET = BASE_DIR / "hangul_finetune_v6.jsonl"
+DEFAULT_DATASET = BASE_DIR / "hangul_finetune_v8.jsonl"
 CHECKPOINT_DIR = BASE_DIR / "outputs"                 # trainer logs + adapter checkpoints
 GGUF_OUTPUT_DIR = BASE_DIR / "hangul_expert_model"    # final merged model + GGUF
 
@@ -91,7 +91,7 @@ PER_DEVICE_BATCH_SIZE = 2
 GRADIENT_ACCUMULATION_STEPS = 4   # effective batch size = 2 * 4 = 8
 NUM_EPOCHS = 2
 LEARNING_RATE = 1e-4
-WARMUP_STEPS = 8  # ceil(0.1 * ceil(294/8) * 2) = ceil(0.1 * 37 * 2) = ceil(7.4) = 8
+WARMUP_STEPS = 8  # ceil(0.1 * ceil(302/8) * 2) = ceil(0.1 * 38 * 2) = ceil(7.6) = 8
 LR_SCHEDULER_TYPE = "cosine"
 SEED = 42
 
@@ -260,18 +260,22 @@ def main() -> None:
         load_in_4bit=True,
     )
 
-    # Qwen3 defaults to chain-of-thought ("thinking") output: the chat template
-    # has enable_thinking=True by default, and neither Unsloth's from_pretrained
-    # nor TRL's SFTTrainer disables it (SFTTrainer calls apply_chat_template
-    # without enable_thinking=False). Force the template to render the
-    # non-thinking form — a pre-closed, empty <think> block — so the training
-    # data is formatted consistently AND the exported GGUF answers directly with
-    # no CoT preamble. (Verified against Qwen/Qwen3-8B's tokenizer_config.json:
-    # with thinking ON the generation prompt ends at "<|im_start|>assistant\n"
-    # and the model opens a <think> block itself; with this patch it ends at
-    # "<|im_start|>assistant\n<think>\n\n</think>\n\n", which matches the
-    # completion's rendering and fixes the completion_only_loss boundary.)
-    tokenizer.chat_template = "{%- set enable_thinking = false -%}\n" + tokenizer.chat_template
+    # Qwen3 defaults to chain-of-thought ("thinking") output. Setting
+    # enable_thinking=false only changes the GENERATION PROMPT; the assistant-turn
+    # branch still renders <think>\n\n</think>\n\n before the answer (its
+    # `loop.last` clause is unconditional), so training completions still carry
+    # think tokens and the model never unlearns CoT — producing an infinite
+    # <think> loop at inference (~23% hang rate observed). Fix: replace the
+    # template with a PLAIN ChatML template that renders ZERO think tokens in both
+    # prompt and completion, so the model learns to answer directly and the
+    # completion_only_loss boundary is clean. This must match the serving
+    # Modelfile (plain, no think block).
+    tokenizer.chat_template = (
+        "{%- for message in messages %}"
+        "{{- '<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>\n' }}"
+        "{%- endfor %}"
+        "{%- if add_generation_prompt %}{{- '<|im_start|>assistant\n' }}{%- endif %}"
+    )
 
     # 3. Attach LoRA adapters ------------------------------------------------
     model = FastLanguageModel.get_peft_model(

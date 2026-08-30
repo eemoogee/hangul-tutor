@@ -1,0 +1,8 @@
+{"messages": [{"role": "user", "content": "How many basic consonants does Hangul have?"}, {"role": "assistant", "content": "Hangul has 14 basic consonants."}]}
+{"messages": [{"role": "user", "content": "How many basic vowels does Hangul have?"}, {"role": "assistant", "content": "Hangul has 10 basic vowels."}]}
+{"messages": [{"role": "user", "content": "How many letters does Hangul have?"}, {"role": "assistant", "content": "Hangul has 24 basic letters: 14 consonants and 10 vowels."}]}
+{"messages": [{"role": "user", "content": "What is a syllable block in Hangul?"}, {"role": "assistant", "content": "A syllable block is a Korean syllable written as one block with an initial consonant, a vowel, and an optional final consonant called batchim."}]}
+{"messages": [{"role": "user", "content": "What are the basic Hangul consonants?"}, {"role": "assistant", "content": "The 14 basic consonants are ㄱ, ㄴ, ㄷ, ㄹ, ㅁ, ㅂ, ㅅ, ㅇ, ㅈ, ㅊ, ㅋ, ㅌ, ㅍ, and ㅎ."}]}
+{"messages": [{"role": "user", "content": "What are the basic Hangul vowels?"}, {"role": "assistant", "content": "The 10 basic vowels are ㅏ, ㅑ, ㅓ, ㅕ, ㅗ, ㅛ, ㅜ, ㅠ, ㅡ, and ㅣ."}]}
+{"messages": [{"role": "user", "content": "How many consonants and vowels does Hangul have?"}, {"role": "assistant", "content": "Hangul has 14 consonants and 10 vowels."}]}
+{"messages": [{"role": "user", "content": "How many letters make up the Korean alphabet?"}, {"role": "assistant", "content": "The Korean alphabet has 24 basic letters."}]}
