@@ -1,1 +1,4 @@
+# Canonical serving Modelfile for the LOCAL GGUF build (Qwen2.5-1.5B).
+# Qwen2.5 has no Qwen3 chain-of-thought bug, so a bare template is correct here.
+# For the 8B (Qwen3, served from HF), use Modelfile.nothink (empty-think-block).
 FROM ./hangul_expert_model/hangul_expert-q4_k_m.gguf
