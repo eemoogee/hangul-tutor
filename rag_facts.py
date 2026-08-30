@@ -33,6 +33,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 CONCEPT_FACTS = {
     "batchim": "Batchim is the optional final consonant that sits at the bottom of a Korean syllable.",
     "batchim_optional": "Not every syllable has a batchim; 아 has none, but 안 does (the ㄴ at the bottom).",
+    "batchim_sounds": "In spoken Korean, batchim consonants reduce to just 7 distinct sounds even though more consonants can be written in the batchim position. For example, ㄱ, ㅋ, and ㄲ all sound the same as a batchim: an unreleased stop made without a burst of air.",
+    "gieok_batchim": "When ㄱ is a batchim, it is an unreleased stop: the tongue moves into position for ㄱ but the sound is not released with a burst of air.",
+    "letter_count": "Hangul has 24 basic letters: 14 consonants and 10 vowels. A higher count of 40 (19 consonants and 21 vowels) includes tense consonants like ㄲ and ㅆ and compound vowels like ㅐ and ㅘ.",
     "syllable_blocks": "Korean syllables are written in blocks. Each block has an initial consonant, a vowel, and an optional final consonant called batchim. For example: 한 = ㅎ + ㅏ + ㄴ.",
     "ieung_silent": "ㅇ is silent at the start of a syllable — it is just a placeholder so the vowel has somewhere to attach.",
     "ieung_ng": "ㅇ makes an 'ng' sound at the end of a syllable, like the end of 'song'.",
@@ -100,13 +103,21 @@ _BATCHIM_HINTS = ("batchim", "받침", "final consonant", "bottom of")  # "받�
 def get_relevant_facts(question: str) -> list[str]:
     """Return relevant fact strings (max 3; 5 when 2+ basic letters present)."""
     facts = []
+    q_low = question.lower()
 
     if any(k in question for k in _BATCHIM_HINTS):
+        if "ㄱ" in question:
+            facts.append(CONCEPT_FACTS["gieok_batchim"])
+        facts.append(CONCEPT_FACTS["batchim_sounds"])
         facts.append(CONCEPT_FACTS["batchim"])
         facts.append(CONCEPT_FACTS["batchim_optional"])
 
     if "syllable block" in question:
         facts.append(CONCEPT_FACTS["syllable_blocks"])
+
+    if any(k in q_low for k in ("how many", "number of", "total")):
+        if any(w in q_low for w in ("letter", "consonant", "vowel", "alphabet")):
+            facts.append(CONCEPT_FACTS["letter_count"])
 
     if "ㅇ" in question:
         facts.append(CONCEPT_FACTS["ieung_silent"])
