@@ -177,7 +177,8 @@ def transform_to_prompt_completion(dataset: Dataset) -> Dataset:
     """Split each `messages` record into `prompt` + `completion` columns for
     Unsloth's native `completion_only_loss` path.
 
-    `prompt` holds the system + user turns (everything before the answer);
+    `prompt` holds the user turns (this dataset has no system message — everything
+    before the answer);
     `completion` holds the assistant turns. The trainer masks every prompt
     token, so we train only on the assistant's answer.
     """
