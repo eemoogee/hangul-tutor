@@ -3,13 +3,13 @@ name: hangul-finetune-roadmap
 description: "Forward roadmap for the Hangul fine-tuning dataset — production/practice layer, question variety, and per-batch eval hooks."
 ---
 
-# Hangul Fine-tuning Roadmap (post-v9)
+# Hangul Fine-tuning Roadmap (post-v10)
 
-Current position: `hangul_finetune_v9.jsonl` = **327 pairs** (v8 302 + 25 correction/confirmation).
-The entire dataset is **declarative/conceptual Q→A** — the model only ever learned to *emit facts*, never
-to *judge a learner's output*. The app already runs production through five quiz modes
-(`spell`, `build_syllable`, `missing_vowel`, `batchim_challenge`, `confusion_drill`), and **none of that
-interaction is represented in training data**.
+Current position: `hangul_finetune_v10.jsonl` = **380 pairs** (v9 327 + B3 53: 18 pilot + 35 expansion).
+Through v9, the dataset was **declarative/conceptual Q→A** — the model only ever learned to *emit facts*, never
+to *judge a learner's output*, even though the app runs production through five quiz modes
+(`spell`, `build_syllable`, `missing_vowel`, `batchim_challenge`, `confusion_drill`). B3 (v10) added the
+production/practice layer to close that gap.
 
 Guiding rule: every batch is defined by **purpose → training-representation goal → eval hook**. No batch
 means "add more pairs about X" without a probe that verifies the gap actually closed. This is the lesson
