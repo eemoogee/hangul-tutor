@@ -68,6 +68,25 @@ _JAMO_CHARS = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎㅏㅐ�
 # used by HangulQuiz._compose_bare_vowel.
 _VOWEL_JAMO = "ㅏㅓㅗㅜㅡㅣㅑㅕㅛㅠㅐㅔㅒㅖㅘㅙㅚㅝㅞㅟㅢ"
 
+# Compound vowels occupy a single jungseong slot but are built from two
+# component jamo. This map is the verified source for component-level
+# descriptions (e.g. ㅘ = ㅗ + ㅏ), so dataset pairs never hand-derive the
+# split. TRAPS: ㅙ → ㅗ + ㅐ (NOT ㅗ + ㅣ, which is ㅚ), and ㅘ → ㅗ + ㅏ
+# (NOT ㅜ + ㅓ, which is ㅝ). Used by the B3 production dataset generator.
+COMPOUND_COMPONENTS = {
+    "ㅐ": ("ㅏ", "ㅣ"),
+    "ㅒ": ("ㅑ", "ㅣ"),
+    "ㅔ": ("ㅓ", "ㅣ"),
+    "ㅖ": ("ㅕ", "ㅣ"),
+    "ㅘ": ("ㅗ", "ㅏ"),
+    "ㅙ": ("ㅗ", "ㅐ"),
+    "ㅚ": ("ㅗ", "ㅣ"),
+    "ㅝ": ("ㅜ", "ㅓ"),
+    "ㅞ": ("ㅜ", "ㅔ"),
+    "ㅟ": ("ㅜ", "ㅣ"),
+    "ㅢ": ("ㅡ", "ㅣ"),
+}
+
 
 def _looks_like_hangul_target(s: str) -> bool:
     """True if s is a single Hangul syllable block or jamo letter — the
