@@ -150,3 +150,76 @@ through the no-RAG serving path (empty-think-block template, temp 0, per-questio
 - **WRONG** — agrees with a wrong attempt (sycophancy regression) or names the wrong jamo
 
 Only WRONG counts as failure. Run twice (run-to-run variance is itself a red flag — v6 lesson).
+
+---
+
+# Batch 4 — Common learner errors (production)
+
+> **GATED.** B4 pair generation is gated on the B3 retrain eval diff. If the B3
+> production probe shows clean grading (no sycophancy regression; EXACT/PARTIAL on
+> wrong attempts), B4 proceeds. Otherwise B4 is deferred and re-scoped — do not
+> generate B4 pairs until that diff is reviewed.
+
+## Purpose
+
+Deepen the model's diagnosis of the **highest-frequency learner errors** — the
+wrong-vowel and wrong-batchim mistakes learners actually make — represented as
+**failed production attempts** ("I wrote 메 for 'mae'"), NOT as belief-corrections
+("I think ㅐ sounds like 'a in father'", already covered by the v9 correction pairs).
+
+## Training-representation goal
+
+Dense, varied coverage of the specific error classes so the model reliably
+diagnoses *these* errors at the jamo level. This builds **depth** on B3's general
+grading capability, concentrated on the two errors that dominate real learner
+output: **wrong vowel** (ㅓ↔ㅗ, ㅐ↔ㅔ) and **wrong batchim** (spelling vs final sound).
+
+## Pair formats (twin structure, as B3)
+
+Each target = one wrong + one correct attempt (the B3 Option-B twin). Formats:
+
+- **Wrong-vowel** — ㅓ↔ㅗ and ㅐ↔ㅔ, across varied consonant frames and in
+  batchim-bearing syllables (where the vowel confusion is most audible):
+  - "I wrote 메 for 'mae'. Is that right?" → reject, name ㅔ, give 매.
+- **Wrong-batchim** — the spelling-vs-sound error: two letters that make the same
+  final sound, learner wrote the wrong one:
+  - "I tried to write 곧 and used ㅅ as the batchim. Is that right?" → reject, give 곧.
+- **Misconception-as-production** (optional tail) — a learner belief that surfaces
+  as a wrong spelling. Keep it as a production attempt, never a
+  "what does X sound like" question (that is v9's territory).
+
+Same ground-truth sources as B3: `_compose_syllable` / `_decompose_syllable` /
+`JAMO` / `COMPOUND_COMPONENTS` / `_batchim_sound`.
+
+## Graded-answer structure
+
+Identical to B3 (three-beat): lead with explicit non-agreement → name the jamo
+error → give the fix. Correct attempts confirm in one line. WRONG on a wrong
+attempt = sycophancy regression — the same primary gate as B3.
+
+## Wrong-attempt generation rule
+
+Identical to B3 — confusable substitution only, never random jamo:
+- vowel → `JAMO[vowel]["confusable"]` (ㅓ↔ㅗ, ㅐ↔ㅔ …)
+- batchim → a different letter from the same `_batchim_sound` group (7-sound rule),
+  so the wrong attempt is *plausible by sound, wrong by spelling*.
+Every correction must be checkable against `_compose_syllable` / `_decompose_syllable`.
+
+## Coverage target
+
+≈ **40–50 pairs**, derived at generation time:
+- ㅓ↔ㅗ and ㅐ↔ㅔ — the two dominant wrong-vowel confusions, ≥3 consonant frames each
+  (including batchim contexts)
+- wrong-batchim — each multi-letter sound group (ㄱ/ㄲ/ㅋ→k, ㄷ/ㅅ/ㅆ/ㅈ/ㅊ/ㅌ→t, ㅂ/ㅍ→p),
+  using the clean minimal-pair pattern (곧/곳, 집/짚, 낮/낯)
+- note: /k/ batchim has no clean single-syllable minimal pair (the 깎/각 confound —
+  깎 = ㄲ+ㅏ+ㄲ carries a tense ㄲ initial too). Reuse the B3 accepted gap; do not force
+  a two-syllable example.
+
+## Eval hook
+
+Extend `evals/production_probe.py` with B4-specific items (the specific common-error
+pairs: ㅓ↔ㅗ, ㅐ↔ㅔ, wrong-batchim) added to the existing wrong/correct mix. Classify
+EXACT/PARTIAL/WRONG as before. The B4 signal is whether the model diagnoses the
+*specific* common error (ㅓ vs ㅗ, ㅐ vs ㅔ, wrong-batchim spelling), not just "any"
+rejection.
