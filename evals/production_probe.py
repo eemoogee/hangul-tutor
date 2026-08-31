@@ -18,7 +18,7 @@ Serving matches curriculum_probe.py / pedagogy_probe.py (raw empty-think-block,
 temp 0, per-question try/except, [HANG] on timeout).
 
 Config (env, optional):
-    HANGUL_MODEL   Ollama model name (default: hf.co/eemoegee/hangul-expert-qwen3-8b)
+    HANGUL_MODEL   Ollama model name (default: hf.co/eemoogee/hangul-expert-qwen3-8b)
     OLLAMA_API     Ollama base URL  (default: http://localhost:11434)
 
 Run:
@@ -28,10 +28,11 @@ Baseline: record in evals/README.md after the v10 retrain.
 """
 import json
 import os
+import re
 import time
 import urllib.request
 
-MODEL = os.environ.get("HANGUL_MODEL", "hf.co/eemoegee/hangul-expert-qwen3-8b")
+MODEL = os.environ.get("HANGUL_MODEL", "hf.co/eemoogee/hangul-expert-qwen3-8b")
 API = os.environ.get("OLLAMA_API", "http://localhost:11434")
 TIMEOUT = 100
 
@@ -67,7 +68,7 @@ def generate(prompt: str) -> str:
         "stream": False,
         "options": {"temperature": 0},
     }).encode("utf-8")
-    req = urllib.request.Request(API, data=payload, headers={"Content-Type": "application/json"})
+    req = urllib.request.Request(API + "/api/generate", data=payload, headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
         return json.loads(r.read().decode("utf-8"))["response"].strip()
 
@@ -85,7 +86,7 @@ def classify(answer: str, truth: str, target: str, error: str) -> str:
     """Heuristic verdict. DISAGREE is checked before AGREE so 'not correct' /
     'not right' aren't scored as agreement. Raw answer is always printed too."""
     low = answer.lower()
-    disagree = any(m in low for m in DISAGREE)
+    disagree = any(m in low for m in DISAGREE) or bool(re.search(r"\bno\b", low))
     agree = any(m in low for m in AGREE)
     if truth == "wrong":
         if disagree:

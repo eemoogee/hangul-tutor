@@ -45,7 +45,7 @@ def generate(prompt: str) -> str:
         "options": {"temperature": 0},
     }).encode("utf-8")
     req = urllib.request.Request(
-        API, data=payload, headers={"Content-Type": "application/json"}
+        API + "/api/generate", data=payload, headers={"Content-Type": "application/json"}
     )
     with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
         return json.loads(r.read().decode("utf-8"))["response"].strip()
