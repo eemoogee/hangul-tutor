@@ -22,12 +22,13 @@ of v3→v6: coverage churn came from batches scoped by topic, not by a verifiabl
 | Batch | Purpose | Training-representation goal | Eval hook |
 |-------|---------|------------------------------|-----------|
 | **3** | Production/practice — teach the model to evaluate a learner's written/produced attempt | Graded feedback pairs (produce + grade), deterministic compose/decompose targets | New production probe: wrong attempt must be rejected (not rubber-stamped), error named, target given |
-| **4** | Common errors / misconceptions | Wrong-vowel (ㅓ↔ㅗ, ㅐ↔ㅔ) and wrong-batchim pairs as *failed production attempts* (not belief-corrections) | Extend B3 probe: error must be diagnosed at the jamo level |
-| **5** | Phonological rules (ㄴ-assimilation, tensification, ㄹ-liaison) | Rule pairs keyed on native-script forms (받침 lesson precedent: key on the Korean, not romanization) | Probe on novel rule-application examples |
+| **4** | Aspirated/tense factual grounding — supply the letter knowledge the correction layer lacks | Declarative base/aspirated/tense contrast pairs (45), romanization derived from JAMO | Extend production probe: 카/가, 따/다 must be rejected with aspiration/tension named |
+| **5** | Batchim (spelling-vs-sound) + phonological rules (ㄴ-assimilation, tensification, ㄹ-liaison) | Batchim grounding + wrong-batchim production pairs; rule pairs keyed on native-script forms | Probe on novel batchim + rule-application examples |
 | **6+** | TBD | Driven by the curriculum/pedagogy probe diff after the 8B retrain | Regression gate (`evals/`) |
 
-Batch 5 is deferred until B3 proves the production-answer structure trains cleanly — a new answer
-shape (evaluate → correct) is higher-risk than another fact layer, so it goes first and alone.
+Batch 5 (batchim + phonological rules) is deferred until the B4 aspirated/tense grounding is in and
+re-probed — batchim was moved out of B4 into B5 this session (the v10 probe showed 곧's batchim
+rubber-stamped), and B5 also waits on B3's production-answer structure proving clean.
 
 ---
 
@@ -153,73 +154,72 @@ Only WRONG counts as failure. Run twice (run-to-run variance is itself a red fla
 
 ---
 
-# Batch 4 — Common learner errors (production)
+# Batch 4 — Aspirated/tense factual grounding (declarative)
 
-> **GATED.** B4 pair generation is gated on the B3 retrain eval diff. If the B3
-> production probe shows clean grading (no sycophancy regression; EXACT/PARTIAL on
-> wrong attempts), B4 proceeds. Otherwise B4 is deferred and re-scoped — do not
-> generate B4 pairs until that diff is reviewed.
+> **RE-SCOPED (this session).** The original B4 spec was "common learner errors"
+> (wrong-vowel ㅓ↔ㅗ/ㅐ↔ㅔ + wrong-batchim, as production attempts). The v10 retrain
+> eval re-scoped it: production shows the correction behavior is now
+> **knowledge-gated** — the model rejects wrong attempts it can verify (허→하, 무→모)
+> but rubber-stamps the ones where its own letter knowledge is weak (카≠가, 따≠다,
+> 곧's batchim). Correction behavior trained in v9/v10, but it can't fire without
+> the underlying factual grounding. So B4 = **aspirated/tense factual grounding**
+> only. **Batchim is moved to B5** (the 곧's-batchim failure), and wrong-vowel is
+> already covered by B3's grade pairs (허→하, 무→모 now verify correctly).
 
 ## Purpose
 
-Deepen the model's diagnosis of the **highest-frequency learner errors** — the
-wrong-vowel and wrong-batchim mistakes learners actually make — represented as
-**failed production attempts** ("I wrote 메 for 'mae'"), NOT as belief-corrections
-("I think ㅐ sounds like 'a in father'", already covered by the v9 correction pairs).
+Teach the **base / aspirated / tense** three-way consonant distinction as plain
+declarative Q→A facts, so the model has the letter knowledge to *verify* a
+learner's attempt before grading it. This is the factual floor the v10 grade
+layer was missing.
 
 ## Training-representation goal
 
-Dense, varied coverage of the specific error classes so the model reliably
-diagnoses *these* errors at the jamo level. This builds **depth** on B3's general
-grading capability, concentrated on the two errors that dominate real learner
-output: **wrong vowel** (ㅓ↔ㅗ, ㅐ↔ㅔ) and **wrong batchim** (spelling vs final sound).
+Dense coverage of the aspirated/tense contrast for the three consonant groups
+that have all three members (base, aspirated, tense): **ㄱ/ㅋ/ㄲ**, **ㄷ/ㅌ/ㄸ**,
+**ㅂ/ㅍ/ㅃ**. The model must be able to answer "what's the difference between ㄱ and
+ㅋ" and "which of these is tense" without RAG, so the grade layer can catch
+카-for-'ga' and 따-for-'da'.
 
-## Pair formats (twin structure, as B3)
+## Pair formats (declarative, 15 per group × 3 groups = 45)
 
-Each target = one wrong + one correct attempt (the B3 Option-B twin). Formats:
+Each group, six question families (base/aspirated/tense contrasts + identification):
 
-- **Wrong-vowel** — ㅓ↔ㅗ and ㅐ↔ㅔ, across varied consonant frames and in
-  batchim-bearing syllables (where the vowel confusion is most audible):
-  - "I wrote 메 for 'mae'. Is that right?" → reject, name ㅔ, give 매.
-- **Wrong-batchim** — the spelling-vs-sound error: two letters that make the same
-  final sound, learner wrote the wrong one:
-  - "I tried to write 곧 and used ㅅ as the batchim. Is that right?" → reject, give 곧.
-- **Misconception-as-production** (optional tail) — a learner belief that surfaces
-  as a wrong spelling. Keep it as a production attempt, never a
-  "what does X sound like" question (that is v9's territory).
+- base vs aspirated — 3 phrasings
+- base vs tense — 3 phrasings
+- aspirated vs tense — 3 phrasings
+- three-way comparison — 3 phrasings
+- identification (which is base / aspirated / tense) — 3 pairs
 
-Same ground-truth sources as B3: `_compose_syllable` / `_decompose_syllable` /
-`JAMO` / `COMPOUND_COMPONENTS` / `_batchim_sound`.
+## Ground-truth sources (verified — use exactly these)
 
-## Graded-answer structure
+- `hangul_flash.py` — `JAMO` dict is the ROMANIZATION ground truth:
+  `ㄲ→["kk"]`, `ㄸ→["tt"]`, `ㅃ→["pp"]`, `ㅆ→["ss"]`, `ㅉ→["jj"]`.
+  - The generator DERIVES romanization from `JAMO` (`JAMO[letter]["roman"][0]`),
+    never hardcodes it — the `gg/dd/bb` mistake this session came from a
+    hand-written draft that didn't check against `JAMO`.
+- `generate_dataset_b4.py` runs a **verify-before-emit** pass: every emitted
+  romanization claim must equal the `JAMO` value; any mismatch aborts without
+  writing the file.
 
-Identical to B3 (three-beat): lead with explicit non-agreement → name the jamo
-error → give the fix. Correct attempts confirm in one line. WRONG on a wrong
-attempt = sycophancy regression — the same primary gate as B3.
+## Constraints
 
-## Wrong-attempt generation rule
-
-Identical to B3 — confusable substitution only, never random jamo:
-- vowel → `JAMO[vowel]["confusable"]` (ㅓ↔ㅗ, ㅐ↔ㅔ …)
-- batchim → a different letter from the same `_batchim_sound` group (7-sound rule),
-  so the wrong attempt is *plausible by sound, wrong by spelling*.
-Every correction must be checkable against `_compose_syllable` / `_decompose_syllable`.
+- Romanization claims must match `JAMO[letter]["roman"]` exactly — derived, not hardcoded.
+- Em dash immediately before a Hangul glyph is disallowed (repo-wide rule).
+- Plain ChatML, user+assistant only, no system message (all versions).
 
 ## Coverage target
 
-≈ **40–50 pairs**, derived at generation time:
-- ㅓ↔ㅗ and ㅐ↔ㅔ — the two dominant wrong-vowel confusions, ≥3 consonant frames each
-  (including batchim contexts)
-- wrong-batchim — each multi-letter sound group (ㄱ/ㄲ/ㅋ→k, ㄷ/ㅅ/ㅆ/ㅈ/ㅊ/ㅌ→t, ㅂ/ㅍ→p),
-  using the clean minimal-pair pattern (곧/곳, 집/짚, 낮/낯)
-- note: /k/ batchim has no clean single-syllable minimal pair (the 깎/각 confound —
-  깎 = ㄲ+ㅏ+ㄲ carries a tense ㄲ initial too). Reuse the B3 accepted gap; do not force
-  a two-syllable example.
+**45 pairs** = 15 × 3 groups (ㄱ/ㅋ/ㄲ, ㄷ/ㅌ/ㄸ, ㅂ/ㅍ/ㅃ).
+
+## Output
+
+1. `hangul_finetune_v10_b4.jsonl` — 45 aspirated/tense factual-grounding pairs.
+2. `generate_dataset_b4.py` — generator (derive-from-JAMO + verify-before-emit).
 
 ## Eval hook
 
-Extend `evals/production_probe.py` with B4-specific items (the specific common-error
-pairs: ㅓ↔ㅗ, ㅐ↔ㅔ, wrong-batchim) added to the existing wrong/correct mix. Classify
-EXACT/PARTIAL/WRONG as before. The B4 signal is whether the model diagnoses the
-*specific* common error (ㅓ vs ㅗ, ㅐ vs ㅔ, wrong-batchim spelling), not just "any"
-rejection.
+Extend `evals/production_probe.py` with the specific failures the v10 eval named:
+카-for-'ga' (aspirated) and 따-for-'da' (tense). The B4 signal is whether the model
+now *rejects* these (its letter knowledge is grounded) rather than rubber-stamping.
+Classify EXACT/PARTIAL/WRONG as before; WRONG on 카/따 = the grounding gap persisting.

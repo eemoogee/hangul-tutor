@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Train a QLoRA adapter on the Hangul dataset (380 Q&A pairs) and export a GGUF
+Train a QLoRA adapter on the Hangul dataset (425 Q&A pairs) and export a GGUF
 model for local inference. Kaggle/Linux adaptation of train_hangul_finetune.py
 — same dataset and training recipe, re-targeted at Qwen3-8B on a
 Kaggle T4 x2 (16 GB) GPU.
@@ -68,7 +68,7 @@ BASE_DIR = Path(__file__).resolve().parent
 # plain repo (load_in_4bit=True quantizes on load with fp16 compute).
 MODEL_NAME = "Qwen/Qwen3-8B"
 
-DEFAULT_DATASET = BASE_DIR / "hangul_finetune_v10.jsonl"
+DEFAULT_DATASET = BASE_DIR / "hangul_finetune_v11.jsonl"
 CHECKPOINT_DIR = BASE_DIR / "outputs"                 # trainer logs + adapter checkpoints
 GGUF_OUTPUT_DIR = BASE_DIR / "hangul_expert_model"    # final merged model + GGUF
 
@@ -91,7 +91,7 @@ PER_DEVICE_BATCH_SIZE = 2
 GRADIENT_ACCUMULATION_STEPS = 4   # effective batch size = 2 * 4 = 8
 NUM_EPOCHS = 2
 LEARNING_RATE = 1e-4
-WARMUP_STEPS = 10  # ceil(0.1 * ceil(380/8) * 2) = ceil(0.1 * 48 * 2) = ceil(9.6) = 10
+WARMUP_STEPS = 11  # ceil(0.1 * ceil(425/8) * 2) = ceil(0.1 * 54 * 2) = ceil(10.8) = 11
 LR_SCHEDULER_TYPE = "cosine"
 SEED = 42
 
