@@ -4,6 +4,19 @@ Run through every item before launching a Kaggle fine-tune session. Each check e
 because a past run burned a session (or shipped a broken model) by skipping it — the
 "why" notes are there so future-you doesn't trim a check that looks pointless.
 
+## 0. Kaggle launch (web UI — do these before "Save & Run All")
+
+These three are *launch* gates, distinct from the in-script checks below. They live in the
+Kaggle **web UI**, not the CLI, and each exists because a past run burned GPU quota by
+skipping it.
+
+- [ ] **Accelerator = GPU T4 x2** (Settings → Accelerator), not "None".
+  - *Why:* `enable_gpu: true` + `machine_shape: NvidiaTeslaT4` in `kernel-metadata.json` do NOT guarantee a GPU — a CLI-triggered push can still land on a CPU instance (`torch 2.10.0+cpu`), and Unsloth dies at import with `NotImplementedError: Unsloth cannot find any torch accelerator? You need a GPU.` (v11 run, 2026-09-01). The CLI `push`/`--accelerator` flag is the unreliable path — confirm the accelerator in the UI, every time.
+- [ ] **HF_TOKEN secret attached** (Settings → Secrets), or `--hf-repo` removed from the run cell.
+  - *Why:* Kaggle secrets are NOT auto-injected; `UserSecretsClient().get_secret("HF_TOKEN")` falls through to `except` and the log prints `HF_TOKEN available: False`. The failure is deferred to *after* training, so you burn a successful run with no GGUF pushed. Either attach the secret, or drop `--hf-repo` and pull the GGUF via `kaggle kernels output` instead.
+- [ ] **Internet enabled** (Settings → Internet).
+  - *Why:* the notebook `pip install`s Unsloth/transformers, downloads the base model, and (optionally) pushes to HF — all need network. A run with internet off fails fast on the first `pip install`, not on training.
+
 ## 1. Dataset verification
 
 - [ ] Map every eval question to a training-data question (grep the JSONL by keyword).
