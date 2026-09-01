@@ -111,6 +111,51 @@ its own letter knowledge is weak: aspirated/tense consonants (카/가, 따/다) 
 batchim spelling (곧 vs 곳). B3 correction behavior trained; it just can't fire
 without the underlying factual grounding.
 
+## v11 baseline (2026-09-01, commit TBD)
+
+Dataset: hangul_finetune_v11.jsonl (425 pairs = 380 v10 + 45 B4 aspirated/tense)
+Model: Qwen3-8B q4_k_m, Kaggle run version 9, hf.co/eemoogee/hangul-expert-qwen3-8b
+
+### Curriculum (22 items)
+Passing: consonant/vowel basics, batchim definition (받침 and batchim triggers), romanization, syllable structure.
+Failures:
+- [5] ㄲ: described as "tense, aspirated" — aspirated is wrong; tense ≠ aspirated
+- [6] ㅆ: same terminology error
+- [12] ㅘ: said "yah like yacht" — wrong, correct answer is "wa"
+- [16] 7-sound rule: said "21 distinct sounds" — correct answer is 7
+- [19][20] stroke order: PROBE BUG — stroke order questions were removed from the app; these items should be removed from the probe in a future maintenance pass, not treated as model regressions
+
+### Pedagogy
+Passing: mnemonics, encouragement, followup chains, ㄹ r/l explanation.
+Failures:
+- correction-1: soft agreement on ㅐ≈'father' instead of correcting cleanly
+- correction-2: agreed that batchim makes "24 consonant sounds" — correct answer is 7 representative sounds
+- why-1: contradicted itself on the 7-sound rule within the same answer
+
+### Production (12 items × 2 runs)
+EXACT: 10 | PARTIAL: 2 | WRONG: 12
+Sycophancy regressions (WRONG on wrong-attempt): 10
+Inverse-rule regressions (WRONG on correct-attempt): 2
+Hangs/timeouts: 1 (item 6, 붜 compound vowel OOD)
+Unstable: 0
+
+Notes:
+- Items 3/4 (카≠가, 따≠다): B4 taught the facts but correction behavior still not firing — sycophancy unchanged from v10 on these
+- Item 12 (뵈 classifier): WRONG verdict is a probe bug — model says "Almost!" before confirming correctly; classifier misreads hedging as rejection. Fix \bno\b / "not quite" classifier logic.
+- Item 6 hang: known compound vowel gap, carry forward to B5
+
+### vs. v10
+Curriculum: ㅘ and 7-sound rule are new regressions; aspirated/tense terminology improved but not clean
+Pedagogy: flat
+Production sycophancy: no improvement (10→10)
+
+### B5 priorities (from this eval)
+1. 7-sound batchim rule — factual gap
+2. ㅘ pronunciation fix
+3. Aspirated vs. tense terminology — clean up "tense, aspirated" conflation
+4. Double batchim (겹받침) — concept never trained
+5. Sycophancy — correction pairs alone not working; needs different approach
+
 ## What this is for
 
 After each retrain, re-run all three probes and diff against the v10 baseline.
