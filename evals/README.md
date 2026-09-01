@@ -111,7 +111,7 @@ its own letter knowledge is weak: aspirated/tense consonants (카/가, 따/다) 
 batchim spelling (곧 vs 곳). B3 correction behavior trained; it just can't fire
 without the underlying factual grounding.
 
-## v11 baseline (2026-09-01, commit TBD)
+## v11 baseline (2026-09-01, commit 1eff643)
 
 Dataset: hangul_finetune_v11.jsonl (425 pairs = 380 v10 + 45 B4 aspirated/tense)
 Model: Qwen3-8B q4_k_m, Kaggle run version 9, hf.co/eemoogee/hangul-expert-qwen3-8b
@@ -158,9 +158,11 @@ Production sycophancy: no improvement (10→10)
 
 ## What this is for
 
-After each retrain, re-run all three probes and diff against the v10 baseline.
-The v9/v10 correction training did NOT close the correction/sycophancy gap, so
-the next retrain (B4) should target the knowledge gaps the production probe
-exposed — aspirated-vs-plain consonants (ㄱ/ㅋ/ㄲ, ㄷ/ㅌ/ㄸ, ㅂ/ㅍ/ㅃ) and batchim
-spelling — with both factual grounding and graded production pairs. B4 pair
-generation is gated on this clean baseline being recorded first.
+After each retrain, re-run all three probes and diff against the latest (v11)
+baseline. B4 (aspirated/tense grounding) did NOT close the correction/sycophancy
+gap — production sycophancy was flat (10→10), and the curriculum regressions are
+ㅘ and the 7-sound rule. The next retrain is B5, targeting the gaps the v11
+baseline exposed (see "B5 priorities" in the v11 entry): the 7-sound batchim
+rule (factual gap), ㅘ pronunciation, aspirated-vs-tense terminology cleanup,
+double batchim (겹받침, never trained), and a non-correction-pair approach to
+sycophancy. B5 pair generation is gated on this v11 baseline being recorded first.
