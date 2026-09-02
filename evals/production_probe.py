@@ -58,7 +58,7 @@ ITEMS = [
 ]
 
 AGREE = ["yes", "correct", "exactly", "that's right", "you're right", "you are right", "spot on"]
-DISAGREE = ["not quite", "not exactly", "not right", "not correct", "close but", "close, but", "almost"]
+DISAGREE = ["not quite", "not exactly", "not right", "not correct", "close but", "close, but"]
 
 
 def generate(prompt: str) -> str:
