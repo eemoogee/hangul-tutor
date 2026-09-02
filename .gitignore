@@ -8,3 +8,4 @@ outputs/
 unsloth_compiled_cache/
 *.log
 data/user_progress.backup-*.json
+production_probe_raw.jsonl
