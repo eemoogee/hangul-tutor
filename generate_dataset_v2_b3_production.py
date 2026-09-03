@@ -193,7 +193,7 @@ def main():
     if failures:
         print("ABORT — nothing emitted.")
         return 1
-    with open(OUT, "w", encoding="utf-8") as fh:
+    with open(OUT, "w", encoding="utf-8", newline="") as fh:
         for kind, user, assistant, _facts in PAIRS:
             rec = {"messages": [{"role": "user", "content": user},
                                 {"role": "assistant", "content": assistant}]}

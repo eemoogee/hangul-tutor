@@ -199,7 +199,7 @@ def main() -> None:
             add(label, q, ans)
 
     # ---- Write JSONL ----
-    with open(OUT_JSONL, "w", encoding="utf-8") as f:
+    with open(OUT_JSONL, "w", encoding="utf-8", newline="") as f:
         for p in pairs:
             f.write(json.dumps(p, ensure_ascii=False) + "\n")
 

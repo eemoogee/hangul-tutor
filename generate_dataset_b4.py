@@ -230,7 +230,7 @@ def main():
         sys.exit(1)
 
     output_path = Path(args.output)
-    with output_path.open("w", encoding="utf-8") as f:
+    with output_path.open("w", encoding="utf-8", newline="") as f:
         for rec in records:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
