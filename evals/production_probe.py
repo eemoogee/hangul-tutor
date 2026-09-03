@@ -21,11 +21,23 @@ Config (env, optional):
     HANGUL_MODEL   Ollama model name (default: hf.co/eemoogee/hangul-expert-qwen3-8b)
     OLLAMA_API     Ollama base URL  (default: http://localhost:11434)
 
+CLI:
+    --log-path PATH   Where to append the raw per-item JSONL log
+                       (default: production_probe_raw.jsonl)
+
 Run:
     python evals/production_probe.py
+    python evals/production_probe.py --log-path production_probe_raw_v11_3epoch.jsonl
+
+The log is opened in APPEND mode, and every record includes a "model" field
+(from HANGUL_MODEL) so runs against different models can be told apart even
+if they land in the same file. Use --log-path to keep them in separate
+files instead -- main() warns if the file already contains rows from a
+different model than the one about to run.
 
 Baseline: record in evals/README.md after the v10 retrain.
 """
+import argparse
 import json
 import os
 import re
@@ -149,7 +161,32 @@ def run_one(question: str) -> tuple:
         return "", time.time() - t0, False
 
 
+def warn_if_mixed_model(log_path: str) -> None:
+    """If log_path already has rows from a different model than MODEL,
+    warn -- appending would mix two models' results into one file, and
+    the only way to tell them apart afterward is this same "model" field."""
+    if not os.path.exists(log_path) or os.path.getsize(log_path) == 0:
+        return
+    seen = set()
+    with open(log_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                seen.add(json.loads(line).get("model", "<unknown -- pre-model-field record>"))
+            except json.JSONDecodeError:
+                continue
+    others = seen - {MODEL}
+    if others:
+        print(f"  [WARN] {log_path} already contains rows from: {sorted(others)}")
+        print(f"         About to append rows for: {MODEL!r}")
+        print(f"         Filter on the \"model\" field when analyzing, or pass --log-path to keep runs separate.")
+        print()
+
+
 def main(log_path: str = "production_probe_raw.jsonl") -> None:
+    warn_if_mixed_model(log_path)
     summary = {"EXACT": 0, "PARTIAL": 0, "WRONG": 0}
     sycophancy = 0
     inverse = 0
@@ -191,6 +228,7 @@ def main(log_path: str = "production_probe_raw.jsonl") -> None:
                 # --- new: full per-item record, one line per run ---
                 record = {
                     "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "model": MODEL,
                     "item_id": i,
                     "tag": tag,
                     "attempt_type": truth,          # "wrong" | "correct"
@@ -231,5 +269,16 @@ def main(log_path: str = "production_probe_raw.jsonl") -> None:
     print("DONE")
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument(
+        "--log-path",
+        default="production_probe_raw.jsonl",
+        help="Path to append the raw per-item JSONL log to (default: %(default)s).",
+    )
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    main(log_path=args.log_path)
