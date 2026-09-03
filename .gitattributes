@@ -1,0 +1,5 @@
+# Normalize line endings: store everything as LF in the repo, regardless
+# of what line ending a given OS/editor/script writes to the working tree.
+# This is what stops `git status` from showing false "modified" diffs when
+# a file is regenerated on Windows (CRLF) but was committed as LF.
+* text=auto eol=lf
