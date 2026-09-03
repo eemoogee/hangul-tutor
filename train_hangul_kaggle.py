@@ -52,6 +52,7 @@ import json
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import torch
@@ -68,9 +69,20 @@ BASE_DIR = Path(__file__).resolve().parent
 # plain repo (load_in_4bit=True quantizes on load with fp16 compute).
 MODEL_NAME = "Qwen/Qwen3-8B"
 
+GGUF_QUANTIZATION_METHOD = "q4_k_m"
+
 DEFAULT_DATASET = BASE_DIR / "hangul_finetune_v11.jsonl"
 CHECKPOINT_DIR = BASE_DIR / "outputs"                 # trainer logs + adapter checkpoints
-GGUF_OUTPUT_DIR = BASE_DIR / "hangul_expert_model"    # final merged model + GGUF
+GGUF_OUTPUT_DIR = BASE_DIR / "hangul_expert_model"    # final GGUF lands here (counts toward
+                                                       # Kaggle's committed-output quota, ~20GB,
+                                                       # which is separate from -- and smaller
+                                                       # than -- the container's real disk)
+GGUF_SCRATCH_DIR = Path(tempfile.gettempdir()) / "hangul_expert_model_scratch"
+    # save_pretrained_gguf's intermediates (16-bit merge + f16 GGUF + quantized GGUF, all
+    # on disk at once) can need 30GB+. Building them under BASE_DIR (/kaggle/working) hits
+    # Kaggle's output quota even when the container's actual disk has room. Building them
+    # in the OS temp dir instead avoids that quota; only the small final .gguf gets copied
+    # into GGUF_OUTPUT_DIR afterward, which is the one thing that needs to survive as output.
 
 # ---------------------------------------------------------------------------
 # LoRA config
@@ -313,6 +325,9 @@ def main() -> None:
         logging_steps=10,             # print loss every 10 steps (no tensorboard)
         optim="adamw_8bit",           # 8-bit Adam — lower VRAM (needs bitsandbytes)
         save_strategy="epoch",        # keep an adapter checkpoint per epoch
+        save_total_limit=1,           # ...but only the latest -- export uses the live
+                                       # in-memory model, not a reloaded checkpoint, so
+                                       # older ones are pure disk cost with no purpose
         report_to="none",             # no tensorboard / wandb
     )
 
@@ -342,25 +357,52 @@ def main() -> None:
     #    IMPORTANT: Unsloth silently REUSES an existing model.safetensors and
     #    .cache/ in the output dir — it does NOT overwrite them. On a re-run
     #    this leaves stale merged weights on disk (silent stale-export bug).
-    #    Delete them first so the merge writes fresh.
-    for stale in (
-        GGUF_OUTPUT_DIR / "model.safetensors",
-        GGUF_OUTPUT_DIR / ".cache",
-    ):
-        if stale.is_dir():
-            shutil.rmtree(stale)
-            print(f"[cleanup] removed stale dir {stale}")
-        elif stale.is_file():
-            stale.unlink()
-            print(f"[cleanup] removed stale file {stale}")
+    #    Wipe the scratch dir first so the merge always writes fresh.
+    if GGUF_SCRATCH_DIR.exists():
+        shutil.rmtree(GGUF_SCRATCH_DIR)
+        print(f"[cleanup] removed stale scratch dir {GGUF_SCRATCH_DIR}")
+    GGUF_SCRATCH_DIR.mkdir(parents=True, exist_ok=True)
 
     model.save_pretrained_gguf(
-        str(GGUF_OUTPUT_DIR),
+        str(GGUF_SCRATCH_DIR),
         tokenizer,
-        quantization_method="q4_k_m",
+        quantization_method=GGUF_QUANTIZATION_METHOD,
     )
 
-    print(f"[done] merged model + GGUF written to {GGUF_OUTPUT_DIR}")
+    # Only the final quantized .gguf needs to survive as notebook output -- the
+    # merged 16-bit safetensors and any intermediate (unquantized) f16 GGUF stay
+    # in scratch and get discarded, since GGUF_OUTPUT_DIR (under /kaggle/working)
+    # is quota-limited. Filter by the quant method's name in case Unsloth leaves
+    # the f16 intermediate on disk too -- copying THAT defeats the whole point.
+    GGUF_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    all_gguf_files = sorted(GGUF_SCRATCH_DIR.rglob("*.gguf"))
+    if not all_gguf_files:
+        raise RuntimeError(
+            f"save_pretrained_gguf reported success but no .gguf file was found under "
+            f"{GGUF_SCRATCH_DIR} -- inspect that directory before re-running."
+        )
+    gguf_files = [f for f in all_gguf_files if GGUF_QUANTIZATION_METHOD.lower() in f.name.lower()]
+    if not gguf_files:
+        print(
+            f"[WARN] no .gguf filename matched quantization method "
+            f"{GGUF_QUANTIZATION_METHOD!r} -- falling back to copying ALL "
+            f"{len(all_gguf_files)} .gguf file(s) found. Check their size below; if one "
+            f"is far larger than expected for a quantized model, it's likely the "
+            f"unquantized intermediate and should be deleted from GGUF_OUTPUT_DIR."
+        )
+        gguf_files = all_gguf_files
+    elif len(gguf_files) < len(all_gguf_files):
+        skipped = [f.name for f in all_gguf_files if f not in gguf_files]
+        print(f"[info] not copying non-{GGUF_QUANTIZATION_METHOD} file(s) to output: {skipped}")
+
+    for gguf_file in gguf_files:
+        dest = GGUF_OUTPUT_DIR / gguf_file.name
+        shutil.copy2(gguf_file, dest)
+        print(f"[done] copied {gguf_file.name} ({dest.stat().st_size / 1e9:.2f} GB) -> {dest}")
+
+    shutil.rmtree(GGUF_SCRATCH_DIR, ignore_errors=True)
+    print(f"[cleanup] removed scratch dir {GGUF_SCRATCH_DIR}")
+    print(f"[done] GGUF export complete: {GGUF_OUTPUT_DIR}")
 
 
 if __name__ == "__main__":
