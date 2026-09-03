@@ -89,9 +89,9 @@ TARGET_MODULES = [
 MAX_SEQ_LENGTH = 512              # our Q&A pairs are short
 PER_DEVICE_BATCH_SIZE = 2
 GRADIENT_ACCUMULATION_STEPS = 4   # effective batch size = 2 * 4 = 8
-NUM_EPOCHS = 2
+NUM_EPOCHS = 3  # B5 epoch experiment: 2-epoch baseline is v11 GGUF already evaluated; this tests undertraining hypothesis (docs/decisions.md)
 LEARNING_RATE = 1e-4
-WARMUP_STEPS = 11  # ceil(0.1 * ceil(425/8) * 2) = ceil(0.1 * 54 * 2) = ceil(10.8) = 11
+WARMUP_STEPS = 17  # ceil(0.1 * ceil(425/8) * 3) = ceil(0.1 * 54 * 3) = ceil(16.2) = 17
 LR_SCHEDULER_TYPE = "cosine"
 SEED = 42
 
