@@ -83,6 +83,11 @@ GGUF_SCRATCH_DIR = Path(tempfile.gettempdir()) / "hangul_expert_model_scratch"
     # Kaggle's output quota even when the container's actual disk has room. Building them
     # in the OS temp dir instead avoids that quota; only the small final .gguf gets copied
     # into GGUF_OUTPUT_DIR afterward, which is the one thing that needs to survive as output.
+# Confirmed on the 2026-09-02 Kaggle run: save_pretrained_gguf(save_directory=X, ...) does
+# NOT write GGUF files into X -- it writes the merged safetensors into X, then writes the
+# actual .gguf files into a SIBLING directory named f"{X}_gguf". Undocumented, so search
+# both locations for the final file rather than assuming either one alone.
+GGUF_SCRATCH_GGUF_DIR = GGUF_SCRATCH_DIR.parent / f"{GGUF_SCRATCH_DIR.name}_gguf"
 
 # ---------------------------------------------------------------------------
 # LoRA config
@@ -358,9 +363,10 @@ def main() -> None:
     #    .cache/ in the output dir — it does NOT overwrite them. On a re-run
     #    this leaves stale merged weights on disk (silent stale-export bug).
     #    Wipe the scratch dir first so the merge always writes fresh.
-    if GGUF_SCRATCH_DIR.exists():
-        shutil.rmtree(GGUF_SCRATCH_DIR)
-        print(f"[cleanup] removed stale scratch dir {GGUF_SCRATCH_DIR}")
+    for stale_dir in (GGUF_SCRATCH_DIR, GGUF_SCRATCH_GGUF_DIR):
+        if stale_dir.exists():
+            shutil.rmtree(stale_dir)
+            print(f"[cleanup] removed stale scratch dir {stale_dir}")
     GGUF_SCRATCH_DIR.mkdir(parents=True, exist_ok=True)
 
     model.save_pretrained_gguf(
@@ -375,11 +381,15 @@ def main() -> None:
     # is quota-limited. Filter by the quant method's name in case Unsloth leaves
     # the f16 intermediate on disk too -- copying THAT defeats the whole point.
     GGUF_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    all_gguf_files = sorted(GGUF_SCRATCH_DIR.rglob("*.gguf"))
+    all_gguf_files = sorted(
+        f for search_dir in (GGUF_SCRATCH_DIR, GGUF_SCRATCH_GGUF_DIR) if search_dir.exists()
+        for f in search_dir.rglob("*.gguf")
+    )
     if not all_gguf_files:
         raise RuntimeError(
             f"save_pretrained_gguf reported success but no .gguf file was found under "
-            f"{GGUF_SCRATCH_DIR} -- inspect that directory before re-running."
+            f"{GGUF_SCRATCH_DIR} or {GGUF_SCRATCH_GGUF_DIR} -- inspect both directories "
+            f"before re-running."
         )
     gguf_files = [f for f in all_gguf_files if GGUF_QUANTIZATION_METHOD.lower() in f.name.lower()]
     if not gguf_files:
@@ -400,8 +410,9 @@ def main() -> None:
         shutil.copy2(gguf_file, dest)
         print(f"[done] copied {gguf_file.name} ({dest.stat().st_size / 1e9:.2f} GB) -> {dest}")
 
-    shutil.rmtree(GGUF_SCRATCH_DIR, ignore_errors=True)
-    print(f"[cleanup] removed scratch dir {GGUF_SCRATCH_DIR}")
+    for scratch_dir in (GGUF_SCRATCH_DIR, GGUF_SCRATCH_GGUF_DIR):
+        shutil.rmtree(scratch_dir, ignore_errors=True)
+        print(f"[cleanup] removed scratch dir {scratch_dir}")
     print(f"[done] GGUF export complete: {GGUF_OUTPUT_DIR}")
 
 
