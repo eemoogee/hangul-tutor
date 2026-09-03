@@ -1,0 +1,23 @@
+FROM ./hangul_expert_model/qwen3-8b.Q4_K_M.gguf
+
+# B5 epoch experiment: 3-epoch run on the v11 dataset (425 pairs), compared
+# against the 2-epoch baseline served by Modelfile.nothink (hf.co/eemoogee/
+# hangul-expert-qwen3-8b). Same non-thinking serving template as
+# Modelfile.nothink, verified there to give zero <think> bleed -- see
+# docs/decisions.md ("Thinking mode suppression").
+#
+# The non-thinking signal is NOT "no think tokens" -- it is the EMPTY,
+# PRE-CLOSED <think> block: "<|im_start|>assistant\n<think>\n\n</think>\n\n".
+TEMPLATE """{{ if .System }}<|im_start|>system
+{{ .System }}<|im_end|>
+{{ end }}{{ if .Prompt }}<|im_start|>user
+{{ .Prompt }}<|im_end|>
+{{ end }}<|im_start|>assistant
+<think>
+
+</think>
+
+"""
+
+PARAMETER stop "<|im_start|>"
+PARAMETER stop "<|im_end|>"
