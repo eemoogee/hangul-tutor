@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Train a QLoRA adapter on the Hangul dataset (425 Q&A pairs) and export a GGUF
+Train a QLoRA adapter on the Hangul dataset (437 Q&A pairs) and export a GGUF
 model for local inference. Kaggle/Linux adaptation of train_hangul_finetune.py
 — same dataset and training recipe, re-targeted at Qwen3-8B on a
 Kaggle T4 x2 (16 GB) GPU.
@@ -72,7 +72,7 @@ MODEL_NAME = "Qwen/Qwen3-8B"
 
 GGUF_QUANTIZATION_METHOD = "q4_k_m"
 
-DEFAULT_DATASET = BASE_DIR / "hangul_finetune_v11.jsonl"
+DEFAULT_DATASET = BASE_DIR / "hangul_finetune_v12.jsonl"
 CHECKPOINT_DIR = BASE_DIR / "outputs"                 # trainer logs + adapter checkpoints
 GGUF_OUTPUT_DIR = BASE_DIR / "hangul_expert_model"    # final GGUF lands here (counts toward
                                                        # Kaggle's committed-output quota, ~20GB,
@@ -107,9 +107,9 @@ TARGET_MODULES = [
 MAX_SEQ_LENGTH = 512              # our Q&A pairs are short
 PER_DEVICE_BATCH_SIZE = 2
 GRADIENT_ACCUMULATION_STEPS = 4   # effective batch size = 2 * 4 = 8
-NUM_EPOCHS = 3  # B5 epoch experiment: 2-epoch baseline is v11 GGUF already evaluated; this tests undertraining hypothesis (docs/decisions.md)
+NUM_EPOCHS = 2  # B5 epoch experiment closed (3-epoch = 2-epoch, flat); back to 2-epoch baseline for rank experiment
 LEARNING_RATE = 1e-4
-WARMUP_STEPS = 17  # ceil(0.1 * ceil(425/8) * 3) = ceil(0.1 * 54 * 3) = ceil(16.2) = 17
+WARMUP_STEPS = 17  # ceil(0.1 * ceil(437/8) * 3) = ceil(0.1 * 55 * 3) = ceil(16.5) = 17
 LR_SCHEDULER_TYPE = "cosine"
 SEED = 42
 
