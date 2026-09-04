@@ -48,6 +48,7 @@ correct as an independent path.
 from unsloth import FastLanguageModel  # MUST be imported first — patches transformers/peft at import time
 
 import argparse
+import datetime
 import json
 import shutil
 import subprocess
@@ -259,7 +260,96 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip the GPU VRAM headroom pre-flight check.",
     )
+    parser.add_argument(
+        "--hf-repo",
+        type=str,
+        default=None,
+        dest="hf_repo",
+        help=(
+            "HuggingFace repo the GGUF was pushed to after this run "
+            "(e.g. eemoogee/hangul-expert-qwen3-8b). Recorded in the run manifest; "
+            "does NOT trigger a push — that step is still manual."
+        ),
+    )
+    parser.add_argument(
+        "--notes",
+        type=str,
+        default=None,
+        help="Free-text annotation for this run (e.g. 'B5 epoch=3 test'). Stored in run manifest.",
+    )
     return parser.parse_args()
+
+
+# 8. Run manifest -------------------------------------------------------------
+def log_run_manifest(
+    args: argparse.Namespace,
+    dataset_pairs: int,
+    copied_ggufs: list,
+) -> None:
+    """Append one JSON record to run_manifest.jsonl in the repo root.
+
+    Captures the full hyperparameter set, dataset version, git commit hash, and
+    GGUF output details so runs are comparable without reconstructing config from
+    memory or screenshots. Called only after a successful train+export.
+
+    Args:
+        args:           parsed CLI args (carries dataset path, hf_repo, notes).
+        dataset_pairs:  number of training pairs actually loaded.
+        copied_ggufs:   list of Path objects for the .gguf files written to
+                        GGUF_OUTPUT_DIR (post-copy, pre-scratch-cleanup).
+    """
+    def _git_commit() -> str:
+        try:
+            return subprocess.check_output(
+                ["git", "rev-parse", "HEAD"],
+                cwd=BASE_DIR, text=True, timeout=5, stderr=subprocess.DEVNULL,
+            ).strip()
+        except Exception:
+            return "unknown"
+
+    record = {
+        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+        "git_commit": _git_commit(),
+        "dataset": {
+            "file": args.dataset.name,
+            "pairs": dataset_pairs,
+        },
+        "model": MODEL_NAME,
+        "lora": {
+            "r": LORA_R,
+            "alpha": LORA_ALPHA,
+            "dropout": LORA_DROPOUT,
+            "target_modules": TARGET_MODULES,
+        },
+        "training": {
+            "epochs": NUM_EPOCHS,
+            "lr": LEARNING_RATE,
+            "warmup_steps": WARMUP_STEPS,
+            "lr_scheduler": LR_SCHEDULER_TYPE,
+            "batch_size_per_device": PER_DEVICE_BATCH_SIZE,
+            "gradient_accumulation_steps": GRADIENT_ACCUMULATION_STEPS,
+            "effective_batch_size": PER_DEVICE_BATCH_SIZE * GRADIENT_ACCUMULATION_STEPS,
+            "max_seq_length": MAX_SEQ_LENGTH,
+            "seed": SEED,
+        },
+        "export": {
+            "quantization": GGUF_QUANTIZATION_METHOD,
+            "gguf_files": [
+                {"name": f.name, "size_mb": round(f.stat().st_size / 1e6, 1)}
+                for f in copied_ggufs
+            ],
+        },
+        "hf_repo": args.hf_repo,
+        "notes": args.notes,
+    }
+
+    manifest_path = BASE_DIR / "run_manifest.jsonl"
+    with open(manifest_path, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+    print(f"[manifest] appended run record to {manifest_path.name}")
+    print(f"[manifest] git_commit={record['git_commit'][:12]}  "
+          f"dataset={record['dataset']['file']} ({dataset_pairs} pairs)  "
+          f"epochs={NUM_EPOCHS}  r={LORA_R}  lr={LEARNING_RATE}")
 
 
 def main() -> None:
@@ -309,6 +399,7 @@ def main() -> None:
 
     # 4. Load the dataset and split into prompt/completion columns ------------
     dataset = load_dataset(args.dataset)
+    dataset_pairs = len(dataset)  # capture before transform (row count is unchanged by it)
     dataset = transform_to_prompt_completion(dataset)
 
     if args.dry_run:
@@ -405,15 +496,20 @@ def main() -> None:
         skipped = [f.name for f in all_gguf_files if f not in gguf_files]
         print(f"[info] not copying non-{GGUF_QUANTIZATION_METHOD} file(s) to output: {skipped}")
 
+    copied_ggufs = []
     for gguf_file in gguf_files:
         dest = GGUF_OUTPUT_DIR / gguf_file.name
         shutil.copy2(gguf_file, dest)
+        copied_ggufs.append(dest)
         print(f"[done] copied {gguf_file.name} ({dest.stat().st_size / 1e9:.2f} GB) -> {dest}")
 
     for scratch_dir in (GGUF_SCRATCH_DIR, GGUF_SCRATCH_GGUF_DIR):
         shutil.rmtree(scratch_dir, ignore_errors=True)
         print(f"[cleanup] removed scratch dir {scratch_dir}")
     print(f"[done] GGUF export complete: {GGUF_OUTPUT_DIR}")
+
+    # 8. Log run manifest -------------------------------------------------------
+    log_run_manifest(args, dataset_pairs, copied_ggufs)
 
 
 if __name__ == "__main__":
