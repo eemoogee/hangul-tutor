@@ -8,18 +8,31 @@ reflect knowledge rather than the Qwen3 chain-of-thought bug.
 
 Usage:
     python evals/curriculum_probe.py
+    python evals/curriculum_probe.py --log-path curriculum_probe_raw_v12_rank32.jsonl
 
 Config (env, optional):
     HANGUL_MODEL   Ollama model name (default: hf.co/eemoogee/hangul-expert-qwen3-8b)
     OLLAMA_API     Ollama base URL  (default: http://localhost:11434)
 
 Each entry prints: area, question, EXPECTED, think-bleed flag, raw answer.
-Grade manually against EXPECTED. Baseline results are recorded in evals/README.md.
+Grade manually against EXPECTED — auto-classification is intentionally absent
+here to preserve raw evidence for later re-analysis. Baseline results in
+evals/README.md.
+
+Per-item JSONL record (appended to --log-path):
+    timestamp, model, git_commit, item_id, area, question, expected,
+    think_bleed, raw_response, response_time_s
 """
+import argparse
 import json
 import os
+import sys
 import time
-import urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from common import add_log_path_arg, generate as _generate, git_commit
 
 MODEL = os.environ.get("HANGUL_MODEL", "hf.co/eemoogee/hangul-expert-qwen3-8b")
 API = os.environ.get("OLLAMA_API", "http://localhost:11434")
@@ -59,38 +72,54 @@ def ask(question: str) -> str:
         "<|im_start|>assistant\n"
         "<think>\n\n</think>\n\n"
     )
-    payload = json.dumps({
-        "model": MODEL,
-        "prompt": prompt,
-        "raw": True,
-        "stream": False,
-        "options": {"temperature": 0},
-    }).encode("utf-8")
-    req = urllib.request.Request(
-        API + "/api/generate", data=payload, headers={"Content-Type": "application/json"}
+    return _generate(prompt, MODEL, API, TIMEOUT)
+
+
+def main(log_path: str = "curriculum_probe_raw.jsonl") -> None:
+    commit = git_commit()
+    with open(log_path, "a", encoding="utf-8") as logf:
+        for i, (area, q, expected) in enumerate(PROBE, 1):
+            ans = ""
+            bleed = False
+            t0 = time.time()
+            try:
+                ans = ask(q)
+                dt = time.time() - t0
+                bleed = "<think>" in ans or " response" in ans
+                print(f"### [{i}/{len(PROBE)}] {area.upper()} :: {q}  [{dt:.0f}s]")
+                print(f"    EXPECTED: {expected}")
+                print(f"    THINK-BLEED: {bleed}")
+                print(f"    ANSWER: {ans!r}")
+            except Exception as e:
+                dt = time.time() - t0
+                print(f"### [{i}/{len(PROBE)}] {area.upper()} :: {q}  [ERROR after {dt:.0f}s]")
+                print(f"    EXPECTED: {expected}")
+                print(f"    {type(e).__name__}: {e}")
+
+            record = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "model": MODEL,
+                "git_commit": commit,
+                "item_id": i,
+                "area": area,
+                "question": q,
+                "expected": expected,
+                "think_bleed": bleed,
+                "raw_response": ans,
+                "response_time_s": dt,
+            }
+            logf.write(json.dumps(record, ensure_ascii=False) + "\n")
+            print()
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
-        return json.loads(r.read().decode("utf-8"))["response"].strip()
-
-
-def main() -> None:
-    for i, (area, q, expected) in enumerate(PROBE, 1):
-        t0 = time.time()
-        try:
-            ans = ask(q)
-            dt = time.time() - t0
-            bleed = "<think>" in ans or " response" in ans
-            print(f"### [{i}/{len(PROBE)}] {area.upper()} :: {q}  [{dt:.0f}s]")
-            print(f"    EXPECTED: {expected}")
-            print(f"    THINK-BLEED: {bleed}")
-            print(f"    ANSWER: {ans!r}")
-        except Exception as e:
-            dt = time.time() - t0
-            print(f"### [{i}/{len(PROBE)}] {area.upper()} :: {q}  [ERROR after {dt:.0f}s]")
-            print(f"    EXPECTED: {expected}")
-            print(f"    {type(e).__name__}: {e}")
-        print()
+    add_log_path_arg(parser, "curriculum_probe_raw.jsonl")
+    return parser.parse_args()
 
 
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    main(log_path=args.log_path)

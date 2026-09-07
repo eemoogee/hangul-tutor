@@ -41,9 +41,13 @@ import argparse
 import json
 import os
 import re
+import sys
 import time
-import urllib.request
 from datetime import datetime, timezone
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from common import add_log_path_arg, generate as _generate, git_commit as _git_commit
 
 MODEL = os.environ.get("HANGUL_MODEL", "hf.co/eemoogee/hangul-expert-qwen3-8b")
 API = os.environ.get("OLLAMA_API", "http://localhost:11434")
@@ -74,16 +78,7 @@ DISAGREE = ["not quite", "not exactly", "not right", "not correct", "close but",
 
 
 def generate(prompt: str) -> str:
-    payload = json.dumps({
-        "model": MODEL,
-        "prompt": prompt,
-        "raw": True,
-        "stream": False,
-        "options": {"temperature": 0},
-    }).encode("utf-8")
-    req = urllib.request.Request(API + "/api/generate", data=payload, headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
-        return json.loads(r.read().decode("utf-8"))["response"].strip()
+    return _generate(prompt, MODEL, API, TIMEOUT)
 
 
 def ask(question: str) -> str:
@@ -186,6 +181,7 @@ def warn_if_mixed_model(log_path: str) -> None:
 
 
 def main(log_path: str = "production_probe_raw.jsonl") -> None:
+    commit = _git_commit()
     warn_if_mixed_model(log_path)
     summary = {"EXACT": 0, "PARTIAL": 0, "WRONG": 0}
     sycophancy = 0
@@ -229,6 +225,7 @@ def main(log_path: str = "production_probe_raw.jsonl") -> None:
                 record = {
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "model": MODEL,
+                    "git_commit": commit,
                     "item_id": i,
                     "tag": tag,
                     "attempt_type": truth,          # "wrong" | "correct"
@@ -271,11 +268,7 @@ def main(log_path: str = "production_probe_raw.jsonl") -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument(
-        "--log-path",
-        default="production_probe_raw.jsonl",
-        help="Path to append the raw per-item JSONL log to (default: %(default)s).",
-    )
+    add_log_path_arg(parser, "production_probe_raw.jsonl")
     return parser.parse_args()
 
 
