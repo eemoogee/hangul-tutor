@@ -93,8 +93,8 @@ GGUF_SCRATCH_GGUF_DIR = GGUF_SCRATCH_DIR.parent / f"{GGUF_SCRATCH_DIR.name}_gguf
 # ---------------------------------------------------------------------------
 # LoRA config
 # ---------------------------------------------------------------------------
-LORA_R = 16
-LORA_ALPHA = 32
+LORA_R = 32
+LORA_ALPHA = 64
 LORA_DROPOUT = 0.05
 TARGET_MODULES = [
     "q_proj", "k_proj", "v_proj", "o_proj",
@@ -109,7 +109,7 @@ PER_DEVICE_BATCH_SIZE = 2
 GRADIENT_ACCUMULATION_STEPS = 4   # effective batch size = 2 * 4 = 8
 NUM_EPOCHS = 2  # B5 epoch experiment closed (3-epoch = 2-epoch, flat); back to 2-epoch baseline for rank experiment
 LEARNING_RATE = 1e-4
-WARMUP_STEPS = 17  # ceil(0.1 * ceil(437/8) * 3) = ceil(0.1 * 55 * 3) = ceil(16.5) = 17
+WARMUP_STEPS = 11  # ceil(0.1 * ceil(437/8) * 2) = ceil(0.1 * 55 * 2) = 11
 LR_SCHEDULER_TYPE = "cosine"
 SEED = 42
 
@@ -343,7 +343,7 @@ def log_run_manifest(
         "notes": args.notes,
     }
 
-    manifest_path = BASE_DIR / "run_manifest.jsonl"
+    manifest_path = GGUF_OUTPUT_DIR / "run_manifest.jsonl"
     with open(manifest_path, "a", encoding="utf-8") as fh:
         fh.write(json.dumps(record, ensure_ascii=False) + "\n")
     print(f"[manifest] appended run record to {manifest_path.name}")
