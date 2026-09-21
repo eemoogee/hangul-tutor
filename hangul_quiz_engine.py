@@ -18,6 +18,7 @@ Usage:
 """
 
 import json
+import math
 import random
 import os
 import re
@@ -780,6 +781,45 @@ class HangulQuiz:
             self.save_progress()
             return f"Lesson {lid} complete! Next: Lesson {self.progress['current_lesson']}"
         return "No active lesson."
+
+    # Mastery thresholds for auto-advancing a lesson. A learner is
+    # considered to have mastered a lesson once MASTERY_FRACTION of the
+    # lesson's quizzable pool has reached confidence MASTERY_CONFIDENCE
+    # (the same >=3 bar get_progress_summary already calls "mastered").
+    # A fraction rather than "every item" is deliberate: pools run up to
+    # 42 syllables (Lesson 5) and questions are randomly sampled, so
+    # requiring 100% would be a grind and some items might never even be
+    # shown. Both are plain constants so the bar is easy to tune.
+    MASTERY_CONFIDENCE = 3
+    MASTERY_FRACTION = 0.8
+
+    def lesson_mastery(self, lesson_id: int = None) -> dict:
+        """Report mastery of a lesson's quiz pool. Uses the SAME pool the
+        quiz actually draws from (_get_lesson_syllable_pool) and the same
+        keys answer()/_mark_mastered write into mastered_letters, so
+        'mastered' here means exactly the items the learner has been
+        graded on. Returns a dict with mastered_count, pool_size, needed
+        (items required to tip over), fraction, and is_mastered.
+        is_mastered is False for an empty pool (nothing to master)."""
+        lesson = self._get_lesson(lesson_id) if lesson_id is not None else self.current_lesson
+        if lesson is None:
+            return {"mastered_count": 0, "pool_size": 0, "needed": 0,
+                    "fraction": 0.0, "is_mastered": False}
+        pool = self._get_lesson_syllable_pool(lesson)
+        pool_size = len(pool)
+        mastered = self.progress.get("mastered_letters", {})
+        mastered_count = sum(1 for s in pool
+                             if mastered.get(s, 0) >= self.MASTERY_CONFIDENCE)
+        # Round up so e.g. a 6-item pool needs 5 (ceil(4.8)), never 4.
+        needed = math.ceil(pool_size * self.MASTERY_FRACTION) if pool_size else 0
+        is_mastered = pool_size > 0 and mastered_count >= needed
+        return {
+            "mastered_count": mastered_count,
+            "pool_size": pool_size,
+            "needed": needed,
+            "fraction": (mastered_count / pool_size) if pool_size else 0.0,
+            "is_mastered": is_mastered,
+        }
 
     # ── Helpers ────────────────────────────────────────────────────────
 

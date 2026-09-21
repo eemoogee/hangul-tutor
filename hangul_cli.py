@@ -2,16 +2,20 @@
 """
 hangul_cli.py — Interactive Hangul learning tutor CLI.
 
-Uses the HangulQuiz engine for deterministic quiz generation and a small
-local Ollama model for creative enrichments: mnemonics, encouragement,
-sentence construction, and personalized feedback.
+Uses the HangulQuiz engine for deterministic quiz generation. Runs fully
+offline by default — hardcoded mnemonics and template-built sentences, no
+external dependencies. An optional --use-llm flag turns on local Ollama
+enrichments (generated mnemonics for non-basic letters, LLM sentences,
+encouragement, and a natural-language session summary) for anyone who has
+Ollama installed; nothing requires it.
 
 Usage:
-    python hangul_cli.py                  # Interactive mode
+    python hangul_cli.py                  # Interactive mode (offline)
     python hangul_cli.py --lesson 1       # Start at specific lesson
     python hangul_cli.py --mode spell     # Practice only spelling
     python hangul_cli.py --sudden-death   # One-life mode, count streak
-    python hangul_cli.py --mnemonic ㄱ    # Generate a mnemonic for a letter
+    python hangul_cli.py --mnemonic ㄱ    # Print a mnemonic for a letter
+    python hangul_cli.py --use-llm        # Enable optional Ollama enrichments
 """
 
 import sys
@@ -32,6 +36,13 @@ from hangul_conversation import (
     generate_conversation_turn, check_conversation_answer, build_template_sentence
 )
 from hangul_models import get_model, set_default_model, summarize_models
+
+# Whether optional Ollama enrichments are enabled. OFF by default — the app
+# is fully functional offline. Set once from --use-llm in main(). Every
+# Ollama-calling helper checks this and takes an offline path when it's
+# False, so nothing ever blocks on (or errors out against) a model that
+# isn't there.
+USE_LLM = False
 
 # ── Ollama helpers ─────────────────────────────────────────────────────────
 
@@ -89,6 +100,26 @@ Rules:
 Mnemonic:"""
 
     return ollama_chat(prompt, system, temperature=0.9, model=get_model("mnemonic"))
+
+def mnemonic_for(letter: str) -> str:
+    """Return a mnemonic for a letter, offline-first. The 24 basic letters
+    have hand-written, instant mnemonics in ALPHABET_MNEMONICS — always
+    used first, and the only source needed for the core curriculum. Only
+    when --use-llm is on AND the letter isn't in that table (e.g. a tense
+    or compound letter) does this fall back to a live Ollama generation,
+    and even then a failed call (which generate_mnemonic returns as a
+    '[...]' string) is swallowed rather than shown as if it were the
+    mnemonic — the old bug where '/mnemonic' printed '[Ollama not found]'
+    verbatim. With no mnemonic available, returns a gentle nudge instead
+    of an error."""
+    fixed = ALPHABET_MNEMONICS.get(letter)
+    if fixed:
+        return fixed
+    if USE_LLM:
+        generated = generate_mnemonic(letter)
+        if generated and not generated.startswith("["):
+            return generated
+    return f"(No stock mnemonic for {letter} — picture its shape and tie it to its sound.)"
 
 def generate_mini_sentence(known_syllables: list[str], quiz: HangulQuiz) -> str:
     """Generate a tiny Korean sentence using only the syllables the user knows."""
@@ -177,12 +208,15 @@ def generate_session_summary(session_data: dict) -> str:
 
     prompt = " ".join(parts) + " Write a session summary."
 
+    # Only reach for Ollama when enrichments are on; otherwise go straight
+    # to the deterministic template below (the sentinel just routes there),
+    # so a normal offline /quit never eats a 60s model timeout.
     result = ollama_chat(
         prompt=prompt,
         system=system,
         temperature=0.75,
         model=get_model("summary"),
-    )
+    ) if USE_LLM else "[offline]"
     if result.startswith("["):
         # ollama_chat's convention for a failed call (not found / timeout /
         # error) — fall back to a hardcoded template so the feature degrades
@@ -750,14 +784,56 @@ MODE_ALIASES = {
 
 KNOWN_ACTIONS = {
     'q', 'quit', 'exit', 'help', 'roman', 'romanize', 'romanization',
-    'stats', 'lessons', 'lesson', 'mode', 'mnemonic', 'talk', 'template',
-    'konglish', 'kspell', 'hint', 'skip', 'intro', 'table', 'alphabet',
+    'stats', 'lessons', 'lesson', 'complete', 'mode', 'mnemonic', 'talk',
+    'template', 'konglish', 'kspell', 'hint', 'skip', 'intro', 'table',
+    'alphabet',
 }
+
+def _advance_and_show(quiz: HangulQuiz) -> dict:
+    """Run complete_lesson (which marks the current lesson done and bumps
+    current_lesson) and show the lesson the learner lands on next, its
+    intro/note and reference table. Returns that new lesson_info so the
+    caller can keep its own 'lesson' variable in sync."""
+    msg = quiz.complete_lesson()
+    new_info = quiz.start_lesson(quiz.progress["current_lesson"])
+    print(f"\n{styled('📖 ' + msg, BOLD)}")
+    print_lesson_intro(new_info.get("introduction", ""), new_info.get("note", ""))
+    print_reference_table(new_info)
+    return new_info
+
+
+def _offer_advance(quiz: HangulQuiz, lesson_id: int):
+    """Called the moment a lesson tips over the mastery bar. Congratulates,
+    then either finishes the curriculum (last lesson) or offers to move to
+    the next one. Returns the new lesson_info if the learner advanced, or
+    None if they declined or this was the final lesson."""
+    total = len(quiz.curriculum["lessons"])
+    m = quiz.lesson_mastery(lesson_id)
+    print(f"\n{styled('🎉 Lesson mastered!', BOLD, GREEN)} "
+          f"You've got {m['mastered_count']} of {m['pool_size']} solid.")
+
+    if lesson_id >= total:
+        # Final lesson — mark it done and celebrate the whole curriculum.
+        quiz.complete_lesson()
+        print(f"{styled('🏆 That was the final lesson — you have read your way through the entire Hangul curriculum! 축하합니다! 🏆', BOLD, GREEN)}")
+        print(f"{styled('Keep drilling any lesson with /lesson N, or check /stats.', CYAN)}")
+        return None
+
+    try:
+        ans = input(f"\n{styled(f'Move on to Lesson {lesson_id + 1}? [Y/n] ', CYAN)}").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        ans = "n"
+    if ans in ("", "y", "yes"):
+        return _advance_and_show(quiz)
+    print(f"{styled('No rush — staying here. Type /complete whenever you want to move on.', YELLOW)}")
+    return None
+
 
 def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
     """Main interactive quiz loop."""
     print(f"\n{styled('🇰🇷 Hangul Tutor', BOLD, GREEN)}")
-    print(f"Model: {summarize_models()} | Lesson: {quiz.current_lesson['title']}")
+    engine_label = f"Ollama: {summarize_models()}" if USE_LLM else "Offline (no LLM needed)"
+    print(f"{engine_label} | Lesson: {quiz.current_lesson['title']}")
     print(f"Type {styled('/help', CYAN)} for commands, {styled('/quit', RED)} to exit")
 
     # --mode locks the quiz to a single question type; None means auto-pick
@@ -774,20 +850,25 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
     print_lesson_intro(lesson.get("introduction", ""), lesson.get("note", ""))
     print_reference_table(lesson)
 
-    # Show a mnemonic for the first letter as a warm welcome. This is a
-    # blocking Ollama call — with a bigger model (e.g. qwen3:8b) or a cold
-    # start, it can take a while, so say so up front rather than leaving
-    # the terminal looking frozen with no prompt in sight.
+    # Show a mnemonic for the first letter as a warm welcome. Offline this
+    # is instant (hardcoded table); only with --use-llm, and only for a
+    # letter without a stock mnemonic, does it make a blocking model call —
+    # in which case say so, since that can take a moment on a cold start.
     if "letters" in lesson and lesson["letters"]:
         first_letter = lesson["letters"][0]
-        print(f"\n{styled('🧠 Generating a mnemonic...', YELLOW)} (first response from a model can take a moment)")
-        mnemonic = generate_mnemonic(first_letter)
+        if USE_LLM and first_letter not in ALPHABET_MNEMONICS:
+            print(f"\n{styled('🧠 Generating a mnemonic...', YELLOW)} (first response from a model can take a moment)")
+        mnemonic = mnemonic_for(first_letter)
         print(f"\n{styled('🧠 Mnemonic for', YELLOW)} {styled(first_letter, BOLD)}:")
         print(f"   {mnemonic}")
 
     waiting_for_question = not args.sudden_death
     current_question = None
     sudden_death_lives = 3
+    # Lesson ids the learner has already been offered advancement on and
+    # said "not yet" to — so a mastered-but-not-advanced lesson doesn't
+    # re-prompt after every single subsequent correct answer.
+    mastery_offered = set()
 
     while True:
         is_new_question = False
@@ -804,14 +885,20 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
         if current_question is None:
             # Determine question mode based on progress
             if quiz.session_streak >= 5 and quiz.session_streak % 5 == 0:
-                # Every 5-correct streak, offer a conversation snippet. This
-                # is a blocking Ollama call — say so before it runs, or the
-                # terminal looks frozen (no prompt, no commands work) for
-                # however long the model takes to respond.
+                # Every 5-correct streak, reward with a readable snippet.
+                # Offline (default) this is an instant template sentence
+                # built from real words the learner can spell; with
+                # --use-llm it tries a live model sentence first and falls
+                # back to the same template if that fails.
                 known = quiz.get_mastered_syllables(min_confidence=3)
                 if len(known) >= 3:
                     print(f"\n{styled('📖 Building a sentence from what you know...', YELLOW)}")
-                    sentence = generate_mini_sentence(known, quiz)
+                    sentence = generate_mini_sentence(known, quiz) if USE_LLM else None
+                    if not sentence:
+                        turn = build_template_sentence(known, quiz)
+                        if turn and turn.get("korean"):
+                            eng = turn.get("english")
+                            sentence = f"{turn['korean']}  —  {eng}" if eng else turn["korean"]
                     if sentence:
                         print(f"\n{styled('📖 You can now read:', GREEN)}")
                         print(f"   {sentence}")
@@ -857,6 +944,7 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
   {styled('/stats', CYAN)}    — Show your progress
   {styled('/lessons', CYAN)}  — List all lessons
   {styled('/lesson N', CYAN)} — Jump to lesson N
+  {styled('/complete', CYAN)} — Mark this lesson done and advance to the next
   {styled('/mode NAME', CYAN)}— Lock quiz mode (spell, read, match, build, vowel, batchim, confusion, auto)
   {styled('/alphabet', CYAN)} — Walk through all 24 basic letters, consonants then vowels
   {styled('/intro', CYAN)}    — Walk through this lesson's letters one at a time (true-beginner mode)
@@ -912,6 +1000,21 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
                 except (ValueError, IndexError):
                     print(f"{styled('Invalid lesson number', RED)}")
 
+            elif action == 'complete':
+                # Manual advance — mark this lesson done and move to the
+                # next regardless of mastery, for a learner who wants to
+                # skip ahead. On the final lesson it just confirms there's
+                # nowhere further to go.
+                lid = quiz.current_lesson["id"]
+                total = len(quiz.curriculum["lessons"])
+                if lid >= total:
+                    quiz.complete_lesson()  # mark the final lesson done
+                    print(f"{styled('🏆 This is the final lesson — the whole curriculum is complete!', BOLD, GREEN)}")
+                else:
+                    lesson = _advance_and_show(quiz)
+                    mastery_offered.discard(lid)
+                    current_question = None
+
             elif action == 'intro':
                 run_beginner_intro(quiz, lesson)
 
@@ -936,14 +1039,14 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
                 if not letter:
                     print(f"{styled('Usage: /mnemonic ㄱ', RED)}")
                 else:
-                    mnemonic = generate_mnemonic(letter)
+                    mnemonic = mnemonic_for(letter)
                     print(f"\n{styled(f'🧠 Mnemonic for {letter}:', YELLOW)}")
                     print(f"   {mnemonic}")
 
             elif action == 'talk':
                 print(f"\n{styled('💬 Generating a Korean sentence...', CYAN)}")
                 turn = generate_conversation_turn(quiz, mode="read_translate",
-                                                   use_llm=True)
+                                                   use_llm=USE_LLM)
                 if turn:
                     method = turn.get('method', 'llm')
                     method_labels = {'template': '📋 Template', 'tatoeba': '📚 Real sentence', 'llm': '🤖 LLM'}
@@ -983,7 +1086,13 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
                         print(f"   {styled('💡', YELLOW)} {q.hint}")
                         continue
                     break
-                if user.lower() in q.correct_answer.lower() or q.correct_answer.lower() in user.lower():
+                # Exact (case/space-insensitive) match. The old substring
+                # test marked an empty Enter or a stray single letter
+                # correct — "" is "in" every string, and "a" is in
+                # "camera" — so it's a real comparison now, and empty input
+                # is always wrong.
+                ans = " ".join(user.lower().split())
+                if ans and ans == " ".join(q.correct_answer.lower().split()):
                     print(f"   ✅ Yes! **{q.letter}** = {q.correct_answer}")
                 else:
                     print(f"   Not quite — it's **{q.correct_answer}** (sounds like: {q.letter})")
@@ -1041,12 +1150,14 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
             if result.correct:
                 if args.sudden_death:
                     sudden_death_lives += 1
-                # Periodic encouragement from Ollama — also blocking, same
-                # reason as the mini-sentence call above: say it's loading
-                # before the freeze-looking wait, not after.
-                if quiz.session_streak > 0 and quiz.session_streak % 7 == 0:
+                # Periodic encouragement — an optional Ollama flourish, so
+                # it only runs with --use-llm (silent otherwise, no hang).
+                # Accuracy is real session accuracy now; it used to be
+                # streak/streak, i.e. always 100%, making the message wrong.
+                if USE_LLM and quiz.session_streak > 0 and quiz.session_streak % 7 == 0:
                     print(f"\n{styled('🌟 Generating encouragement...', YELLOW)}")
-                    enc = generate_encouragement(quiz.session_streak, quiz.session_streak / max(1, quiz.session_streak))
+                    accuracy = 100 * quiz.session_correct / max(1, quiz.session_total)
+                    enc = generate_encouragement(quiz.session_streak, accuracy)
                     if not enc.startswith('['):
                         print(f"\n{styled('🌟', YELLOW)} {enc}")
             else:
@@ -1057,6 +1168,20 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
                 print(f"   {styled(f'❤️ Lives: {sudden_death_lives}', RED if sudden_death_lives == 1 else '')}")
             else:
                 print(f"   {styled(f'🔥 Streak: {quiz.session_streak}', GREEN if quiz.session_streak > 3 else '')}")
+
+            # Lesson progression (normal mode only). When the active
+            # lesson's pool crosses the mastery bar, congratulate once and
+            # offer to advance. mastery_offered suppresses re-asking after a
+            # "not yet", so the learner isn't nagged on every later answer.
+            if result.correct and not args.sudden_death:
+                _lid = quiz.current_lesson["id"]
+                if (_lid not in quiz.progress["completed_lessons"]
+                        and _lid not in mastery_offered
+                        and quiz.lesson_mastery(_lid)["is_mastered"]):
+                    mastery_offered.add(_lid)
+                    _advanced = _offer_advance(quiz, _lid)
+                    if _advanced is not None:
+                        lesson = _advanced
 
             current_question = None
 
@@ -1083,12 +1208,24 @@ def main():
                         "build_syllable", "missing_vowel", "batchim_challenge",
                         "confusion_drill"], help="Lock to a single quiz mode")
     parser.add_argument("--sudden-death", action="store_true", help="One wrong = game over")
-    parser.add_argument("--mnemonic", type=str, help="Generate a mnemonic for a Hangul letter")
+    parser.add_argument("--mnemonic", type=str, help="Print a mnemonic for a Hangul letter and exit")
+    parser.add_argument("--use-llm", action="store_true",
+                        help="Enable optional local-Ollama enrichments: generated mnemonics for "
+                             "letters without a stock one, LLM-built sentences, encouragement, and a "
+                             "natural-language session summary. Off by default — the app is fully "
+                             "functional offline without it.")
     parser.add_argument("--model", type=str, default=None,
-                        help="Shared fallback Ollama model for all tasks (default: qwen2.5:1.5b). "
-                             "Override individual tasks with HANGUL_MODEL_MNEMONIC / "
-                             "_ENCOURAGEMENT / _SENTENCE / _TRANSLATE / _SUMMARY env vars.")
+                        help="Ollama model for the optional enrichments (default: qwen2.5:1.5b). "
+                             "Passing it implies --use-llm. Override individual tasks with "
+                             "HANGUL_MODEL_MNEMONIC / _ENCOURAGEMENT / _SENTENCE / _TRANSLATE / "
+                             "_SUMMARY env vars.")
     args = parser.parse_args()
+
+    # Enable the optional Ollama path when explicitly asked (--use-llm) or
+    # implicitly when a model is named (--model), since naming a model with
+    # enrichments off would be a silent no-op.
+    global USE_LLM
+    USE_LLM = args.use_llm or bool(args.model)
 
     # Only override the shared fallback if the user actually passed --model —
     # otherwise leave it to HANGUL_OLLAMA_MODEL / HANGUL_MODEL_* env vars.
@@ -1097,7 +1234,7 @@ def main():
 
     # Quick mnemonic lookup (no quiz)
     if args.mnemonic:
-        mnemonic = generate_mnemonic(args.mnemonic)
+        mnemonic = mnemonic_for(args.mnemonic)
         print(f"Mnemonic for {args.mnemonic}:")
         print(mnemonic)
         return
