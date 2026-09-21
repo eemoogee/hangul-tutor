@@ -250,96 +250,49 @@ RESET = "\033[0m"
 def styled(text: str, *styles) -> str:
     return ''.join(styles) + text + RESET
 
-# ── Stroke animation ──────────────────────────────────────────────────────
-# A small 5x5 ASCII grid used to animate each letter being "drawn" stroke
-# by stroke, in the terminal, no external images needed. These are
-# deliberately STYLIZED approximations, not calligraphy-accurate — the
-# goal is a recognizable, satisfying reveal that matches each letter's
-# real stroke COUNT and general direction (per curriculum.json where
-# available), not a pixel-perfect font renderer.
-_GRID_SIZE = 5
+# ── Letter reveal ─────────────────────────────────────────────────────────
+# Present a single letter as its REAL glyph, featured in a framed "card"
+# with a short pop-in reveal. The terminal's own font draws every Hangul
+# letter far more accurately than any in-terminal ASCII grid could — the
+# old 5x5 block animation was recognizable for straight letters (ㅁ/ㄷ/ㅏ)
+# but fell apart on curves and diagonals (ㅇ/ㅎ/ㅅ/ㅈ) and printed a crude
+# duplicate right beside the real letter — so this shows the letter itself,
+# big and clean. No stroke count: this app teaches reading recognition, not
+# handwriting stroke order.
 
-def _h(row, c1, c2):
-    """Horizontal segment on one row, from column c1 to c2 inclusive."""
-    return [(row, c) for c in range(c1, c2 + 1)]
+def reveal_letter(letter: str, pause: float = 0.55):
+    """Reveal one letter in a framed card: draw the empty frame, pop the
+    real glyph in, then brighten it — a quick, deliberate 'ta-da', redrawn
+    in place (cursor-up overwrite) so it animates rather than scrolls.
+    'Big' is expressed through the frame, bold/color emphasis and
+    whitespace, since a terminal can't scale a single character's font."""
+    inner_w = 7  # inner width of the card, in terminal columns
 
-def _v(col, r1, r2):
-    """Vertical segment on one column, from row r1 to r2 inclusive."""
-    return [(r, col) for r in range(r1, r2 + 1)]
+    top = "   ┌" + "─" * inner_w + "┐"
+    bot = "   └" + "─" * inner_w + "┘"
+    blank_row = "   │" + " " * inner_w + "│"
 
-def _d(r1, c1, r2, c2):
-    """Straight diagonal between two points, stepped one cell at a time."""
-    steps = max(abs(r2 - r1), abs(c2 - c1))
-    return [(round(r1 + (r2 - r1) * i / steps), round(c1 + (c2 - c1) * i / steps))
-            for i in range(steps + 1)]
+    def mid(styles) -> str:
+        # Center the glyph by VISUAL width — jamo/syllables are double-width.
+        w = _vwidth(letter)
+        left = (inner_w - w) // 2
+        right = inner_w - w - left
+        glyph = styled(letter, *styles) if styles else " " * w
+        return "   │" + " " * left + glyph + " " * right + "│"
 
-_CIRCLE = [(0, 1), (0, 2), (0, 3), (1, 0), (1, 4), (2, 0), (2, 4),
-           (3, 0), (3, 4), (4, 1), (4, 2), (4, 3)]
-_CIRCLE_LOWER = [(2, 1), (2, 2), (2, 3), (3, 0), (3, 4), (4, 1), (4, 2), (4, 3)]
-
-# Each letter maps to a list of strokes; each stroke is a list of grid
-# cells revealed together in one animation frame (a "hooking"/bent stroke
-# combines two segments into one frame, since it's one continuous pen
-# movement). Consonants first (dictionary order), then vowels.
-LETTER_STROKES = {
-    "ㄱ": [_h(0, 0, 3), _v(3, 0, 4)],
-    "ㄴ": [_v(0, 0, 4), _h(4, 0, 3)],
-    "ㄷ": [_h(0, 0, 3), _v(0, 0, 4), _h(4, 0, 3)],
-    "ㄹ": [_h(0, 0, 3), _v(3, 0, 2), _h(2, 0, 3), _v(0, 2, 4) + _h(4, 0, 3)],
-    "ㅁ": [_v(0, 0, 4), _h(0, 0, 3), _v(3, 0, 4), _h(4, 0, 3)],
-    "ㅂ": [_v(0, 0, 4), _v(3, 0, 4), _h(1, 0, 3), _h(4, 0, 3)],
-    "ㅅ": [_d(0, 2, 4, 0), _d(0, 2, 4, 4)],
-    "ㅇ": [_CIRCLE],
-    "ㅈ": [_h(0, 0, 3), _d(0, 3, 4, 0)],
-    "ㅊ": [_h(0, 1, 2), _h(1, 0, 3), _d(1, 3, 4, 0)],
-    "ㅋ": [_h(0, 0, 3) + _v(3, 0, 4), _h(2, 1, 3)],
-    "ㅌ": [_h(0, 0, 3) + _v(0, 0, 4) + _h(4, 0, 3), _h(2, 0, 3)],
-    "ㅍ": [_h(0, 0, 3), _v(0, 0, 4), _v(3, 0, 4)],
-    "ㅎ": [_h(0, 1, 2), _h(1, 0, 3), _CIRCLE_LOWER],
-    "ㅏ": [_v(1, 0, 4), _h(2, 2, 3)],
-    "ㅑ": [_v(1, 0, 4), _h(1, 2, 3), _h(3, 2, 3)],
-    "ㅓ": [_h(2, 1, 2), _v(3, 0, 4)],
-    "ㅕ": [_v(3, 0, 4), _h(1, 1, 2), _h(3, 1, 2)],
-    "ㅗ": [_v(2, 0, 2), _h(2, 0, 4)],
-    "ㅛ": [_v(1, 0, 2), _v(3, 0, 2), _h(2, 0, 4)],
-    "ㅜ": [_h(2, 0, 4), _v(2, 2, 4)],
-    "ㅠ": [_h(2, 0, 4), _v(1, 2, 4), _v(3, 2, 4)],
-    "ㅡ": [_h(2, 0, 4)],
-    "ㅣ": [_v(2, 0, 4)],
-}
-
-def animate_letter_strokes(letter: str, pause: float = 0.8, final_hold: float = 0.5):
-    """Draw a letter stroke by stroke in the terminal — a small ASCII grid
-    that fills in one stroke at a time, redrawn in place so it looks like
-    an animation rather than a stack of printed frames. Silently does
-    nothing if the letter has no defined shape (e.g. compound vowels
-    outside the basic 24) — callers should treat that as 'no animation
-    available' and just move on to the text info. final_hold adds extra
-    time on the completed shape before returning, so it doesn't rush
-    straight into the text info underneath."""
-    strokes = LETTER_STROKES.get(letter)
-    if not strokes:
-        return
-
-    filled = set()
-    frame_height = _GRID_SIZE + 1  # grid rows + the letter/step caption line
-    for i, stroke in enumerate(strokes, start=1):
-        filled |= set(stroke)
-        lines = [f"   {styled(letter, BOLD, CYAN)}  (stroke {i}/{len(strokes)})"]
-        for r in range(_GRID_SIZE):
-            row_str = "   " + "".join(
-                styled("██", CYAN) if (r, c) in filled else "· "
-                for c in range(_GRID_SIZE)
-            )
-            lines.append(row_str)
-        print("\n".join(lines))
-        time.sleep(pause + final_hold if i == len(strokes) else pause)
-        if i < len(strokes):
-            # Move the cursor back up to overwrite this frame with the next
-            # one, instead of scrolling — that's what makes it read as an
-            # animation. sys.stdout used directly since this needs to write
-            # without a trailing newline before the next frame redraws.
-            sys.stdout.write(f"\033[{frame_height}F")
+    frames = [
+        [top, blank_row, mid(None), blank_row, bot],          # empty slot
+        [top, blank_row, mid((CYAN,)), blank_row, bot],       # glyph pops in
+        [top, blank_row, mid((BOLD, CYAN)), blank_row, bot],  # brightens, holds
+    ]
+    height = len(frames[0])
+    for i, frame in enumerate(frames):
+        print("\n".join(frame))
+        time.sleep(pause if i == len(frames) - 1 else 0.12)
+        if i < len(frames) - 1:
+            # Overwrite this frame in place with the next one, so it reads
+            # as a reveal rather than a stack of printed boxes.
+            sys.stdout.write(f"\033[{height}F")
             sys.stdout.flush()
 
 
@@ -439,8 +392,7 @@ def run_alphabet_intro(quiz: HangulQuiz):
             quirk = POSITIONAL_QUIRKS.get(letter, "")
 
             print(f"\n{styled(f'[{seen}/{total}]', BOLD)}\n")
-            animate_letter_strokes(letter)
-            print(f"\n      {styled(letter, BOLD, CYAN)}")
+            reveal_letter(letter)
             if roman:
                 print(f"      romanizes as: {styled(roman, BOLD)}")
             if quirk:
@@ -717,8 +669,7 @@ def run_beginner_intro(quiz: HangulQuiz, lesson: dict):
         pron = pronunciation.get(letter, "")
 
         print(f"\n{styled(f'Letter {i} of {len(letters)}', BOLD)}\n")
-        animate_letter_strokes(letter)
-        print(f"\n      {styled(letter, BOLD, CYAN)}")
+        reveal_letter(letter)
         if roman:
             print(f"      romanizes as: {styled(roman, BOLD)}")
         quirk = POSITIONAL_QUIRKS.get(letter, "")
