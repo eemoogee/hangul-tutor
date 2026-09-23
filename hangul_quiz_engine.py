@@ -22,6 +22,7 @@ import math
 import random
 import os
 import re
+import sys
 import time
 from pathlib import Path
 from collections import defaultdict, Counter
@@ -29,10 +30,17 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 # ── Paths ──────────────────────────────────────────────────────────────────
-PROJECT_ROOT = Path(__file__).parent if '__file__' in dir() else Path.cwd()
+# Read-only data ships with the app; when frozen by PyInstaller it is bundled
+# and extracted to sys._MEIPASS. Writable progress lives next to the exe when
+# frozen (a onefile exe's temp dir would otherwise be wiped on exit).
+PROJECT_ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
 DATA_DIR = PROJECT_ROOT / "data"
 CURRICULUM_PATH = DATA_DIR / "curriculum.json"
-PROGRESS_PATH = DATA_DIR / "user_progress.json"
+WORD_CONTRASTS_PATH = DATA_DIR / "word_contrasts.json"
+KONGLISH_VOCAB_PATH = DATA_DIR / "konglish_vocab.json"
+READING_PRACTICE_PATH = DATA_DIR / "reading_practice.jsonl"
+TATOEBA_KOR_PATH = DATA_DIR / "tatoeba_kor_sentences.tsv"
+PROGRESS_PATH = (Path(sys.executable).parent if getattr(sys, "frozen", False) else DATA_DIR) / "user_progress.json"
 
 
 # ── Data structures ────────────────────────────────────────────────────────
@@ -46,6 +54,13 @@ class QuizQuestion:
     hint: str = ""
     lesson_id: int = 0
     letter: str = ""
+    other: str = ""
+    direction: str = ""
+    contrast_type: str = ""
+    example_ko: str = ""
+    example_en: str = ""
+    other_example_ko: str = ""
+    other_example_en: str = ""
 
 
 @dataclass
@@ -56,6 +71,230 @@ class QuizResult:
     feedback: str
     lesson_id: int
     letter: str
+
+
+@dataclass
+class Syllable:
+    """Everything a renderer needs to show one Hangul syllable block AND
+    its relationship to its parts, in one place. This is the shared seam
+    between the quiz engine (which already has correct compose/decompose/
+    romanize logic, buried in private HangulQuiz methods) and any
+    presentation code (CLI reference tables, contrastive rows, confusion
+    drills) that wants to display a block alongside its components —
+    exactly the pairing the title screen's _composition_rows() does by
+    hand today for exactly two hardcoded words.
+
+    text: the composed block itself, e.g. '한'.
+    romanization: the whole-syllable romanization, e.g. 'han'.
+    cho / jung / jong: the raw jamo parts ('' for jong when there is no
+        final consonant), same as HangulQuiz._decompose_syllable returns.
+    components: (jamo, romanization) pairs in left-to-right/top-to-bottom
+        reading order, ending with (text, romanization) as the LAST
+        entry — i.e. already shaped exactly as _composition_rows(cells)
+        expects, so a caller can do
+            _composition_rows(syllable.components)
+        with no reshaping. For a syllable with no final consonant this is
+        [(cho, cho_roman), (jung, jung_roman), (text, romanization)] — 3
+        entries, same shape as the title screen's ㅎ+ㅏ+ㄴ=한 row family
+        naturally becomes with jong=''.
+    is_bare_vowel: True when this syllable is a vowel written with the
+        silent ㅇ placeholder because it has no real initial consonant
+        (아, 어, 오, ...) — i.e. has_real_consonant() would be False.
+        Lets a caller decide, e.g., whether to show the "vowels can't
+        stand alone" framing for this particular block.
+    """
+    text: str
+    romanization: str
+    cho: str
+    jung: str
+    jong: str
+    components: list = field(default_factory=list)
+    is_bare_vowel: bool = False
+
+
+# Every question mode's PROMPT direction, for next_question()'s directional
+# mode-selection bias (see _hangul_first_weight and the bucket-weighted pick
+# in next_question). Romanization-first: the prompt shows/names a sound and
+# asks for Hangul — spell, match_sound, build_syllable, missing_vowel all
+# work this way (missing_vowel's hint even re-states the romanization). This
+# is real scaffolding for a total beginner, but left at a flat uniform mix
+# forever it lets a learner pattern-match sound-strings to Hangul shapes
+# without ever needing to actually READ the Hangul first — the "romanization
+# as crutch" gap flagged in external review. Hangul-first: the prompt shows
+# Hangul and asks for the sound/spelling — read_aloud is the direct case;
+# batchim_challenge counts too, since it shows a real composed Hangul stem
+# (cho+jung already visible) and asks the learner to complete the SPELLING,
+# with its distractor logic specifically designed to defeat sound-only
+# guessing (see _batchim_question's same_sound_in_choices comment) — closer
+# in character to reading/writing than to romanization-driven recall.
+# confusion_drill and word_contrast are deliberately left out of both
+# buckets: their prompt shape varies by entry/pair rather than having one
+# fixed direction, so they stay outside this weighting rather than being
+# force-fit into either bucket.
+ROMANIZATION_FIRST_MODES = frozenset({"spell", "match_sound", "build_syllable", "missing_vowel"})
+HANGUL_FIRST_MODES = frozenset({"read_aloud", "batchim_challenge"})
+
+
+@dataclass
+class LearnerItem:
+    """Everything the app knows about the learner's relationship to one
+    thing — a jamo, a syllable, a word. This is the richer replacement
+    for the plain int(0-5) that used to live directly in
+    progress['mastered_letters']; that flat score is now just a derived
+    property (`confidence`) computed from correct/wrong, so every
+    existing call site that reads a 0-5 number (get_mastered_syllables,
+    the various >=3 checks) keeps working unchanged.
+
+    Wired into answer() (via _record_learner_item) for correct/wrong/
+    confusions/seen tracking, and into all six per-mode question
+    generators (via _select_from_pool) for due-based item selection
+    within a mode. NOT yet wired into next_question()'s MODE selection
+    (chosen_mode = mode or random.choice(available_modes) is still
+    uniform random — which mode gets picked doesn't consult .due at
+    all, only which item within an already-chosen mode does).
+    """
+    key: str
+    correct: int = 0
+    wrong: int = 0
+    last_seen: float = 0.0
+    # Set only by migration from the old flat mastered_letters score.
+    # Was originally a hard override (confidence returned this exact
+    # value until cleared entirely on the first new answer) — that
+    # caused two problems, both found via testing rather than assumed:
+    # (1) clearing it outright on one new CORRECT answer collapsed old
+    # scores 3/4/5 all onto the same lower value (the "migration
+    # cliff"); (2) a naive fix (seeding correct=score**2 to survive
+    # that cliff) solved (1) but made a migrated "mastered" item nearly
+    # immovable by a WRONG answer, since 25 accumulated correct answers
+    # swamp one new miss.
+    #
+    # Now it's a FLOOR, not an override: confidence is
+    # max(computed_from_correct/wrong, migrated_confidence -
+    # wrong_since_migration), so a fresh correct answer can only ever
+    # raise it (never triggers a cliff), and each new wrong answer
+    # erodes the floor by one point instead of being absorbed by a
+    # huge seeded correct count. Once the floor decays to 0 or the
+    # real correct/wrong evidence naturally exceeds it, this stops
+    # doing anything and can be left as-is (no forced cleanup needed —
+    # see the confidence property).
+    _migrated_confidence: Optional[int] = None
+    _wrong_since_migration: int = 0
+    # {other_key: count} — how often this item gets confused with each
+    # other item. Lives on the item itself now, instead of a separate
+    # flat progress['confusion_counts'] dict keyed by "A↔B" strings.
+    confusions: dict = field(default_factory=dict)
+    # Per-question-mode tallies, e.g. {"spell": 4, "read_aloud": 2,
+    # "confusion_drill": 1} — one entry per QuizQuestion.mode value this
+    # item has actually been quizzed under, so different question types
+    # stay distinguishable instead of collapsing into one number
+    # (review §17's recognize/produce/construct idea, using this app's
+    # real mode names rather than that abstraction).
+    seen: dict = field(default_factory=dict)
+    # Exponential moving average of response time in milliseconds —
+    # captures HOW FAST the learner answers, not just whether they got
+    # it right. A 1-second correct answer (fluent recognition) and a
+    # 20-second correct answer (effortful sounding-out) are meaningfully
+    # different learning states, and this field lets the app distinguish
+    # them eventually. Update formula: first data point seeds the value
+    # directly (no averaging against zero); subsequent points blend 80%
+    # old / 20% new, so recent performance weighs more but outliers
+    # don't whiplash the number. Known limitation: the timer starts when
+    # the question is DISPLAYED and stops when answer() is called, so a
+    # /hint request during a question inflates that answer's measured
+    # time — this is accepted for now (simple, not hint-aware); a more
+    # precise version that separates hint-tainted answers was considered
+    # and explicitly deferred.
+    avg_response_ms: float = 0.0
+
+    # How many answers (at perfect accuracy) it takes to reach full
+    # confidence — the pacing knob for the formula below. Chosen
+    # deliberately (not derived): roughly matches "a solid, repeated
+    # streak" rather than either a single lucky guess or an unrealistic
+    # 25-answer grind. See the confidence property for the formula
+    # this feeds and why the earlier sqrt-based version was replaced.
+    CONFIDENCE_RAMP = 8
+
+    @property
+    def confidence(self) -> int:
+        """0-5, same scale and meaning as the old mastered_letters int,
+        so min_confidence=N checks elsewhere in this file don't need to
+        change.
+
+        round(5 * ratio * min(1, total/CONFIDENCE_RAMP)): ratio is
+        accuracy (correct/total), and the min(1, total/RAMP) term ramps
+        linearly from 0 up to full weight over the first RAMP answers,
+        then plateaus — so a single lucky guess (1/1) still reads low
+        (confidence 1, not 5), but a sustained streak reaches full
+        confidence over roughly RAMP answers, not RAMP**2 like the
+        earlier sqrt-based version.
+
+        That earlier version was replaced after testing showed it
+        didn't do what its own docstring claimed: round(ratio *
+        total**0.5) needed 25 correct answers at perfect accuracy to
+        reach confidence 5, not "a strong track record (8/10)" as
+        documented — 8/10 actually produced confidence 3 under that
+        formula, verified directly. This version's ramp is a
+        deliberate pacing choice (how many answers "mastered" should
+        take), decided explicitly rather than left as an accidental
+        side effect of the dampening curve's shape.
+
+        Migrated items carry a _migrated_confidence FLOOR (see the
+        field's docstring for why it's a floor and not an override —
+        a hard override or a squared-seed both had real problems,
+        found via direct testing, not either one working around the
+        other). The floor erodes by one per wrong answer since
+        migration and never blocks a correct answer from raising
+        confidence past it.
+        """
+        total = self.correct + self.wrong
+        if total == 0:
+            computed = 0
+        else:
+            ratio = self.correct / total
+            weight = min(1, total / self.CONFIDENCE_RAMP)
+            computed = max(0, min(5, round(5 * ratio * weight)))
+
+        if self._migrated_confidence is None:
+            return computed
+        floor = max(0, self._migrated_confidence - self._wrong_since_migration)
+        return max(computed, floor)
+
+    @property
+    def due(self) -> bool:
+        """Simple spaced-repetition-lite (review §16): the more
+        confident we are, the longer we wait before asking again."""
+        if self.last_seen == 0:
+            return True
+        gap_seconds = (30, 60, 180, 600, 1800, 3600)[self.confidence]
+        return (time.time() - self.last_seen) >= gap_seconds
+
+    def to_dict(self) -> dict:
+        """Dataclasses don't serialize to JSON on their own — this is
+        what actually gets written into progress['learner_items']."""
+        return {
+            "correct": self.correct,
+            "wrong": self.wrong,
+            "last_seen": self.last_seen,
+            "confusions": dict(self.confusions),
+            "seen": dict(self.seen),
+            "_migrated_confidence": self._migrated_confidence,
+            "_wrong_since_migration": self._wrong_since_migration,
+            "avg_response_ms": self.avg_response_ms,
+        }
+
+    @classmethod
+    def from_dict(cls, key: str, data: dict) -> "LearnerItem":
+        return cls(
+            key=key,
+            correct=data.get("correct", 0),
+            wrong=data.get("wrong", 0),
+            last_seen=data.get("last_seen", 0.0),
+            confusions=dict(data.get("confusions", {})),
+            seen=dict(data.get("seen", {})),
+            _migrated_confidence=data.get("_migrated_confidence"),
+            _wrong_since_migration=data.get("_wrong_since_migration", 0),
+            avg_response_ms=data.get("avg_response_ms", 0.0),
+        )
 
 # ── Confusion-pair validity ───────────────────────────────────────────────
 
@@ -119,12 +358,30 @@ ROMANIZATION = {
     'ㅟ': 'wi', 'ㅢ': 'ui'
 }
 
+
+def _initial_roman(jamo: str) -> str:
+    """Romanization of a jamo in INITIAL position. ㅇ is SILENT here (the
+    placeholder, contributes no sound), and ㄹ is 'r' — the 'r/l' in
+    ROMANIZATION is a display convention for the bare letter, not a real
+    initial-consonant spelling (concatenating it produced the 'r/la'
+    garbage)."""
+    if jamo == "ㅇ":
+        return ""
+    if jamo == "ㄹ":
+        return "r"
+    return ROMANIZATION.get(jamo, "?")
+
+
 # ── Engine ─────────────────────────────────────────────────────────────────
 
 class HangulQuiz:
     def __init__(self):
         self.curriculum = self._load_curriculum()
+        self.word_contrasts = self._load_word_contrasts()
         self.progress = self._load_progress()
+        # Exclusion sets for nonword_decode mode — built once at startup
+        self.known_lexical_items = self._load_known_lexical_items()
+        self.corpus_seen_bigrams = self._load_corpus_seen_bigrams()
         self.current_lesson = None
         self.session_streak = 0
         self.session_correct = 0
@@ -136,20 +393,132 @@ class HangulQuiz:
         with open(CURRICULUM_PATH, encoding='utf-8') as f:
             return json.load(f)
 
+    def _load_word_contrasts(self) -> list:
+        """Stage 3 seed content (lexical minimal pairs like 개/게, 손/선) —
+        see word_contrasts.json. Optional: unlike curriculum.json, this
+        file's absence should never break the app, since it's new content
+        layered on top of the existing lesson structure, not a dependency
+        of it. Missing/malformed file -> empty list -> word_contrast mode
+        simply never gets selected (see next_question's available_modes),
+        same degrade-gracefully spirit as this file's other data loads."""
+        try:
+            with open(WORD_CONTRASTS_PATH, encoding='utf-8') as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return []
+
+    def _load_known_lexical_items(self) -> set:
+        """Build KNOWN_LEXICAL_ITEMS exclusion set for nonword_decode mode.
+        Combines:
+        - Every "korean" field value from reading_practice.jsonl (JSON Lines)
+        - Every "ko" field value from konglish_vocab.json (all categories)
+        Returns empty set on any file error (defensive loading)."""
+        items = set()
+        # Load reading_practice.jsonl
+        try:
+            with open(READING_PRACTICE_PATH, encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                        if "korean" in entry:
+                            items.add(entry["korean"])
+                    except json.JSONDecodeError:
+                        continue
+        except (FileNotFoundError, OSError):
+            pass
+        # Load konglish_vocab.json
+        try:
+            with open(KONGLISH_VOCAB_PATH, encoding='utf-8') as f:
+                data = json.load(f)
+                # Structure: {"categories": {category_name: [{"ko": ..., "en": ...}, ...]}}
+                if "categories" in data and isinstance(data["categories"], dict):
+                    for category_entries in data["categories"].values():
+                        if isinstance(category_entries, list):
+                            for entry in category_entries:
+                                if isinstance(entry, dict) and "ko" in entry:
+                                    items.add(entry["ko"])
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            pass
+        return items
+
+    def _load_corpus_seen_bigrams(self) -> set:
+        """Build CORPUS_SEEN_BIGRAMS exclusion set for nonword_decode mode.
+        Extracts all 2-syllable substrings from Hangul runs in Tatoeba corpus.
+        Returns empty set on any file error (defensive loading)."""
+        import re
+        bigrams = set()
+        hangul_run_re = re.compile(r'[\uac00-\ud7a3]+')
+        try:
+            with open(TATOEBA_KOR_PATH, encoding='utf-8') as f:
+                for line in f:
+                    # TSV format: id\tlang\tsentence (no header)
+                    parts = line.split('\t')
+                    if len(parts) >= 3:
+                        sentence = parts[2]
+                        # Extract all maximal Hangul runs
+                        for match in hangul_run_re.finditer(sentence):
+                            run = match.group()
+                            # Extract all 2-character sliding windows
+                            for i in range(len(run) - 1):
+                                bigrams.add(run[i:i+2])
+        except (FileNotFoundError, OSError):
+            pass
+        return bigrams
+
     def _load_progress(self) -> dict:
         if PROGRESS_PATH.exists():
             with open(PROGRESS_PATH, encoding='utf-8') as f:
-                return json.load(f)
-        return {
-            "current_lesson": 1,
-            "completed_lessons": [],
-            "mastered_letters": {},
-            "confusion_counts": {},
-            "total_questions_answered": 0,
-            "total_correct": 0,
-            "streak_best": 0,
-            "last_session": None
-        }
+                data = json.load(f)
+        else:
+            data = {
+                "current_lesson": 1,
+                "completed_lessons": [],
+                "mastered_letters": {},
+                "confusion_counts": {},
+                "total_questions_answered": 0,
+                "total_correct": 0,
+                "streak_best": 0,
+                "last_session": None
+            }
+        data.setdefault("learner_items", {})
+        self._migrate_old_progress(data)
+        return data
+
+    def _migrate_old_progress(self, data: dict) -> None:
+        """Backfill learner_items from the old flat mastered_letters
+        ints, so nobody's existing user_progress.json is wiped or
+        orphaned when this field is introduced. A key already present
+        in learner_items (already migrated, or created fresh under the
+        new system) is left untouched — this only fills gaps.
+
+        The old int had no win/loss breakdown, just a single 0-5 score.
+        _migrated_confidence carries it forward as a FLOOR (see that
+        field's docstring on LearnerItem for the two approaches tried
+        and rejected before this one — a hard override caused a
+        collapse-to-2 cliff on the first new correct answer; seeding
+        correct=score**2 fixed that but made the item nearly immovable
+        by a wrong answer, since 25 accumulated corrects swamp one
+        miss). Because confidence now reads _migrated_confidence as a
+        floor rather than baking it into correct/wrong, correct/wrong
+        can go back to seeding at 0 — the floor alone carries the old
+        score forward, and ordinary new answers (right OR wrong) behave
+        exactly like any other item's from the start, with the floor
+        simply guaranteeing confidence never reads BELOW the old score
+        until enough wrong answers erode it one point at a time.
+        """
+        old = data.get("mastered_letters", {})
+        items = data["learner_items"]
+        for key, score in old.items():
+            if key in items:
+                continue
+            score = max(0, min(5, int(score)))
+            items[key] = LearnerItem(
+                key=key, correct=0, wrong=0,
+                _migrated_confidence=score,
+            ).to_dict()
 
     def save_progress(self):
         self.progress["last_session"] = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -160,6 +529,31 @@ class HangulQuiz:
         PROGRESS_PATH.parent.mkdir(parents=True, exist_ok=True)
         with open(PROGRESS_PATH, 'w', encoding='utf-8') as f:
             json.dump(self.progress, f, indent=2, ensure_ascii=False)
+
+    # ── Learner item access (not yet wired into answer()/next_question) ─
+    #
+    # These two methods are the only way anything should read or write
+    # progress['learner_items'] — callers get/modify a LearnerItem
+    # object, never touch the raw dict directly. That keeps the JSON
+    # shape as an implementation detail instead of something scattered
+    # across the file (which is exactly the kind of duplication that
+    # bit mastered_letters/confusion_counts before).
+
+    def _get_item(self, key: str) -> LearnerItem:
+        """Fetch the LearnerItem for `key`, creating a fresh (all-zero)
+        one if it doesn't exist yet. Never returns None — callers can
+        always read .confidence, .due, etc. safely."""
+        raw = self.progress["learner_items"].get(key)
+        if raw is None:
+            return LearnerItem(key=key)
+        return LearnerItem.from_dict(key, raw)
+
+    def _save_item(self, item: LearnerItem) -> None:
+        """Write a LearnerItem back into progress['learner_items'].
+        Caller is responsible for calling save_progress() afterward
+        (same pattern as every other progress mutation in this file —
+        this only updates the in-memory dict, it doesn't hit disk)."""
+        self.progress["learner_items"][item.key] = item.to_dict()
 
     # ── Lesson management ──────────────────────────────────────────────
 
@@ -203,6 +597,85 @@ class HangulQuiz:
                  "completed": l["id"] in self.progress["completed_lessons"]}
                 for l in self.curriculum["lessons"]]
 
+    def _select_from_pool(self, pool: list[str]) -> str:
+        """Pick the next item to quiz from a syllable/letter pool, using
+        LearnerItem.due (review §16: "a good tutor should behave like
+        'you got this right three times, let's leave it alone for a
+        while' rather than a random question generator").
+
+        Behavior:
+          - If one or more pool items are due (never seen, or their
+            spaced-repetition gap has elapsed), pick uniformly among
+            just those. This is the only behavior change from the old
+            `random.choice(pool)` — confident items get skipped in
+            favor of ones that actually need practice.
+          - If NOTHING in the pool is due (everything was just quizzed
+            and confidently answered a moment ago), fall back to
+            uniform random over the whole pool, exactly like before.
+            This also covers a pool of brand-new items with no
+            learner_items history yet, where every fresh LearnerItem's
+            .due defaults to True anyway (see LearnerItem.due) — so a
+            new learner sees no behavior change at all.
+
+        This is deliberately a thin selection layer on top of the
+        existing pool, not a replacement for it — lesson content and
+        pool composition (_get_lesson_syllable_pool) are untouched.
+        """
+        if not pool:
+            return pool  # let the caller's existing empty-pool handling fire, unchanged
+        due_items = [s for s in pool if self._get_item(s).due]
+        return random.choice(due_items) if due_items else random.choice(pool)
+
+    def _mode_target_pool(self, mode: str, lesson: dict) -> list[str]:
+        """The syllable pool `mode` draws its quiz target from — used by
+        next_question() to bias MODE selection toward modes that have a
+        due item, one level up from _select_from_pool (which only biases
+        WHICH item within an already-chosen mode). Mirrors each per-mode
+        generator's actual pool, so due-ness is computed against the same
+        items the chosen mode would actually quiz:
+          - spell / read_aloud / match_sound -> _get_lesson_syllable_pool
+          - build_syllable / missing_vowel  -> practice_syllables or example_syllables
+          - batchim_challenge               -> example_syllables
+          - confusion_drill (or anything else) -> no syllable pool, returns []
+        """
+        if mode in ("spell", "read_aloud", "match_sound"):
+            return self._get_lesson_syllable_pool(lesson)
+        if mode in ("build_syllable", "missing_vowel"):
+            return lesson.get("practice_syllables") or lesson.get("example_syllables") or []
+        if mode == "batchim_challenge":
+            return lesson.get("example_syllables", [])
+        return []
+
+    def _lesson_avg_confidence(self, lesson: dict) -> float:
+        """Mean .confidence (0-5) across this lesson's own syllable pool —
+        the mastery signal next_question()'s directional bias reads. Reuses
+        _get_lesson_syllable_pool (the same pool spell/read_aloud/match_sound
+        already draw from) rather than introducing a new notion of "this
+        lesson's items". Empty pool -> 0.0 (a lesson with nothing tracked
+        yet is treated as needing full scaffolding, same as a fresh item
+        with 0 correct/0 wrong already reads as confidence 0)."""
+        pool = self._get_lesson_syllable_pool(lesson)
+        if not pool:
+            return 0.0
+        return sum(self._get_item(s).confidence for s in pool) / len(pool)
+
+    def _hangul_first_weight(self, lesson: dict) -> float:
+        """Probability of preferring the Hangul-first bucket (read_aloud /
+        batchim_challenge) over the romanization-first bucket, given this
+        lesson's average confidence. Linear from 0.25 at confidence 0 (~75%
+        romanization-first — close to the old uniform-random mix, so early
+        lessons barely feel different) to 0.80 at confidence 5 (~20%
+        romanization-first — occasional, deliberately not eliminated; see
+        ROMANIZATION_FIRST_MODES' docstring for why romanization stays as
+        permanent light scaffolding rather than a beginner-only mode).
+        Chosen as Option B in the crutch-tapering design discussion: mirrors
+        confusion_drill's existing 0.15/0.30 "occasional, not dominant"
+        rates rather than inventing an unrelated number, and degrades
+        gracefully — even a bug in confidence computation can't push this
+        past its 0.25-0.80 range into something absurd like 95%/5%."""
+        avg_confidence = self._lesson_avg_confidence(lesson)
+        return 0.25 + (0.80 - 0.25) * (avg_confidence / 5)
+
     # ── Question generation ────────────────────────────────────────────
 
     def next_question(self, mode: str = None) -> QuizQuestion:
@@ -222,14 +695,93 @@ class HangulQuiz:
         # If the user has real tracked confusions, occasionally trigger a drill.
         # If not, but this lesson calls out known-tricky pairs (e.g. ㅓ vs ㅗ),
         # drill those proactively at a lower rate — no need to wait for mistakes.
-        has_confusions = any(int(v) >= 2 for v in self.progress.get("confusion_counts", {}).values())
+        # Sourced from the same _pairs_from_learner_items() that
+        # _confusion_drill_question itself now reads, so this gate and
+        # the drill it's gating agree on what counts as "has confusions"
+        # — previously this checked the old flat confusion_counts dict
+        # while the drill (after this patch) reads learner_items, which
+        # could disagree in edge cases (e.g. this said yes, the drill
+        # found nothing usable, or vice versa).
+        has_confusions = any(v >= 2 for v in self._pairs_from_learner_items().values())
         has_curriculum_pairs = bool(lesson.get("confusion_pairs"))
         if has_confusions and random.random() < 0.3:
             available_modes.append("confusion_drill")
         elif has_curriculum_pairs and random.random() < 0.15:
             available_modes.append("confusion_drill")
 
-        chosen_mode = mode or random.choice(available_modes)
+        # Stage 3: meaningful word contrasts (see word_contrasts.json).
+        # Gated on _available_word_contrasts() actually returning
+        # something decodable for THIS lesson — an empty/missing content
+        # file or a lesson too early for any seeded pair both correctly
+        # result in this mode never being offered, rather than being
+        # offered and then silently degrading every time (see the
+        # degrade-to-spell fallback in _generate_question, which exists
+        # as a safety net, not as the expected path).
+        if self._available_word_contrasts() and random.random() < 0.15:
+            available_modes.append("word_contrast")
+
+        # Nonword decode: tests phoneme-by-phoneme decoding, not lexical
+        # recognition. Gated on pool having at least 2 distinct syllables
+        # (needed to form a 2-syllable nonword). 15% rate matches
+        # word_contrast's occasional-not-dominant pattern.
+        if len(self._get_lesson_syllable_pool(lesson)) >= 2 and random.random() < 0.15:
+            available_modes.append("nonword_decode")
+
+        # sequence_decode: 3-syllable nonword. Needs pool >= 3 distinct
+        # syllables. Same 15% occasional rate as nonword_decode.
+        if len(self._get_lesson_syllable_pool(lesson)) >= 3 and random.random() < 0.15:
+            available_modes.append("sequence_decode")
+
+        if mode:
+            chosen_mode = mode
+        else:
+            # Prefer modes whose current-lesson pool has at least one due
+            # item — mirroring _select_from_pool's due-preference one level
+            # up (which MODE gets picked, not just which item within a mode).
+            # Fall back to uniform random over every available mode when
+            # nothing is due, exactly like _select_from_pool does. .due
+            # stays the PRIMARY filter, unchanged from before this method
+            # was extended — an item genuinely due for review should never
+            # get skipped just because of the directional bias below.
+            due_modes = [
+                m for m in available_modes
+                if any(self._get_item(s).due for s in self._mode_target_pool(m, lesson))
+            ]
+            candidates = due_modes if due_modes else available_modes
+
+            # Directional bias (see ROMANIZATION_FIRST_MODES / HANGUL_FIRST_
+            # MODES / _hangul_first_weight): applied WITHIN whatever .due
+            # already narrowed candidates to, not instead of it. Split
+            # candidates into the two direction buckets; confusion_drill/
+            # word_contrast/anything else fall into neither and are pooled
+            # separately as "unbiased" so they're never favored OR
+            # penalized by this weighting.
+            roman_bucket = [m for m in candidates if m in ROMANIZATION_FIRST_MODES]
+            hangul_bucket = [m for m in candidates if m in HANGUL_FIRST_MODES]
+            other_bucket = [m for m in candidates if m not in ROMANIZATION_FIRST_MODES
+                             and m not in HANGUL_FIRST_MODES]
+
+            if roman_bucket and hangul_bucket:
+                # Both directions available — weighted pick between them,
+                # then uniform within whichever bucket wins. other_bucket
+                # entries (confusion_drill, word_contrast) get folded in at
+                # their own natural frequency by being eligible from either
+                # draw's uniform-within-candidates fallback below instead —
+                # see the else branch.
+                hangul_first_weight = self._hangul_first_weight(lesson)
+                if random.random() < hangul_first_weight:
+                    chosen_mode = random.choice(hangul_bucket)
+                else:
+                    chosen_mode = random.choice(roman_bucket)
+            else:
+                # Only one direction present (or neither — e.g. a
+                # confusion_drill/word_contrast-only candidate set) — the
+                # bias has nothing to weigh between, so fall back to the
+                # original uniform pick over ALL candidates, direction
+                # buckets and other_bucket alike. This is exactly the old
+                # behavior for lessons/situations where the split doesn't
+                # apply, not a new code path.
+                chosen_mode = random.choice(candidates)
         return self._generate_question(chosen_mode)
 
     def _generate_question(self, mode: str) -> QuizQuestion:
@@ -249,6 +801,15 @@ class HangulQuiz:
             return self._batchim_question(lesson)
         elif mode == "confusion_drill":
             return self._confusion_drill_question()
+        elif mode == "word_contrast":
+            available = self._available_word_contrasts()
+            if available:
+                return self._word_contrast_question(random.choice(available))
+            return self._spell_question(lesson)  # same degrade-gracefully pattern as confusion_drill
+        elif mode == "nonword_decode":
+            return self._nonword_decode_question(lesson)
+        elif mode == "sequence_decode":
+            return self._sequence_decode_question(lesson)
         else:
             return self._spell_question(lesson)
 
@@ -290,7 +851,7 @@ class HangulQuiz:
         """Show romanization, user types Hangul — or picks from a
         multiple-choice list for anyone without a way to type Hangul."""
         pool = self._get_lesson_syllable_pool(lesson)
-        target = random.choice(pool)
+        target = self._select_from_pool(pool)
 
         roman = self._hangul_to_roman_hint(target)
         cho, jung, jong = self._decompose_syllable(target)
@@ -310,6 +871,13 @@ class HangulQuiz:
             # not the final answer, just one ingredient in it — without
             # spelling out the composed syllable that combines it with ㅇ.
             hint = f"The vowel {jung} romanizes as '{roman}'. Since a vowel can't stand alone in Korean, it gets a silent 'ㅇ' glued onto the front, combining into one syllable block."
+        elif cho == 'ㅇ' and jong:
+            # Silent placeholder + batchim (음, 안, 앙...). The ㅇ still
+            # contributes no initial sound, so the syllable starts with the
+            # vowel, not with "ng" — 'ngeu-m' would be wrong.
+            jung_roman = ROMANIZATION.get(jung, '?')
+            jong_roman = self._batchim_sound(jong)
+            hint = f"The ㅇ is silent, so it starts with the vowel '{jung_roman}' and ends with a '{jong_roman}' batchim sound."
         elif cho and jung:
             # Fixed a real bug here too: this used to slice the
             # romanization STRING assuming the consonant is always exactly
@@ -318,10 +886,10 @@ class HangulQuiz:
             # E.g. for 까 it would've said "starts with 'k', vowel 'ka'"
             # instead of "starts with 'kk', vowel 'a'". Looking up each
             # jamo's own romanization directly avoids that.
-            cho_roman = ROMANIZATION.get(cho, '?')
+            cho_roman = _initial_roman(cho)
             jung_roman = ROMANIZATION.get(jung, '?')
             if jong:
-                jong_roman = ROMANIZATION.get(jong, '?')
+                jong_roman = self._batchim_sound(jong)
                 hint = f"It starts with '{cho_roman}', has the vowel '{jung_roman}', and ends with a '{jong_roman}' batchim sound."
             else:
                 hint = f"It starts with '{cho_roman}' and has the vowel '{jung_roman}'."
@@ -344,11 +912,11 @@ class HangulQuiz:
         get_romanization_table()) — not a spoken self-report, so the prompt
         and hint say so explicitly rather than implying you just say it
         aloud and press Enter."""
-        target = random.choice(self._get_lesson_syllable_pool(lesson))
+        target = self._select_from_pool(self._get_lesson_syllable_pool(lesson))
 
         return QuizQuestion(
             mode="read_aloud",
-            prompt=f"How would you romanize **{target}**? (Type it — e.g. 'ga', 'eo', 'wae')",
+            prompt=f"How would you romanize **{target}**? (Type it — e.g. 'a', 'eo', 'u')",
             correct_answer=self._hangul_to_roman_hint(target),
             hint="Not sure of the spelling system? Type /roman to see the full romanization key.",
             lesson_id=lesson["id"],
@@ -362,7 +930,7 @@ class HangulQuiz:
             # Supplement from previous lessons
             pool = self._get_known_syllables()
             items = (list(set(items + random.sample(pool, min(4 - len(items), len(pool))))))
-        target = random.choice(items)
+        target = self._select_from_pool(items)
         return QuizQuestion(
             mode="match_sound",
             prompt=f"Which Hangul is pronounced **{self._hangul_to_roman_hint(target)}**?",
@@ -377,7 +945,7 @@ class HangulQuiz:
         the finished result from a multiple-choice list."""
         pool = lesson.get("practice_syllables") or lesson.get("example_syllables")
         if pool:
-            target = random.choice(pool)
+            target = self._select_from_pool(pool)
         else:
             return self._spell_question(lesson)  # fallback
 
@@ -399,7 +967,7 @@ class HangulQuiz:
         """Show consonant + romanization, user picks the vowel."""
         pool = lesson.get("practice_syllables") or lesson.get("example_syllables")
         if pool:
-            target = random.choice(pool)
+            target = self._select_from_pool(pool)
         else:
             return self._spell_question(lesson)
 
@@ -448,7 +1016,7 @@ class HangulQuiz:
         if not examples:
             return self._spell_question(lesson)
 
-        target = random.choice(examples)
+        target = self._select_from_pool(examples)
         cho, jung, jong = self._decompose_syllable(target)
         if not jong:
             return self._spell_question(lesson)
@@ -511,6 +1079,314 @@ class HangulQuiz:
             return True
         return False
 
+    def _pairs_from_learner_items(self) -> dict:
+        """Reconstruct the same {'A↔B': count} shape _confusion_drill_
+        question already expects (and the rest of that function's logic
+        — lesson-relevance scoping, degenerate-pair filtering, the
+        three-tier fallback — is untouched), but sourced from the
+        richer per-item learner_items[*].confusions instead of the old
+        flat progress['confusion_counts'].
+
+        This is the intended payoff of storing confusions on the item
+        itself (see LearnerItem docstring and _record_learner_item):
+        the same data _confusion_drill_question always wanted, just
+        collected from where it now actually lives. The old
+        confusion_counts dict is still being written in parallel by
+        answer() and still backs get_progress_summary/_top_confusions
+        elsewhere — this method and its caller are the only place that
+        switches over to the new source.
+
+        A pair key's count is the SUM of both directions (item X
+        confused-with Y, and item Y confused-with X), since which one
+        got typed and which was expected can vary answer to answer —
+        the drill cares that the pair gets mixed up, not which
+        direction happened more.
+        """
+        pairs: dict = {}
+        for key, raw in self.progress.get("learner_items", {}).items():
+            item = LearnerItem.from_dict(key, raw)
+            for other, count in item.confusions.items():
+                if not count:
+                    continue
+                # Order-independent pair key so X↔Y and Y↔X merge into
+                # one entry instead of appearing as two separate pairs.
+                pair_key = "↔".join(sorted((key, other)))
+                pairs[pair_key] = pairs.get(pair_key, 0) + count
+        return pairs
+
+    def _lesson_teaching_letter(self, letter: str) -> Optional[int]:
+        """Which lesson id first introduces this jamo (via its 'letters'
+        list), or None if no lesson teaches it. Used to gate word_contrast
+        content on actual decodability — see _word_contrast_decodable."""
+        for lesson in self.curriculum.get("lessons", []):
+            if letter in lesson.get("letters", []):
+                return lesson["id"]
+        return None
+
+    def _word_contrast_decodable(self, entry: dict) -> bool:
+        """True only if EVERY jamo in EVERY item's form has been taught by
+        (at or before) the current lesson — i.e. the learner could
+        actually decode both words with what they've seen so far, not
+        just the target vowel pair in isolation.
+
+        This matters because gating on the vowel contrast's own lesson
+        alone would be wrong here: 손/선 (ㅓ/ㅗ, taught in Lesson 1) also
+        needs ㅅ, which isn't taught until Lesson 3 — so surfacing this
+        pair from Lesson 1 onward would claim the learner can read a word
+        containing an untaught consonant. This project has hit exactly
+        that class of bug before (sentence-exposure claiming readability
+        of untaught grammar) and it was treated as a priority fix, not a
+        cosmetic one — so this check derives decodability from the
+        curriculum's own 'letters' lists rather than hardcoding per-entry
+        lesson numbers, which would silently go stale if curriculum.json
+        is ever reordered or extended.
+
+        No current_lesson set -> nothing is decodable yet (conservative
+        default, matches the rest of this class's None-current_lesson
+        handling elsewhere)."""
+        if self.current_lesson is None:
+            return False
+        current_id = self.current_lesson["id"]
+        for item in entry.get("items", []):
+            form = item.get("form", "")
+            for ch in form:
+                cho, jung, jong = self._decompose_syllable(ch)
+                for jamo in (cho, jung, jong):
+                    if not jamo:
+                        continue
+                    taught_at = self._lesson_teaching_letter(jamo)
+                    if taught_at is None or taught_at > current_id:
+                        return False
+        return True
+
+    def _entry_renderable(self, entry: dict) -> bool:
+        """Two separate questions, kept separate on purpose:
+
+        contrast_type says HOW an eligible entry gets presented (bare
+        composed block vs. example-sentence-with-highlight) — that's a
+        renderer capability question, answered by print_question having
+        a branch for this contrast_type at all.
+
+        requires_host says WHETHER the entry actually carries the
+        context data its own presentation needs to be shown safely. An
+        item that requires a host MUST have real example_ko/example_en
+        content to attach that host context to — otherwise there's
+        nothing for the host-context renderer to highlight into, and
+        the entry has no safe fallback (a bare block would misrepresent
+        a particle like 도 as a standalone word, which is the exact
+        mistake this flag exists to prevent).
+
+        So: a requires_host item without example_ko/example_en is never
+        renderable, full stop — not by this contrast_type, not by
+        falling back to bare-block rendering either. A malformed future
+        entry that claims lexical_vs_grammar_form but forgot to fill in
+        its example sentences must fail closed here, not get selected
+        and then fail (or worse, mis-render) downstream in the CLI."""
+        for item in entry.get("items", []):
+            if item.get("requires_host") and not (
+                item.get("example_ko") and item.get("example_en")
+            ):
+                return False
+        return True
+
+    def _available_word_contrasts(self) -> list[dict]:
+        """word_contrasts entries that are both decodable so far AND
+        renderable — see _entry_renderable for what "renderable" means
+        here. contrast_type is no longer used as an exclusion filter by
+        itself: lexical_vs_grammar_form entries (e.g. 더/도) are now
+        eligible once they carry real example sentences, via the
+        host-context render path in print_question. requires_host
+        entries lacking that context remain excluded, same as before —
+        see _entry_renderable's docstring for why that has to fail
+        closed rather than fall back to a bare-block rendering that
+        would misrepresent a particle as a standalone word."""
+        return [
+            e for e in self.word_contrasts
+            if self._entry_renderable(e) and self._word_contrast_decodable(e)
+        ]
+
+    def _word_contrast_question(self, entry: dict) -> QuizQuestion:
+        """Stage 3: meaningful contrast, not just visual/sound (see the
+        design discussion this content type came out of — Stage 1/2 are
+        jamo and composed-block contrast, already covered by
+        confusion_drill; Stage 3 attaches MEANING to the contrast, which
+        is a different learning operation, not just another rendering
+        mode). Alternates direction across calls — word-to-meaning and
+        meaning-to-word — because always asking the same direction lets
+        meaning become a crutch for decoding rather than an additional
+        retrieval dimension in its own right. The content file itself
+        stays direction-agnostic (one meaning_en per item, e.g. 'dog' for
+        개); this method decides direction per call, not the data.
+
+        direction and contrast_type are carried on the returned
+        QuizQuestion (not baked only into a plain-text prompt) precisely
+        so print_question can apply the right rendering POLICY, not just
+        display whatever text happens to be here — a hosted form
+        (contrast_type == 'lexical_vs_grammar_form') must never render as
+        a bare composed block once that path exists, and that decision
+        belongs to the renderer reading contrast_type, not to prompt
+        string content the renderer can't safely parse back apart. prompt
+        is still set to a reasonable plain-text fallback for any caller
+        that isn't quiz-aware (e.g. print_question(q, quiz=None))."""
+        items = entry["items"]
+        target_idx = random.randrange(len(items))
+        target = items[target_idx]
+        other = items[1 - target_idx] if len(items) == 2 else random.choice(
+            [i for i in items if i is not target]
+        )
+
+        word_to_meaning = random.random() < 0.5
+        direction = "word_to_meaning" if word_to_meaning else "meaning_to_word"
+        if word_to_meaning:
+            prompt = f"**{target['form']}** means...?"
+            correct_answer = target["meaning_en"]
+            choices = [target["meaning_en"], other["meaning_en"]]
+        else:
+            prompt = f"Which word means \"{target['meaning_en']}\"?"
+            correct_answer = target["form"]
+            choices = [target["form"], other["form"]]
+        random.shuffle(choices)
+
+        return QuizQuestion(
+            mode="word_contrast",
+            prompt=prompt,
+            correct_answer=correct_answer,
+            choices=choices,
+            hint=f"{target['form']} ({target['romanization']}) vs "
+                 f"{other['form']} ({other['romanization']}) — "
+                 f"the difference is {entry['confusion']['display_label']}.",
+            lesson_id=self.current_lesson["id"] if self.current_lesson else 0,
+            letter=target["form"],
+            other=other["form"],
+            direction=direction,
+            contrast_type=entry.get("contrast_type", ""),
+            example_ko=target.get("example_ko", ""),
+            example_en=target.get("example_en", ""),
+            other_example_ko=other.get("example_ko", ""),
+            other_example_en=other.get("example_en", "")
+        )
+
+    def _generate_nonword_candidate(self, lesson: dict) -> Optional[str]:
+        """Generate a 2-syllable nonword candidate for nonword_decode mode.
+        Returns None if no valid candidate can be generated (pool too small
+        or all attempts rejected)."""
+        pool = self._get_lesson_syllable_pool(lesson)
+        # Need at least 2 distinct syllables to form a 2-syllable nonword
+        if len(pool) < 2:
+            return None
+        # Pick 2 distinct syllables
+        try:
+            s1, s2 = random.sample(pool, 2)
+        except ValueError:
+            # Pool has fewer than 2 distinct items
+            return None
+        # Guard against identical values (random.sample picks distinct positions,
+        # but pool could have duplicate values)
+        if s1 == s2:
+            return None
+        candidate = s1 + s2
+        # Reject if in KNOWN_LEXICAL_ITEMS (hard exclusion)
+        if candidate in self.known_lexical_items:
+            return None
+        # Reject if in CORPUS_SEEN_BIGRAMS (soft exclusion)
+        if candidate in self.corpus_seen_bigrams:
+            return None
+        return candidate
+
+    def _generate_sequence_candidate(self, lesson: dict) -> Optional[str]:
+        """Generate a 3-syllable nonword candidate for sequence_decode mode.
+        Returns None if no valid candidate can be generated."""
+        pool = self._get_lesson_syllable_pool(lesson)
+        if len(pool) < 3:
+            return None
+        try:
+            s1, s2, s3 = random.sample(pool, 3)
+        except ValueError:
+            return None
+        # Guard against any duplicate values (random.sample picks distinct
+        # positions, but pool can contain duplicate values)
+        if len({s1, s2, s3}) < 3:
+            return None
+        candidate = s1 + s2 + s3
+        # Hard exclusion: reject if the full trigram is a known lexical item
+        if candidate in self.known_lexical_items:
+            return None
+        # Soft exclusion: reject if ANY embedded bigram (s1+s2 or s2+s3)
+        # appears in the corpus bigram set — a 3-syllable string won't appear
+        # in CORPUS_SEEN_BIGRAMS directly (those are 2-char strings), but its
+        # sub-pairs might, which would make it feel like a partial real word.
+        if (s1 + s2) in self.corpus_seen_bigrams:
+            return None
+        if (s2 + s3) in self.corpus_seen_bigrams:
+            return None
+        return candidate
+
+    def _nonword_decode_question(self, lesson: dict) -> QuizQuestion:
+        """Generate a nonword_decode question: 2-syllable nonword that the
+        learner must decode phoneme-by-phoneme. Falls back to _spell_question
+        if no valid candidate can be generated after 20 retries."""
+        candidate = None
+        for _ in range(20):
+            candidate = self._generate_nonword_candidate(lesson)
+            if candidate is not None:
+                break
+        # Fallback: if all 20 retries failed, degrade to spell mode
+        if candidate is None:
+            return self._spell_question(lesson)
+        # Build the question
+        s1, s2 = candidate[0], candidate[1]
+        syl1 = self.syllable_breakdown(s1)
+        syl2 = self.syllable_breakdown(s2)
+        roman1 = syl1.romanization
+        roman2 = syl2.romanization
+        correct_answer = roman1 + roman2
+        prompt = f"**{candidate}** — this isn't a real Korean word. Just read it: type the pronunciation."
+        hint = f"Sound out each block separately: {s1} = {roman1}, {s2} = {roman2}"
+        return QuizQuestion(
+            mode="nonword_decode",
+            prompt=prompt,
+            correct_answer=correct_answer,
+            hint=hint,
+            lesson_id=lesson["id"],
+            letter=candidate,
+        )
+
+    def _sequence_decode_question(self, lesson: dict) -> QuizQuestion:
+        """Generate a sequence_decode question: 3-syllable nonword the
+        learner must decode as one continuous romanization string.
+        Falls back to _spell_question if no valid candidate after 20 retries."""
+        candidate = None
+        for _ in range(20):
+            candidate = self._generate_sequence_candidate(lesson)
+            if candidate is not None:
+                break
+        if candidate is None:
+            return self._spell_question(lesson)
+        s1, s2, s3 = candidate[0], candidate[1], candidate[2]
+        syl1 = self.syllable_breakdown(s1)
+        syl2 = self.syllable_breakdown(s2)
+        syl3 = self.syllable_breakdown(s3)
+        roman1 = syl1.romanization
+        roman2 = syl2.romanization
+        roman3 = syl3.romanization
+        correct_answer = roman1 + roman2 + roman3
+        prompt = (
+            f"**{candidate}** — not a real word. "
+            f"Read the whole sequence: type the full pronunciation."
+        )
+        hint = (
+            f"Sound out each block: "
+            f"{s1} = {roman1}, {s2} = {roman2}, {s3} = {roman3}"
+        )
+        return QuizQuestion(
+            mode="sequence_decode",
+            prompt=prompt,
+            correct_answer=correct_answer,
+            hint=hint,
+            lesson_id=lesson["id"],
+            letter=candidate,
+        )
+
     def _confusion_drill_question(self) -> QuizQuestion:
         """Target letters the user consistently confuses — scoped to the
         CURRENT lesson wherever possible. Confusion counts persist across
@@ -520,9 +1396,11 @@ class HangulQuiz:
         drowns out anything from later lessons — you'd get drilled on
         아/어/이/우/으 in a batchim lesson ten sessions later. Preference
         order: (1) worst mistake relevant to this lesson, (2) curriculum-
-        suggested pair for this lesson, (3) worst mistake overall as a
-        last resort so the drill still has something to show."""
-        confusion_counts = self.progress.get("confusion_counts", {})
+        suggested pair for this lesson, (2b) curriculum-wide global
+        confusion pair if the lesson has none of its own, (3) worst
+        mistake overall as a last resort so the drill still has something
+        to show."""
+        confusion_counts = self._pairs_from_learner_items()
         tracked_pairs = []
         for k, v in confusion_counts.items():
             if v < 1 or "↔" not in k:
@@ -571,6 +1449,16 @@ class HangulQuiz:
                 a, b = random.sample(random.choice(groups), 2)
                 a, b = compose(a), compose(b)
 
+        # Preference 2b: lesson has no own confusion_pairs (or it was
+        # empty) — try the curriculum-wide global list instead. Same
+        # shape as a lesson's confusion_pairs, so the same selection
+        # pattern applies.
+        if a is None:
+            groups = [g for g in self.curriculum.get("confusion_pairs_global", []) if len(g) >= 2]
+            if groups:
+                a, b = random.sample(random.choice(groups), 2)
+                a, b = compose(a), compose(b)
+
         # Preference 3 (last resort): no lesson-relevant data at all —
         # fall back to the single worst mistake overall, same as the old
         # behavior, rather than showing nothing.
@@ -607,13 +1495,21 @@ class HangulQuiz:
             choices=choices,
             hint=f"Careful — commonly confused with {other}. Both look/sound similar.",
             lesson_id=0,
-            letter=target
+            letter=target,
+            other=other
         )
 
     # ── Answer checking ────────────────────────────────────────────────
 
-    def answer(self, user_input: str, question: QuizQuestion = None) -> QuizResult:
-        """Check the user's answer against the expected."""
+    def answer(self, user_input: str, question: QuizQuestion = None, response_ms: Optional[float] = None) -> QuizResult:
+        """Check the user's answer against the expected.
+
+        response_ms: wall-clock milliseconds between the question
+        being displayed and this call. Passed through to
+        _record_learner_item to update the per-item EMA. None means
+        "not measured" (e.g. programmatic callers that don't time,
+        or external callers that don't pass it) — the timing update
+        is skipped entirely, no crash, no made-up default."""
         if question is None:
             question = getattr(self, '_last_question', None)
         self._last_question = question
@@ -638,8 +1534,17 @@ class HangulQuiz:
         # COMPONENT of a larger consonant+vowel+batchim formula (e.g.
         # 'ㄱ + ? = guk'), never a free-standing composed syllable —
         # composing 'ㅜ' into '우' here would show a "correct" answer
-        # that was never actually one of the options on screen.
-        if question.mode not in ("read_aloud", "missing_vowel"):
+        # that was never actually one of the options on screen. ALSO
+        # skipped for word_contrast: in its word-to-meaning direction,
+        # correct_answer is an English gloss ('dog'), not Hangul at all —
+        # same reasoning as read_aloud. In its meaning-to-word direction
+        # the answer IS Hangul, but always an already-composed syllable
+        # (손/선/개/게, never a bare jamo), so the normalization would be
+        # a no-op there anyway; excluding the whole mode is simpler and
+        # more honest than relying on that being a coincidence. ALSO
+        # skipped for nonword_decode: correct_answer is a concatenated
+        # romanization string (e.g. 'nudo'), not Hangul at all.
+        if question.mode not in ("read_aloud", "missing_vowel", "word_contrast", "nonword_decode", "sequence_decode"):
             user_clean = self._compose_bare_vowel(user_clean)
             expected = self._compose_bare_vowel(expected)
 
@@ -654,6 +1559,21 @@ class HangulQuiz:
                 feedback = f"✅ Correct! **{question.letter}** romanizes as **{expected}**."
             else:
                 feedback = f"❌ **{question.letter}** romanizes as **{expected}**. You typed '{user_clean}'."
+        elif question.mode == "nonword_decode":
+            # Graded as an exact romanization spelling match (case-insensitive),
+            # same as read_aloud. The answer is a concatenated romanization
+            # of two syllables (e.g. 'nudo' for 누도).
+            is_correct = user_clean.lower() == expected.lower()
+            if is_correct:
+                feedback = f"✅ Correct! **{question.letter}** decodes as **{expected}**."
+            else:
+                feedback = f"❌ **{question.letter}** decodes as **{expected}**. You typed '{user_clean}'."
+        elif question.mode == "sequence_decode":
+            is_correct = user_clean.lower() == expected.lower()
+            if is_correct:
+                feedback = f"✅ Correct! **{question.letter}** reads as **{expected}**."
+            else:
+                feedback = f"❌ **{question.letter}** reads as **{expected}**. You typed '{user_clean}'."
         elif question.mode in ("match_sound", "missing_vowel", "batchim_challenge"):
             is_correct = user_clean == expected
             if is_correct:
@@ -673,6 +1593,7 @@ class HangulQuiz:
             self.session_correct += 1
             self.session_streak += 1
             self._mark_mastered(question.letter, confidence=1)
+            self._record_learner_item(question, correct=True, response_ms=response_ms)
         else:
             self.session_streak = 0
             self._mark_mastered(question.letter, confidence=-1)
@@ -681,9 +1602,23 @@ class HangulQuiz:
             # romanization string (e.g. "eo"), not Hangul, so a wrong
             # read_aloud guess should never be recorded here; same for any
             # stray typo the user typed that isn't a plausible letter.
-            if (question.letter and user_clean
-                    and _looks_like_hangul_target(user_clean)
-                    and _looks_like_hangul_target(expected)):
+            #
+            # confused_with is user_clean, NOT expected: the mix-up this
+            # item had was with what the LEARNER typed, mirroring the
+            # existing f"{user_clean}↔{expected}" pair semantics right
+            # below. Passing expected here would have made an item
+            # record itself as confused with itself in most modes, since
+            # question.letter == expected for everything except
+            # confusion_drill (see _record_learner_item's docstring).
+            valid_pair = (question.letter and user_clean
+                          and _looks_like_hangul_target(user_clean)
+                          and _looks_like_hangul_target(expected))
+            self._record_learner_item(
+                question, correct=False,
+                confused_with=user_clean if valid_pair else None,
+                response_ms=response_ms,
+            )
+            if valid_pair:
                 pair = f"{user_clean}↔{expected}"
                 self.progress.setdefault("confusion_counts", {})
                 self.progress["confusion_counts"][pair] = self.progress["confusion_counts"].get(pair, 0) + 1
@@ -701,9 +1636,99 @@ class HangulQuiz:
         """Track which letters/syllables the user knows. +1 for correct, -1 for wrong."""
         if not item:
             return
+        # Normalize a bare vowel jamo to its composed form (ㅏ -> 아) so a
+        # vowel's mastery lives under ONE key. Otherwise missing_vowel (whose
+        # question.letter is the bare jamo) and every other mode (composed)
+        # split the same vowel across two mastered_letters entries, and
+        # lesson_mastery — which checks the composed pool — undercounts.
+        item = self._compose_bare_vowel(item)
         self.progress.setdefault("mastered_letters", {})
         current = self.progress["mastered_letters"].get(item, 0)
         self.progress["mastered_letters"][item] = max(0, min(5, current + confidence))
+
+    def _record_learner_item(self, question: QuizQuestion, correct: bool, confused_with: Optional[str] = None, response_ms: Optional[float] = None):
+        """Update the richer LearnerItem record for this question's
+        letter, in PARALLEL with _mark_mastered's flat int and the
+        confusion_counts dict above — neither of those is touched or
+        replaced by this method. Every existing reader of
+        mastered_letters/confusion_counts (get_mastered_syllables,
+        get_progress_summary, _top_confusions, _confusion_drill_question,
+        lesson_mastery, next_question's has_confusions check) keeps
+        reading exactly what it always has; this only adds a second,
+        richer record alongside it so nothing that already works can
+        break. next_question/_confusion_drill_question switching over to
+        read learner_items instead is a deliberately separate, later
+        step — that one changes what the learner is actually shown, so
+        it gets its own review rather than riding along with this one.
+
+        confused_with should be what the LEARNER typed (user_clean), not
+        the expected answer — question.letter is normally the same
+        value as `expected`, so recording a confusion against expected
+        would have this item list itself as its own confusion partner
+        in most modes. The caller already validates confused_with
+        against _looks_like_hangul_target before passing it, matching
+        the guard the confusion_counts write uses.
+
+        Not called for questions with no letter (mirrors the `if not
+        item: return` guard in _mark_mastered above).
+        """
+        item_key = question.letter
+        if not item_key:
+            return
+        # Normalize bare vowel -> composed (ㅣ -> 이) so learner_items uses
+        # the SAME key as _mark_mastered's mastered_letters. missing_vowel's
+        # question.letter is the bare jamo; without this the two records
+        # split a vowel across two keys and re-create the split this
+        # migration is removing.
+        item_key = self._compose_bare_vowel(item_key)
+
+        item = self._get_item(item_key)
+
+        if correct:
+            item.correct += 1
+        else:
+            item.wrong += 1
+            # No hard clear of _migrated_confidence here (a prior version
+            # did that on any first new answer — see LearnerItem's
+            # docstring for why that caused a "migration cliff": old
+            # scores 3, 4, 5 all collapsed to the same value on the very
+            # next correct answer). A correct answer needs no special
+            # handling at all now — confidence is naturally
+            # max(computed, floor), so it can only go up or hold, never
+            # cliff. A wrong answer erodes the floor by exactly one
+            # point, same as it would erode a non-migrated item's
+            # confidence — this is the only place that erosion happens.
+            item._wrong_since_migration += 1
+            if confused_with and _looks_like_hangul_target(confused_with) and confused_with != item_key:
+                item.confusions[confused_with] = item.confusions.get(confused_with, 0) + 1
+                # Symmetric confusion recording. The flat confusion_counts
+                # dict above keys on the UNORDERED pair, so one wrong answer
+                # fed both directions at once — but this per-item record
+                # only ever updated the EXPECTED letter's item (어's
+                # confusions["아"] when 아 was typed for 어). The TYPED
+                # letter's item never learned about the mix-up, so a drill
+                # or summary sourced from learner_items could miss half of
+                # it. Record it on BOTH items, guarded exactly like the
+                # existing write above.
+                typed_item = self._get_item(confused_with)
+                typed_item.confusions[item_key] = typed_item.confusions.get(item_key, 0) + 1
+                self._save_item(typed_item)
+
+        item.last_seen = time.time()
+        item.seen[question.mode] = item.seen.get(question.mode, 0) + 1
+
+        # Update the EMA response time — only when a real measurement
+        # was passed in (None means "not measured", e.g. programmatic
+        # callers that don't time). First data point seeds directly;
+        # subsequent points blend 80% old / 20% new.
+        if response_ms is not None:
+            if item.avg_response_ms == 0.0:
+                item.avg_response_ms = response_ms
+            else:
+                item.avg_response_ms = item.avg_response_ms * 0.8 + response_ms * 0.2
+
+        self._save_item(item)
+
 
     # ── Progress & stats ──────────────────────────────────────────────
 
@@ -833,11 +1858,19 @@ class HangulQuiz:
         learner typing 'ㅏ' where 아 is expected is treated as the same
         vowel everywhere in the app, not a wrong answer or a fake
         confusion between two 'different' letters in some call sites and
-        not others."""
+        not others.
+
+        The len(s) != 1 guard is load-bearing: _VOWEL_JAMO is a string, so
+        `"" in _VOWEL_JAMO` is always True (empty is a substring of any
+        string) — without the guard, an empty answer collapsed to 'ㅏ'."""
+        if len(s) != 1:
+            return s
         return self._letter_to_syllable(s) if s in _VOWEL_JAMO else s
 
     def _letter_to_syllable(self, letter: str) -> str:
         """Combine a letter with a default vowel/consonant to make a full syllable block."""
+        if len(letter) != 1:
+            return letter
         if letter in "ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎㄲㄸㅃㅆㅉ":
             return self._compose_syllable(letter, "ㅏ", "")  # default: add 'a'
         if letter in "ㅏㅓㅗㅜㅡㅣㅑㅕㅛㅠㅐㅔㅒㅖㅘㅙㅚㅝㅞㅟㅢ":
@@ -851,7 +1884,10 @@ class HangulQuiz:
           2. example_syllables — real-word examples (e.g. batchim lessons)
           3. letters — bare letters, composed with the silent ㅇ placeholder
              if they're vowels (consonants are fine shown bare)
-          4. a small hardcoded default, so callers never get an empty pool
+          4. lesson 1's letters composed with silent ㅇ (bare vowels →
+             아/어/오/우/으/이) — every learner encounters these first,
+             so they're always parseable. Derived from curriculum.json
+             rather than hardcoded.
         This single fallback chain is shared by spell/read_aloud/match_sound
         so a lesson only needs to add ONE of these fields to become usable —
         no more silently falling back to hardcoded '가' content."""
@@ -867,7 +1903,9 @@ class HangulQuiz:
                 else:
                     pool.append(letter)
             return pool
-        return ["가", "나", "다"]
+        # Last resort: lesson 1's vowels composed with silent ㅇ.
+        lesson_1 = self.curriculum["lessons"][0]
+        return [self._letter_to_syllable(v) for v in lesson_1.get("letters", [])]
 
     def _compose_syllable(self, cho: str, jung: str, jong: str = "") -> str:
         """Compose a Hangul syllable block from jamo components."""
@@ -894,17 +1932,23 @@ class HangulQuiz:
         if hangul in single_map:
             return single_map[hangul]
 
-        # Syllable decomposition
+        # Syllable decomposition — initial consonant position-aware (ㅇ
+        # silent, ㄹ→'r'), final consonant by its real batchim SOUND (ㄱ→'k',
+        # ㄷ→'t', ㅂ→'p', …) via _batchim_sound. No "-" separator: the whole
+        # syllable is one romanization ('한'→'han', '각'→'gak'), matching the
+        # title screen. The old code concatenated ROMANIZATION['ㄹ']='r/l'
+        # into 'r/la', and the "-" was a teaching crutch for the vowel/final
+        # distinction that has no place outside the batchim-intro lessons.
         try:
             cho, jung, jong = self._decompose_syllable(hangul)
-            roman_cho = single_map.get(cho, '?')
+            roman_cho = _initial_roman(cho)
             roman_jung = single_map.get(jung, '?')
 
             # Silent ㅇ: just the vowel sound
             if cho == 'ㅇ' and not jong:
                 return roman_jung
 
-            roman_jong = f"-{single_map.get(jong, '?')}" if jong else ""
+            roman_jong = self._batchim_sound(jong) if jong else ""
             return f"{roman_cho}{roman_jung}{roman_jong}"
         except:
             return hangul
@@ -928,6 +1972,61 @@ class HangulQuiz:
         with a made-up translation."""
         cho, jung, jong = self._decompose_syllable(syllable)
         return bool(cho) and cho != 'ㅇ'
+
+    def syllable_breakdown(self, hangul: str) -> "Syllable":
+        """Public entry point for 'give me this syllable's parts, composed
+        and romanized, ready to render' — the seam that was missing before:
+        _decompose_syllable/_compose_syllable/_hangul_to_roman_hint already
+        did all this work internally, but nothing outside HangulQuiz could
+        call it directly, so hangul_cli.py's title screen built its own
+        separate hardcoded (jamo, romanization) pairs instead of reusing
+        this engine's tested composition logic.
+
+        Accepts either an already-composed block ('한') or a bare jamo
+        letter, vowel or consonant ('ㅏ', 'ㄱ') — a bare letter is composed
+        with its default partner first (via _letter_to_syllable, the same
+        helper _compose_bare_vowel and _get_lesson_syllable_pool rely on)
+        so the caller always gets back a real syllable block, never a
+        naked jamo with nothing to decompose.
+
+        Returns a Syllable whose .components is already shaped for
+        _composition_rows() — see Syllable's docstring for the exact
+        shape and the CVC vs. CV difference (jong present vs. '').
+        """
+        if len(hangul) == 1 and ord(hangul) < 0xAC00:
+            # Bare jamo (below the composed-syllable code point range —
+            # same check _decompose_syllable itself uses) — compose with
+            # its default partner (same rule _compose_bare_vowel and
+            # _letter_to_syllable already use) before decomposing, so
+            # cho/jung/jong are never blank.
+            hangul = self._letter_to_syllable(hangul)
+
+        cho, jung, jong = self._decompose_syllable(hangul)
+        romanization = self._hangul_to_roman_hint(hangul)
+
+        components = []
+        if cho == "ㅇ":
+            # Silent placeholder: don't show "ㅇ + a" as if ㅇ contributes
+            # a sound — that's the exact "learn the rule from a note"
+            # pattern the redesign is moving away from. The vowel IS the
+            # whole sound here, so components starts directly from jung.
+            components.append((jung, ROMANIZATION.get(jung, "?")))
+        else:
+            components.append((cho, _initial_roman(cho)))
+            components.append((jung, ROMANIZATION.get(jung, "?")))
+        if jong:
+            components.append((jong, self._batchim_sound(jong)))
+        components.append((hangul, romanization))
+
+        return Syllable(
+            text=hangul,
+            romanization=romanization,
+            cho=cho,
+            jung=jung,
+            jong=jong,
+            components=components,
+            is_bare_vowel=(cho == "ㅇ" and not jong),
+        )
 
     def _decompose_syllable(self, syllable: str) -> tuple:
         """Decompose a Hangul syllable into (choseong, jungseong, jongseong)."""
@@ -974,15 +2073,37 @@ class HangulQuiz:
         return simple.get(jong, '?')
 
     def _get_known_syllables(self) -> list[str]:
-        """Get all syllables from completed lessons."""
+        """Get all syllables from completed lessons, with safe fallbacks.
+
+        Priority order:
+          1. Syllables from completed lessons (real learned content).
+          2. Current lesson's own pool — so a learner mid-first-lesson
+             gets distractors from what they're currently studying, not
+             arbitrary untaught syllables.
+          3. Lesson 1's letters composed with silent ㅇ (bare vowels →
+             아/어/오/우/으/이) — every learner encounters these first,
+             so they're always parseable. Derived from curriculum.json
+             rather than hardcoded, so it stays in sync if lesson 1
+             changes.
+        """
         known = []
         for lesson in self.curriculum["lessons"]:
             if lesson["id"] in self.progress["completed_lessons"]:
                 known.extend(lesson.get("practice_syllables", []))
                 known.extend(lesson.get("example_syllables", []))
-        if not known:
-            known = ["가", "나", "다", "라", "마", "바", "사", "아", "자"]
-        return known
+        if known:
+            return known
+
+        # No completed lessons yet — use current lesson's pool if available
+        if self.current_lesson:
+            pool = self._get_lesson_syllable_pool(self.current_lesson)
+            if pool:
+                return pool
+
+        # Last resort: lesson 1's vowels composed with silent ㅇ.
+        # Every learner has seen these; they're always safe distractors.
+        lesson_1 = self.curriculum["lessons"][0]
+        return [self._letter_to_syllable(v) for v in lesson_1.get("letters", [])]
 
     # ── Konglish mode ──────────────────────────────────────────────────
 

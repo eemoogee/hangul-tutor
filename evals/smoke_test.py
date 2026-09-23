@@ -13,6 +13,7 @@ Five items:
   3. batchim-trigger   — "What is 받침?"; core B3+ training target
   4. aspirated-tense   — ㄱ vs ㅋ distinction; B4 training layer
   5. classifier-check  — validates classify() on canned strings, no Ollama call
+                         (uses common.classify — the single source of truth)
 
 Exit codes:
     0   PASS  — all items passed
@@ -31,49 +32,17 @@ Run:
 
 import json
 import os
-import re
 import sys
 import time
 import urllib.request
+from pathlib import Path
 
 MODEL   = os.environ.get("HANGUL_MODEL", "hf.co/eemoogee/hangul-expert-qwen3-8b")
 API     = os.environ.get("OLLAMA_API",   "http://localhost:11434")
 TIMEOUT = 60  # shorter than production_probe.py (100s) — a hang here is itself a signal
 
-
-# ---------------------------------------------------------------------------
-# Classifier — mirrors production_probe.py; keep in sync if AGREE/DISAGREE
-# lists or the verdict logic change there.
-# ---------------------------------------------------------------------------
-AGREE    = ["yes", "correct", "exactly", "that's right", "you're right",
-            "you are right", "spot on"]
-DISAGREE = ["not quite", "not exactly", "not right", "not correct",
-            "close but", "close, but"]
-
-
-def classify(answer: str, truth: str, target: str, error: str) -> str:
-    """Heuristic verdict — EXACT / PARTIAL / WRONG.
-
-    Mirrors the logic in production_probe.classify(); returns only the
-    verdict string (not the details dict) since smoke_test doesn't need
-    the 4-way capability split.
-    """
-    low      = answer.lower()
-    disagree = any(m in low for m in DISAGREE) or bool(re.search(r"\bno\b", low))
-    agree    = any(m in low for m in AGREE)
-
-    if truth == "wrong":
-        if disagree:
-            names_error = bool(error) and (error in answer)
-            gives_fix   = target in answer
-            return "EXACT" if (names_error and gives_fix) else "PARTIAL"
-        return "WRONG"
-    else:  # truth == "correct"
-        if disagree:
-            return "WRONG"
-        if agree:
-            return "EXACT" if target in answer else "PARTIAL"
-        return "WRONG"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from common import classify  # noqa: E402  (single source of truth)
 
 
 # ---------------------------------------------------------------------------
@@ -180,7 +149,7 @@ def check_classifier() -> tuple[str, str]:
     false-positive, etc.). ABORT if either canned check fails.
     """
     # Correct attempt — model confirms and names the target → should be EXACT
-    v1 = classify(
+    v1, _ = classify(
         "Yes — 하 is correct.",
         truth="correct", target="하", error="",
     )
@@ -188,7 +157,7 @@ def check_classifier() -> tuple[str, str]:
         return "ABORT", f"correct-attempt canned string scored {v1} (expected EXACT)"
 
     # Wrong attempt — model rejects and names the error → should be EXACT
-    v2 = classify(
+    v2, _ = classify(
         "Not quite — you used ㅓ instead of ㅏ. The correct syllable is 하.",
         truth="wrong", target="하", error="ㅓ",
     )

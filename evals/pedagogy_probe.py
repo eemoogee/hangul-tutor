@@ -41,7 +41,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import add_log_path_arg, generate as _generate, git_commit
+from common import add_log_path_arg, default_log_path, generate as _generate, git_commit
 
 MODEL = os.environ.get("HANGUL_MODEL", "hf.co/eemoogee/hangul-expert-qwen3-8b")
 API = os.environ.get("OLLAMA_API", "http://localhost:11434")
@@ -155,7 +155,9 @@ def run(
     return ans
 
 
-def main(log_path: str = "pedagogy_probe_raw.jsonl") -> None:
+def main(log_path: str | None = None) -> None:
+    if log_path is None:
+        log_path = default_log_path("pedagogy_probe_raw")
     commit = git_commit()
     with open(log_path, "a", encoding="utf-8") as logf:
 
@@ -205,7 +207,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    add_log_path_arg(parser, "pedagogy_probe_raw.jsonl")
+    add_log_path_arg(parser, default_log_path("pedagogy_probe_raw"))
     return parser.parse_args()
 
 

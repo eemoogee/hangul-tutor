@@ -9,3 +9,27 @@ unsloth_compiled_cache/
 *.log
 data/user_progress.backup-*.json
 production_probe_raw.jsonl
+curriculum_probe_raw.jsonl
+pedagogy_probe_raw.jsonl
+
+# Session verification/test scripts
+_verify_*.py
+test_*.py
+
+# Session notes and scratch files
+9-22_hangul-tutor-gamplay-test.md
+Claude outputs/
+Modelfile_systemprompt
+generate_wrong_attempt_pairs.py
+data/deo-do-entry.json
+
+# Fine-tune artifacts (abandoned track)
+hangul_finetune_v13.jsonl
+production_probe_raw_v12_dpo.jsonl
+production_probe_raw_v13.jsonl
+
+# Build output
+dist/
+
+# Backup files (alternate naming convention)
+data/user_progress.json.bak-*

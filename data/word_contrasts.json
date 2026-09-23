@@ -1,0 +1,149 @@
+[
+  {
+    "id": "wc-vowel-ae-e-001",
+    "confusion": {
+      "type": "vowel",
+      "left_jamo": "ㅐ",
+      "right_jamo": "ㅔ",
+      "display_label": "ㅐ / ㅔ"
+    },
+    "contrast_type": "lexical_minimal_pair",
+    "stage": 3,
+    "items": [
+      {
+        "form": "개",
+        "romanization": "gae",
+        "meaning_en": "dog",
+        "part_of_speech": "noun",
+        "requires_host": false,
+        "example_ko": "개가 있어요.",
+        "example_en": "There is a dog."
+      },
+      {
+        "form": "게",
+        "romanization": "ge",
+        "meaning_en": "crab",
+        "part_of_speech": "noun",
+        "requires_host": false,
+        "example_ko": "게를 먹어요.",
+        "example_en": "I eat crab."
+      }
+    ],
+    "teaching_note": {
+      "en": "These are different Korean words with different spellings: 개 has ㅐ, while 게 has ㅔ.",
+      "ko": "개는 ㅐ를 쓰고, 게는 ㅔ를 써요."
+    },
+    "prompt": {
+      "type": "meaning_to_word",
+      "text_en": "Which word means \"dog\"?",
+      "choices": [
+        "개",
+        "게"
+      ],
+      "answer": "개"
+    },
+    "verification": {
+      "status": "externally_verified",
+      "scope": "Meaning supplied as new curriculum content; not confirmed from the existing curriculum.json arrays.",
+      "notes": "Standard dictionary entries identify 개 as 'dog' and 게 as 'crab.' Some modern Seoul speakers pronounce ㅐ and ㅔ very similarly or identically, so this contrast should emphasize spelling and word meaning rather than promise a consistently audible difference for every learner/speaker."
+    }
+  },
+  {
+    "id": "wc-vowel-eo-o-001",
+    "confusion": {
+      "type": "vowel",
+      "left_jamo": "ㅓ",
+      "right_jamo": "ㅗ",
+      "display_label": "ㅓ / ㅗ"
+    },
+    "contrast_type": "lexical_minimal_pair",
+    "stage": 3,
+    "items": [
+      {
+        "form": "손",
+        "romanization": "son",
+        "meaning_en": "hand",
+        "part_of_speech": "noun",
+        "requires_host": false,
+        "example_ko": "손을 씨어요.",
+        "example_en": "I wash my hands."
+      },
+      {
+        "form": "선",
+        "romanization": "seon",
+        "meaning_en": "line",
+        "part_of_speech": "noun",
+        "requires_host": false,
+        "example_ko": "종이에 선을 그었어요.",
+        "example_en": "I drew a line on the paper."
+      }
+    ],
+    "teaching_note": {
+      "en": "손 (hand) and 선 (line) differ only in the vowel: ㅓ vs ㅗ. Both are ordinary, everyday nouns.",
+      "ko": "손과 선은 모음만 달라요: ㅓ와 ㅗ."
+    },
+    "prompt": {
+      "type": "meaning_to_word",
+      "text_en": "Which word means \"hand\"?",
+      "choices": [
+        "손",
+        "선"
+      ],
+      "answer": "손"
+    },
+    "verification": {
+      "status": "externally_verified",
+      "scope": "Meaning supplied as new curriculum content; not confirmed from the existing curriculum.json arrays.",
+      "notes": "손 verified as an elementary-level noun meaning 'hand' (body part). 선 verified as a basic noun meaning 'line' (its most common, beginner-level sense); 선 is polysemous in Korean (also 'meeting to choose a marriage partner', 'goodness/virtue' as Sino-Korean 善, etc.) but 'line' is the primary sense appropriate for this level. Neither form requires a grammatical host, unlike a particle."
+    }
+  },
+  {
+    "id": "wc-grammar-deo-do-001",
+    "confusion": {
+      "type": "grammar",
+      "left_jamo": "더",
+      "right_jamo": "도",
+      "display_label": "더 / 도"
+    },
+    "contrast_type": "lexical_vs_grammar_form",
+    "stage": 3,
+    "items": [
+      {
+        "form": "더",
+        "romanization": "deo",
+        "meaning_en": "more",
+        "part_of_speech": "adverb",
+        "requires_host": true,
+        "example_ko": "더 주세요.",
+        "example_en": "Please give me more."
+      },
+      {
+        "form": "도",
+        "romanization": "do",
+        "meaning_en": "also / too",
+        "part_of_speech": "particle",
+        "requires_host": true,
+        "example_ko": "물도 주세요.",
+        "example_en": "Please give me water, too."
+      }
+    ],
+    "teaching_note": {
+      "en": "더 (more) and 도 (also/too) are not the same kind of word. 더 is an adverb that can stand in front of a verb on its own. 도 is a particle that always attaches directly to a noun, with no space — it never appears alone.",
+      "ko": "더는 부사라서 동사 앞에 혼자 올 수 있어요. 도는 조사라서 명사에 붙여 써요 — 혼자서는 쓰이지 않아요."
+    },
+    "prompt": {
+      "type": "meaning_to_word",
+      "text_en": "Which word means \"also/too\"?",
+      "choices": [
+        "더",
+        "도"
+      ],
+      "answer": "도"
+    },
+    "verification": {
+      "status": "externally_verified",
+      "scope": "Meaning and grammatical behavior supplied as new curriculum content; not confirmed from the existing curriculum.json arrays.",
+      "notes": "더 (more) verified as a basic adverb usable standalone before a verb (e.g. 더 주세요). 도 (also/too) verified as a case-marking-position particle that attaches directly to a noun with no space and cannot occur as a free-standing word — this is why the pair is classified lexical_vs_grammar_form rather than lexical_minimal_pair, and why both items are marked requires_host: true. Decodable from lesson 2 onward (ㄷ+ㅓ and ㄷ+ㅗ), earlier than either existing seed pair."
+    }
+  }
+]

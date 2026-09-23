@@ -26,12 +26,13 @@ import json
 import subprocess
 import time
 from pathlib import Path
+from typing import Optional
 
 # Add project root to path
-PROJECT_ROOT = Path(__file__).parent
+PROJECT_ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from hangul_quiz_engine import HangulQuiz, QuizQuestion
+from hangul_quiz_engine import HangulQuiz, QuizQuestion, _initial_roman, _VOWEL_JAMO
 from hangul_conversation import (
     generate_conversation_turn, check_conversation_answer, build_template_sentence
 )
@@ -177,6 +178,82 @@ def build_session_data(quiz: HangulQuiz) -> dict:
         "strong_letters": [l for l, v in mastered.items() if v >= 4],
         "struggling_letters": [l for l, v in mastered.items() if v <= 1],
     }
+
+
+def print_lesson_complete(quiz) -> None:
+    """Print a structured lesson-complete summary block.
+    Pure reformatting of data already tracked — no new fields, no Ollama calls."""
+    W = 32  # inner width (between ║...║)
+
+    # Guard: if current_lesson is somehow None at quit time, skip Weakest/Next silently.
+    has_lesson = quiz.current_lesson is not None
+
+    # --- Data ---
+    accuracy = round(100 * quiz.session_correct / max(1, quiz.session_total))
+    questions = quiz.session_total
+    best_streak = quiz.progress.get("streak_best", 0)
+
+    # Weakest letter scoped to current lesson's pool
+    weakest = None
+    if has_lesson:
+        lesson_pool = set(quiz._get_lesson_syllable_pool(quiz.current_lesson))
+        mastered = quiz.progress.get("mastered_letters", {})
+        lesson_mastered = {k: v for k, v in mastered.items() if k in lesson_pool}
+        if lesson_mastered:
+            weakest = min(lesson_mastered, key=lambda k: lesson_mastered[k])
+
+    # Next lesson
+    next_lesson = None
+    if has_lesson:
+        try:
+            nxt = quiz._get_lesson(quiz.current_lesson["id"] + 1)
+            next_lesson = {"title": nxt["title"], "letters": nxt.get("letters", [])}
+        except ValueError:
+            pass
+
+    # --- Render ---
+    def kv_row(label: str, value: str, value_styles=()) -> str:
+        """One key-value row inside the box. value_styles applied only to value."""
+        label_field = f"  {label:<14}"  # left-align label in 16-char field (2 indent + 14)
+        right_pad = 2
+        pad = W - len(label_field) - len(value) - right_pad
+        if pad < 0:
+            pad = 0
+        val = styled(value, *value_styles) if value_styles else value
+        return f"║{label_field}{val}{' ' * pad}║"
+
+    def blank_row() -> str:
+        return f"║{' ' * W}║"
+
+    lines = [
+        styled("╔" + "═" * W + "╗", CYAN),
+        styled(f"║{'LESSON COMPLETE':^{W}}║", BOLD, CYAN),
+        styled("╠" + "═" * W + "╣", CYAN),
+    ]
+
+    lines.append(kv_row("Accuracy", f"{accuracy}%"))
+    lines.append(kv_row("Questions", str(questions)))
+    lines.append(kv_row("Best Streak", f"{best_streak} ✦"))
+
+    # Weakest: omit entirely if None (no mastered data for this lesson yet)
+    if weakest:
+        lines.append(kv_row("Weakest", weakest, (YELLOW,)))
+
+    # Next lesson: show up to 5 letters, append "…" if more
+    if next_lesson:
+        lines.append(blank_row())
+        lines.append(kv_row("Next", f"Lesson {quiz.current_lesson['id'] + 1}", (GREEN,)))
+        letters = next_lesson["letters"]
+        if len(letters) > 5:
+            letters_str = " ".join(letters[:5]) + " …"
+        else:
+            letters_str = " ".join(letters)
+        lpad = (W - len(letters_str)) // 2
+        rpad = W - len(letters_str) - lpad
+        lines.append(f"║{' ' * lpad}{letters_str}{' ' * rpad}║")
+
+    lines.append(styled("╚" + "═" * W + "╝", CYAN))
+    print("\n" + "\n".join(lines) + "\n")
 
 
 # ANSI escape sequences (terminal cursor/color codes) that small local models
@@ -411,7 +488,11 @@ def run_alphabet_intro(quiz: HangulQuiz):
                 print(f"{styled('Skipping ahead to lesson picking!', YELLOW)}")
                 return
             if response:
-                if response.lower() == roman.lower():
+                resp = response.lower()
+                # A slashed romanization like "r/l" means EITHER spelling is
+                # right — accept "r" and "l" too, not just the literal "r/l".
+                accepted = [p.strip() for p in roman.lower().split("/")]
+                if resp == roman.lower() or resp in accepted:
                     print(f"   {styled('✅ Nailed it!', GREEN)}")
                 else:
                     msg = f'Close — {letter} is "{roman}". No score kept, just practice!'
@@ -488,6 +569,30 @@ def _composition_rows(cells, connector=" + ", final_connector="   =   ", indent=
             roman_pieces.append(sep)
     roman_line = indent + "".join(roman_pieces)  # fully monochrome
     return jamo_pieces, roman_line, indent
+
+
+def _highlight_in_sentence(sentence: str, target: str) -> Optional[str]:
+    """Return `sentence` with the FIRST/ONLY occurrence of `target` styled
+    bold+GREEN (matching _composition_rows' convention of GREEN for the
+    piece under focus), or None if it can't highlight safely.
+
+    Fails closed rather than guessing: returns None (never a fabricated
+    or over-eager highlight) when target doesn't appear in sentence at
+    all, or appears more than once. A naive sentence.replace(target, ...)
+    would highlight EVERY occurrence — for a particle like 도, a longer
+    sentence could easily contain it twice for unrelated reasons, and
+    lighting up both would either look broken or, worse, accidentally
+    hint at the answer through visual pattern rather than content. One
+    confirmed occurrence is what every seed example is written to have;
+    if content ever violates that, the caller should fall back to plain
+    text rather than this function inventing a highlight that isn't
+    trustworthy."""
+    count = sentence.count(target)
+    if count != 1:
+        return None
+    idx = sentence.index(target)
+    before, after = sentence[:idx], sentence[idx + len(target):]
+    return before + styled(target, BOLD, GREEN) + after
 
 
 def print_title_screen():
@@ -580,7 +685,7 @@ def print_lesson_intro(introduction: str = "", note: str = ""):
     if note:
         print(f"\n{styled('📝 Note:', YELLOW)} {note}")
 
-def print_reference_table(lesson: dict):
+def print_reference_table(quiz: HangulQuiz, lesson: dict):
     """Print a full reference table for the lesson's letters/content before
     quizzing starts, so the learner sees every pronunciation up front
     instead of picking it up one mnemonic at a time. Picks whichever kind
@@ -588,7 +693,23 @@ def print_reference_table(lesson: dict):
     batchim rules, or vocabulary. Stroke order is intentionally NOT shown
     here — it's covered visually by the /alphabet and /intro animations,
     and as text it was judged unnecessary clutter for this app's actual
-    purpose (letter recognition, not calligraphy)."""
+    purpose (letter recognition, not calligraphy).
+
+    For the pronunciation branch (vowel/consonant-introduction lessons),
+    this now also shows each letter as a COMPOSED block (아, not just ㅏ),
+    via quiz.syllable_breakdown() + _composition_rows() — the same
+    composition primitive the title screen uses, reused here instead of
+    staying a title-screen one-off. This is the fix for the reported gap:
+    the vertical list of lone letters was the one place in the app where
+    the composed-block visual disappeared. See lessons.hangul-tutor for
+    the fuller design rationale (whole → decompose → reconstruct).
+
+    Consonant lessons (ones with a practice_syllables pool — vowel-only
+    Lesson 1 doesn't have one) additionally get a CONTRASTIVE ROW: the
+    lesson's own consonants against one shared vowel (가 나 다 라 마 —
+    "same vowel, changing consonant"), so the pattern is visible as soon
+    as a consonant has something to combine with, not deferred to a
+    later lesson."""
     pronunciation = lesson.get("pronunciation") or {}
     batchim_pron = lesson.get("batchim_pronunciation") or {}
     batchim_rules = lesson.get("batchim_pronunciation_rules") or {}
@@ -598,7 +719,36 @@ def print_reference_table(lesson: dict):
 
     if pronunciation:
         print(f"\n{styled('📋 Reference Table', BOLD, CYAN)}")
-        for letter in lesson.get("letters", []):
+        letters = lesson.get("letters", [])
+
+        # Composed-block row: each letter shown as a real syllable block
+        # (아, 가, ...) with romanization aligned underneath, not just the
+        # bare jamo. Skipped only if composition fails for every letter
+        # (shouldn't happen for the 24 basic letters this branch covers,
+        # but falling through to the plain list below is a safe default
+        # rather than crashing the reference table over a display extra).
+        composed_cells = []
+        for letter in letters:
+            try:
+                syl = quiz.syllable_breakdown(letter)
+                composed_cells.append((syl.text, syl.romanization))
+            except Exception:
+                pass
+        if composed_cells:
+            jamo_pieces, roman_line, indent = _composition_rows(
+                composed_cells, connector="   ", final_connector="   "
+            )
+            # No '=' final_connector here — this is a peer row of blocks
+            # (아 어 오 우 으 이), not a single composition building up to
+            # one result, so the visual shouldn't imply one.
+            sys.stdout.write(indent)
+            for piece in jamo_pieces:
+                sys.stdout.write(piece)
+            print()
+            print(roman_line)
+            print()
+
+        for letter in letters:
             pron = pronunciation.get(letter, "")
             code = letter_romanization.get(letter, "")
             code_str = f" ({code})" if code else ""
@@ -607,6 +757,60 @@ def print_reference_table(lesson: dict):
             quirk = POSITIONAL_QUIRKS.get(letter, "")
             if quirk:
                 print(f"        {styled('⚡ ' + quirk, BOLD, YELLOW)}")
+
+        # Contrastive row(s) — only for lessons that actually introduce a
+        # consonant with something to combine against (practice_syllables
+        # present). Group the lesson's own practice syllables by shared
+        # vowel so the row reads as "same vowel, changing consonant"
+        # (가 나 다 라 마), the Axis-1 pattern from the redesign, using
+        # syllables the lesson already curated rather than inventing new
+        # combinations it hasn't taught yet.
+        practice = lesson.get("practice_syllables") or []
+        if practice:
+            by_vowel = {}
+            by_cho = {}
+            for syll in practice:
+                try:
+                    syl = quiz.syllable_breakdown(syll)
+                except Exception:
+                    continue
+                by_vowel.setdefault(syl.jung, []).append(syl)
+                by_cho.setdefault(syl.cho, []).append(syl)
+            # Show at most one contrastive row per vowel that has more
+            # than one consonant behind it — a single-entry "row" isn't a
+            # contrast. Sorted for stable, predictable output rather than
+            # dict insertion order.
+            rows = [sylls for sylls in by_vowel.values() if len(sylls) > 1]
+            if rows:
+                print(f"   {styled('Same vowel, different consonant:', BOLD)}")
+                for sylls in rows:
+                    cells = [(s.text, s.romanization) for s in sylls]
+                    jamo_pieces, roman_line, indent = _composition_rows(
+                        cells, connector="   ", final_connector="   "
+                    )
+                    sys.stdout.write(indent)
+                    for piece in jamo_pieces:
+                        sys.stdout.write(piece)
+                    print()
+                    print(roman_line)
+                print()
+            # Axis 2: same consonant, changing vowel — the complementary
+            # pattern to Axis 1. Same structure, just grouped by syl.cho
+            # instead of syl.jung.
+            rows_cho = [sylls for sylls in by_cho.values() if len(sylls) > 1]
+            if rows_cho:
+                print(f"   {styled('Same consonant, different vowel:', BOLD)}")
+                for sylls in rows_cho:
+                    cells = [(s.text, s.romanization) for s in sylls]
+                    jamo_pieces, roman_line, indent = _composition_rows(
+                        cells, connector="   ", final_connector="   "
+                    )
+                    sys.stdout.write(indent)
+                    for piece in jamo_pieces:
+                        sys.stdout.write(piece)
+                    print()
+                    print(roman_line)
+                print()
     elif batchim_pron:
         print(f"\n{styled('📋 Batchim Reference Table', BOLD, CYAN)}")
         for letter, pron in batchim_pron.items():
@@ -661,6 +865,62 @@ def run_beginner_intro(quiz: HangulQuiz, lesson: dict):
     letter_romanization = lesson.get("letter_romanization") or {}
     roman_table = quiz.get_romanization_table()
 
+    # ── Silent-ㅇ discovery sequence (vowel-only lessons only) ──────
+    # For lessons where every letter is a bare vowel jamo, show the
+    # pattern BEFORE the per-letter walkthrough: a vowel can't stand
+    # alone in real writing, so Korean fills the consonant slot with
+    # silent ㅇ. The learner sees the same pattern repeat across
+    # multiple vowels (ㅇ+ㅏ→아, ㅇ+ㅓ→어, ㅇ+ㅗ→오) before ever
+    # building anything — discovering the rule from the pattern, not
+    # being told it as a fact in a note.
+    is_vowel_only_lesson = all(letter in _VOWEL_JAMO for letter in letters)
+    if is_vowel_only_lesson:
+        first_letter = letters[0]
+        print(f"\n{styled('🔍 Before we begin — a quick discovery:', BOLD, CYAN)}")
+        print(f"   Can {styled(first_letter, BOLD)} stand alone as a real Korean syllable?")
+        time.sleep(0.8)
+        print(f"\n   {styled('Not in real writing.', BOLD, YELLOW)}")
+        print(f"   Every syllable needs something in the consonant slot.")
+        print(f"   Korean fills that slot with {styled('ㅇ', BOLD)} — silent, just a placeholder.")
+        time.sleep(0.6)
+        print(f"\n   {styled('Watch the pattern:', CYAN)}")
+
+        # Show up to 3 vowels composed with silent ㅇ
+        discovery_letters = letters[:3]
+        for vowel in discovery_letters:
+            syl = quiz.syllable_breakdown(vowel)
+            roman = letter_romanization.get(vowel) or roman_table.get(vowel, "")
+            # Build cells showing the silent ㅇ explicitly:
+            # (ㅇ, "") + (vowel, roman) → (composed, roman)
+            cells = [
+                ("ㅇ", ""),
+                (vowel, roman),
+                (syl.text, syl.romanization),
+            ]
+            jamo_pieces, roman_line, indent = _composition_rows(cells)
+            sys.stdout.write(indent)
+            for piece in jamo_pieces:
+                sys.stdout.write(piece)
+            print()
+            print(roman_line)
+            time.sleep(0.3)
+
+        # Interactive prompt: ask what they have in common, accept any response
+        composed_names = [quiz.syllable_breakdown(v).text for v in discovery_letters]
+        print(f"\n   {styled('What do', CYAN)} {', '.join(composed_names)} {styled('all have in common?', CYAN)}")
+        try:
+            response = input(f"   {styled('>', BOLD)} ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print(f"\n{styled('Walkthrough ended early.', YELLOW)}")
+            return
+        # UNGRADED — accept any response (including blank), no validation
+        # The reveal comes AFTER they respond (or press Enter with nothing)
+        print(f"\n   {styled('The', GREEN)} {styled('ㅇ', BOLD, GREEN)} {styled('at the front is silent in all of them.', GREEN)}")
+        print(f"   {styled('Every vowel needs it, since Korean can' + chr(39) + 't write a bare vowel alone.', GREEN)}")
+        time.sleep(0.5)
+
+        print(f"\n{styled('Now let' + chr(39) + 's meet the vowels themselves:', BOLD, GREEN)}")
+
     print(f"\n{styled('🐣 Beginner Walkthrough', BOLD, GREEN)} — {len(letters)} letter(s) in this lesson")
     print(f"{styled('Press Enter to move on, or type the romanization to try it. Type /skip to end early.', CYAN)}")
 
@@ -697,17 +957,200 @@ def run_beginner_intro(quiz: HangulQuiz, lesson: dict):
     print(f"\n{styled('🐣 Walkthrough complete!', GREEN)} Type /table for a quick-reference recap anytime, or just answer the next question to start quizzing.")
 
 
-def print_question(q: QuizQuestion):
-    """Display a question with styling."""
+def print_question(q: QuizQuestion, quiz: HangulQuiz = None):
+    """Display a question with styling.
+
+    build_syllable and missing_vowel already carry a composition inside
+    their prompt string (e.g. "Consonant: ㄴ | Vowel: ㅏ", or
+    "ㄷ + ? = di") — this used to render as plain labeled text instead of
+    the visual composition row (ㄴ + ㅏ → 나) the title screen and
+    reference table now use everywhere else. confusion_drill had a
+    related but distinct gap: the pair it drills (target vs. other) was
+    already correctly selected by the engine, but "other" only ever
+    appeared as a romanization string inside the prompt/hint and as MCQ
+    choices — never as a composed block shown alongside target, so the
+    side-by-side contrast never actually rendered. With quiz passed in,
+    all three modes render through _composition_rows instead of
+    q.prompt's plain text, so the visual doesn't disappear the moment a
+    real quiz question starts. Every other mode is unchanged — same
+    q.prompt string as before — and if quiz isn't passed (or breakdown
+    fails) this falls straight back to the old plain-text rendering, so
+    nothing regresses if it's ever called the old way.
+
+    missing_vowel needs particular care: q.letter is the FULL target
+    syllable (e.g. '디'), whose decomposition includes the very vowel
+    being asked about — so this branch shows only the consonant and a
+    '?' placeholder, never the composed block or the vowel jamo, exactly
+    like the plain-text prompt it replaces ("ㄷ + ? = di") did.
+    confusion_drill has no such leak concern — the task is telling two
+    known blocks apart, not guessing a hidden piece — so both are shown
+    in full."""
     mode_icons = {
-        "spell": "🔤", "read_aloud": "🗣️", "match_sound": "🎯",
+        "spell": "🔤", "read_aloud": "🔊", "match_sound": "🎯",
         "build_syllable": "🧩", "missing_vowel": "🔍",
         "batchim_challenge": "📦", "confusion_drill": "⚡",
-        "sudden_death": "💀"
+        "word_contrast": "📖", "sudden_death": "💀", "nonword_decode": "🔣"
     }
+    mode_labels = {"read_aloud": "Sound It Out", "nonword_decode": "Decode"}
     icon = mode_icons.get(q.mode, "❓")
-    print(f"\n{icon} {styled(q.mode.replace('_', ' ').title(), CYAN)}")
-    print(f"   {q.prompt}")
+    label = mode_labels.get(q.mode, q.mode.replace('_', ' ').title())
+    print(f"\n{icon} {styled(label, CYAN)}")
+
+    rendered = False
+    if quiz is not None and q.mode in ("build_syllable", "missing_vowel", "confusion_drill", "word_contrast") and q.letter:
+        try:
+            syl = quiz.syllable_breakdown(q.letter)
+            if q.mode == "build_syllable":
+                # Safe to show cho/jung/(jong) — that's the given puzzle —
+                # but not the composed result, which is the answer. Cut
+                # syl.components before its last (whole-block) entry.
+                given = syl.components[:-1]
+                print(f"   Build the syllable for **{syl.romanization}**")
+                jamo_pieces, roman_line, indent = _composition_rows(
+                    given, connector=" + ", final_connector=" + "
+                )
+                sys.stdout.write(indent)
+                for piece in jamo_pieces:
+                    sys.stdout.write(piece)
+                print("   =   ?")
+                print(roman_line)
+                rendered = True
+            elif q.mode == "missing_vowel":
+                # Only the consonant is safe to show — jung IS the answer,
+                # and the composed block would give it away via its shape.
+                roman = quiz._hangul_to_roman_hint(q.letter)
+                cho_roman = _initial_roman(syl.cho) if syl.cho != "ㅇ" else ""
+                w = max(_vwidth(syl.cho), _vwidth(cho_roman))
+                jamo_line = (f"   {styled(_pad_to(syl.cho, w), BOLD, CYAN)} + "
+                             f"{styled('?', BOLD, YELLOW)}   =   {styled(roman, BOLD, GREEN)}")
+                roman_line = f"   {_pad_to(cho_roman, w)}   ?"
+                print(jamo_line)
+                print(roman_line)
+                print("   Which vowel completes it?")
+                rendered = True
+            elif q.mode == "confusion_drill" and q.other:
+                # Genuinely contrastive render (the gap identified against
+                # §20 of the design review): previously the drilled pair
+                # only appeared as a romanization string inside the prompt
+                # and as two of the four MCQ choices — never as composed
+                # blocks shown side by side. Both blocks are safe to show
+                # in full here (unlike build_syllable/missing_vowel above):
+                # the task is "which of these two is {roman}", not "guess
+                # the hidden piece", so showing both doesn't hand over the
+                # answer — the learner still has to match sound to shape.
+                other_syl = quiz.syllable_breakdown(q.other)
+                pair_cells = [(syl.text, syl.romanization),
+                              (other_syl.text, other_syl.romanization)]
+                jamo_pieces, roman_line, indent = _composition_rows(
+                    pair_cells, connector="     ", final_connector="     "
+                )
+                print(f"   {styled('⚠️ Confusion drill', BOLD, YELLOW)} — "
+                      f"which one is **{syl.romanization}**?")
+                sys.stdout.write(indent)
+                for piece in jamo_pieces:
+                    sys.stdout.write(piece)
+                print()
+                print(roman_line)
+                rendered = True
+            elif q.mode == "word_contrast" and q.contrast_type == "lexical_minimal_pair" and q.other:
+                # Rendering POLICY gated on contrast_type, not just mode —
+                # this is the actual point of carrying contrast_type on
+                # the QuizQuestion at all. lexical_minimal_pair is the
+                # only contrast_type this branch knows how to render as a
+                # bare composed block: two ordinary standalone words,
+                # neither needing a grammatical host (see
+                # word_contrasts.json's verification notes on 개/게 and
+                # 손/선). lexical_vs_grammar_form has its OWN branch below
+                # (host-context / example-sentence rendering) precisely
+                # because a hosted form like 도 rendered as a bare block
+                # would misrepresent it as a standalone word — the exact
+                # mistake flagged when 더/도 was first considered for the
+                # seed set. Anything still unrecognized falls through to
+                # plain q.prompt.
+                other_syl = quiz.syllable_breakdown(q.other)
+                target_syl = quiz.syllable_breakdown(q.letter)
+                if q.direction == "word_to_meaning":
+                    # Show the target's composed block; ask what it means.
+                    # Not showing "other" here at all — the choices list
+                    # already carries both glosses, and showing the OTHER
+                    # Hangul form would just be visual noise for a
+                    # question that isn't asking the learner to compare
+                    # two Hangul shapes.
+                    print(f"   {styled(target_syl.text, BOLD, CYAN)}"
+                          f"  ({styled(target_syl.romanization, BOLD, GREEN)})")
+                    print("   ...means?")
+                else:
+                    # meaning_to_word: show both composed blocks side by
+                    # side, unlabeled as to which is correct — same
+                    # non-leaking pattern as confusion_drill above. The
+                    # learner has to match the named meaning to the right
+                    # shape, not just recognize a lone block.
+                    pair_cells = [(target_syl.text, target_syl.romanization),
+                                  (other_syl.text, other_syl.romanization)]
+                    jamo_pieces, roman_line, indent = _composition_rows(
+                        pair_cells, connector="     ", final_connector="     "
+                    )
+                    print(f"   {q.prompt}")
+                    sys.stdout.write(indent)
+                    for piece in jamo_pieces:
+                        sys.stdout.write(piece)
+                    print()
+                    print(roman_line)
+                rendered = True
+            elif (q.mode == "word_contrast" and q.contrast_type == "lexical_vs_grammar_form"
+                  and q.other and q.example_ko and q.other_example_ko):
+                # Host-context rendering for a contrast_type where at
+                # least one side (a particle like 도) is never grammatical
+                # as a bare standalone word. Reusing the composed-block
+                # branch above for this would be the exact mistake this
+                # whole branch exists to avoid — so instead of a bare
+                # block, the target is shown highlighted INSIDE a real
+                # example sentence (example_ko/example_en, already
+                # required to exist for this entry to be selected at all
+                # — see _entry_renderable). _highlight_in_sentence fails
+                # closed (returns None) if the target doesn't appear
+                # exactly once in its own sentence; this branch falls
+                # back to the plain sentence, unhighlighted, rather than
+                # silently mis-highlighting or crashing — the sentence
+                # itself is still correct and useful even without the
+                # visual emphasis.
+                target_line = (_highlight_in_sentence(q.example_ko, q.letter)
+                                or q.example_ko)
+                if q.direction == "word_to_meaning":
+                    # Only the target's sentence — showing "other"'s
+                    # sentence here would be the same kind of unneeded
+                    # noise flagged for the composed-block branch above;
+                    # the choices list already carries both glosses.
+                    print(f"   {target_line}")
+                    print(f"   {styled(q.example_en, CYAN)}")
+                    print("   ...the highlighted word means?")
+                else:
+                    # meaning_to_word: both example sentences, each with
+                    # its own word highlighted, unlabeled as to which is
+                    # correct — same non-leaking pattern as
+                    # confusion_drill and the composed-block branch above.
+                    # This is what actually gives the grammar context: the
+                    # learner sees 도 attached to a noun and 더 standing
+                    # in front of a verb, not two words presented as if
+                    # they behaved the same way.
+                    other_line = (_highlight_in_sentence(q.other_example_ko, q.other)
+                                  or q.other_example_ko)
+                    print(f"   {q.prompt}")
+                    print(f"   {target_line}")
+                    print(f"   {other_line}")
+                rendered = True
+        except Exception:
+            pass  # fall through to plain q.prompt below
+
+    # nonword_decode: prompt is already fully composed by the engine
+    # (includes the "not a real word" framing), so just print it as-is.
+    if q.mode == "nonword_decode":
+        print(f"   {q.prompt}")
+        rendered = True
+
+    if not rendered:
+        print(f"   {q.prompt}")
+
     if q.choices:
         labels = ['A', 'B', 'C', 'D']
         for label, choice in zip(labels, q.choices):
@@ -730,12 +1173,13 @@ MODE_ALIASES = {
     "vowel": "missing_vowel", "missing_vowel": "missing_vowel",
     "batchim": "batchim_challenge", "batchim_challenge": "batchim_challenge",
     "confusion": "confusion_drill", "confusion_drill": "confusion_drill",
+    "contrast": "word_contrast", "word_contrast": "word_contrast",
     "auto": None, "random": None,
 }
 
 KNOWN_ACTIONS = {
     'q', 'quit', 'exit', 'help', 'roman', 'romanize', 'romanization',
-    'stats', 'lessons', 'lesson', 'complete', 'mode', 'mnemonic', 'talk',
+    'stats', 'lessons', 'lesson', 'mode', 'mnemonic', 'talk',
     'template', 'konglish', 'kspell', 'hint', 'skip', 'intro', 'table',
     'alphabet',
 }
@@ -749,7 +1193,7 @@ def _advance_and_show(quiz: HangulQuiz) -> dict:
     new_info = quiz.start_lesson(quiz.progress["current_lesson"])
     print(f"\n{styled('📖 ' + msg, BOLD)}")
     print_lesson_intro(new_info.get("introduction", ""), new_info.get("note", ""))
-    print_reference_table(new_info)
+    print_reference_table(quiz, new_info)
     return new_info
 
 
@@ -776,7 +1220,7 @@ def _offer_advance(quiz: HangulQuiz, lesson_id: int):
         ans = "n"
     if ans in ("", "y", "yes"):
         return _advance_and_show(quiz)
-    print(f"{styled('No rush — staying here. Type /complete whenever you want to move on.', YELLOW)}")
+    print(f"{styled('No rush — staying here. Type /lessons to see all lessons, or /lesson N to jump to one whenever you want.', YELLOW)}")
     return None
 
 
@@ -799,7 +1243,7 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
     # letter_romanization; the raw curriculum entry doesn't carry those.
     lesson = lesson_info
     print_lesson_intro(lesson.get("introduction", ""), lesson.get("note", ""))
-    print_reference_table(lesson)
+    print_reference_table(quiz, lesson)
 
     # Show a mnemonic for the first letter as a warm welcome. Offline this
     # is instant (hardcoded table); only with --use-llm, and only for a
@@ -820,6 +1264,12 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
     # said "not yet" to — so a mastered-but-not-advanced lesson doesn't
     # re-prompt after every single subsequent correct answer.
     mastery_offered = set()
+
+    # Wall-clock time when the current question was first displayed —
+    # used to compute response_time_ms for the per-item EMA. Set only
+    # inside the is_new_question branch (same scope as current_question
+    # itself), so it persists through /hint passes without being reset.
+    question_shown_at = None
 
     while True:
         is_new_question = False
@@ -843,15 +1293,33 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
                 # back to the same template if that fails.
                 known = quiz.get_mastered_syllables(min_confidence=3)
                 if len(known) >= 3:
-                    print(f"\n{styled('📖 Building a sentence from what you know...', YELLOW)}")
+                    # Only the LLM path actually builds a sentence; the
+                    # offline template path returns a single exposure word, so
+                    # a "Building a sentence" banner there would be a lie.
+                    if USE_LLM:
+                        print(f"\n{styled('📖 Building a sentence from what you know...', YELLOW)}")
                     sentence = generate_mini_sentence(known, quiz) if USE_LLM else None
+                    turn_mode = "read_translate" if sentence else None
                     if not sentence:
                         turn = build_template_sentence(known, quiz)
                         if turn and turn.get("korean"):
                             eng = turn.get("english")
                             sentence = f"{turn['korean']}  —  {eng}" if eng else turn["korean"]
+                            turn_mode = turn.get("mode")
                     if sentence:
-                        print(f"\n{styled('📖 You can now read:', GREEN)}")
+                        # vocab_exposure means build_template_sentence
+                        # found a real word the learner can spell, but
+                        # deliberately did NOT wrap it in grammar
+                        # (이것은/입니다 etc.) the learner hasn't mastered
+                        # yet — see build_template_sentence's docstring.
+                        # Framing this as "you can now read" would repeat
+                        # exactly the honesty problem that check exists
+                        # to prevent, so exposure content gets its own,
+                        # more honest framing instead.
+                        if turn_mode == "vocab_exposure":
+                            print(f"\n{styled('📖 A real Korean word you can already spell:', GREEN)}")
+                        else:
+                            print(f"\n{styled('📖 You can now read:', GREEN)}")
                         print(f"   {sentence}")
                     else:
                         # Previously this just trailed off with no
@@ -869,7 +1337,8 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
         # already visible a few lines up in scrollback; no need to force
         # it again for commands that don't change what's being asked.
         if is_new_question:
-            print_question(current_question)
+            print_question(current_question, quiz)
+            question_shown_at = time.time()
 
         # Get user input
         try:
@@ -877,6 +1346,22 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
         except (EOFError, KeyboardInterrupt):
             print(f"\n{styled('👋 안녕히 가세요! (Goodbye!)', GREEN)}")
             break
+
+        # Blank Enter: don't grade it as a wrong answer (and don't feed ""
+        # into quiz.answer(), which an old _compose_bare_vowel bug turned
+        # into "ㅏ" and minted phantom confusions). Re-prompt with a nudge.
+        if not user_input:
+            if current_question:
+                print(f"{styled('(blank — /hint for a hint, /skip to reveal the answer)', YELLOW)}")
+            continue
+
+        # Bare lesson number ("5", "5.") → jump to that lesson, so the
+        # /lessons list is actually navigable. Answers are never bare digits
+        # (Hangul, romanization, or A-D), so this can't collide with a real
+        # answer; out-of-range ids are caught by the /lesson handler.
+        _num = user_input.strip(" .)():-")
+        if _num.isdigit():
+            user_input = f"/lesson {_num}"
 
         # Handle commands
         if user_input.startswith('/'):
@@ -895,7 +1380,6 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
   {styled('/stats', CYAN)}    — Show your progress
   {styled('/lessons', CYAN)}  — List all lessons
   {styled('/lesson N', CYAN)} — Jump to lesson N
-  {styled('/complete', CYAN)} — Mark this lesson done and advance to the next
   {styled('/mode NAME', CYAN)}— Lock quiz mode (spell, read, match, build, vowel, batchim, confusion, auto)
   {styled('/alphabet', CYAN)} — Walk through all 24 basic letters, consonants then vowels
   {styled('/intro', CYAN)}    — Walk through this lesson's letters one at a time (true-beginner mode)
@@ -927,6 +1411,7 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
                 for l in quiz.list_lessons():
                     mark = styled('✓', GREEN) if l['completed'] else ''
                     print(f"   {l['id']:2}. {l['title']} {mark}")
+                print(f"{styled('   Jump to one with /lesson N (e.g. /lesson 5).', YELLOW)}")
 
             elif action == 'lesson' and len(cmd) > 1:
                 try:
@@ -936,7 +1421,7 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
                     print(f"\n{styled(f'📖 Lesson {lid}: {title}', BOLD)}")
                     print(f"   {info['description']}")
                     print_lesson_intro(info.get('introduction', ''), info.get('note', ''))
-                    print_reference_table(info)
+                    print_reference_table(quiz, info)
                     # Keep the loop's 'lesson' variable in sync — previously
                     # only the local 'info' was updated here, so /intro and
                     # /table (which both read the outer 'lesson' var) would
@@ -951,21 +1436,6 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
                 except (ValueError, IndexError):
                     print(f"{styled('Invalid lesson number', RED)}")
 
-            elif action == 'complete':
-                # Manual advance — mark this lesson done and move to the
-                # next regardless of mastery, for a learner who wants to
-                # skip ahead. On the final lesson it just confirms there's
-                # nowhere further to go.
-                lid = quiz.current_lesson["id"]
-                total = len(quiz.curriculum["lessons"])
-                if lid >= total:
-                    quiz.complete_lesson()  # mark the final lesson done
-                    print(f"{styled('🏆 This is the final lesson — the whole curriculum is complete!', BOLD, GREEN)}")
-                else:
-                    lesson = _advance_and_show(quiz)
-                    mastery_offered.discard(lid)
-                    current_question = None
-
             elif action == 'intro':
                 run_beginner_intro(quiz, lesson)
 
@@ -973,7 +1443,7 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
                 run_alphabet_intro(quiz)
 
             elif action == 'table':
-                print_reference_table(lesson)
+                print_reference_table(quiz, lesson)
 
             elif action == 'mode':
                 choice = cmd[1].lower() if len(cmd) > 1 else ""
@@ -999,31 +1469,53 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
                 turn = generate_conversation_turn(quiz, mode="read_translate",
                                                    use_llm=USE_LLM)
                 if turn:
-                    method = turn.get('method', 'llm')
-                    method_labels = {'template': '📋 Template', 'tatoeba': '📚 Real sentence', 'llm': '🤖 LLM'}
-                    label = method_labels.get(method, '🤖 LLM')
-                    print(f"\n{styled(f'{label} — read this Korean:', CYAN)}")
-                    print(f"   {styled(turn['korean'], BOLD)}")
-                    print(f"\n   {styled('Translate to English:', YELLOW)}")
-                    user = input(f"{styled('>', BOLD)} ").strip()
-                    result = check_conversation_answer(user, turn, quiz)
-                    print(f"   {result['feedback']}")
-                    if result.get('correct'):
-                        quiz.session_streak += 1
+                    turn_mode = turn.get("mode")
+                    if turn_mode in ("vocab_exposure", "syllable_practice"):
+                        # Single-word / bare-syllable EXPOSURE (the offline or
+                        # LLM-failed fallback), not a sentence to translate.
+                        # Show it honestly — no fake "translate this", no
+                        # grading, no streak bump. The old path graded it
+                        # always-correct via check_conversation_answer's
+                        # fall-through, silently inflating the streak.
+                        label = ("📖 A real Korean word you can already spell:"
+                                 if turn_mode == "vocab_exposure"
+                                 else "📖 Practice reading these syllables:")
+                        print(f"\n{styled(label, GREEN)}")
+                        print(f"   {styled(turn['korean'], BOLD)}")
+                        if turn.get("english"):
+                            print(f"   {styled(turn['english'], YELLOW)}")
                     else:
-                        quiz.session_streak = 0
+                        method = turn.get('method', 'llm')
+                        method_labels = {'template': '📋 Template', 'tatoeba': '📚 Real sentence', 'llm': '🤖 LLM'}
+                        label = method_labels.get(method, '🤖 LLM')
+                        print(f"\n{styled(f'{label} — read this Korean:', CYAN)}")
+                        print(f"   {styled(turn['korean'], BOLD)}")
+                        print(f"\n   {styled('Translate to English:', YELLOW)}")
+                        user = input(f"{styled('>', BOLD)} ").strip()
+                        result = check_conversation_answer(user, turn, quiz)
+                        print(f"   {result['feedback']}")
+                        if result.get('correct'):
+                            quiz.session_streak += 1
+                        else:
+                            quiz.session_streak = 0
                 else:
                     print(f"   {styled('Not enough syllables mastered yet — keep practicing!', YELLOW)}")
 
             elif action == 'template':
                 mastered = quiz.get_mastered_syllables(min_confidence=3)
                 turn = build_template_sentence(mastered, quiz)
-                print(f"\n{styled('📋 Read this Korean:', CYAN)}")
+                # build_template_sentence now only ever returns an exposure
+                # turn (vocab_exposure / syllable_practice) — a single word or
+                # bare syllables, never a read_translate sentence. Show it
+                # honestly: no "translate this" prompt, no grading.
+                turn_mode = turn.get("mode")
+                label = ("📖 A real Korean word you can already spell:"
+                         if turn_mode == "vocab_exposure"
+                         else "📖 Practice reading these syllables:")
+                print(f"\n{styled(label, GREEN)}")
                 print(f"   {styled(turn['korean'], BOLD)}")
-                print(f"\n   {styled('Translate to English:', YELLOW)}")
-                user = input(f"{styled('>', BOLD)} ").strip()
-                result = check_conversation_answer(user, turn, quiz)
-                print(f"   {result['feedback']}")
+                if turn.get("english"):
+                    print(f"   {styled(turn['english'], YELLOW)}")
 
             elif action == 'konglish':
                 q = quiz.konglish_question()
@@ -1089,7 +1581,16 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
 
         # Process answer
         if current_question:
-            result = quiz.answer(user_input, current_question)
+            # Compute response time — elapsed since the question was
+            # displayed. Falls back to None (not measured) if
+            # question_shown_at was never set (e.g. a question that
+            # somehow bypassed the display branch). None means the
+            # timing update is skipped entirely in _record_learner_item.
+            if question_shown_at is not None:
+                elapsed_ms = (time.time() - question_shown_at) * 1000
+            else:
+                elapsed_ms = None
+            result = quiz.answer(user_input, current_question, response_ms=elapsed_ms)
             print(f"   {result.feedback}")
 
             # quiz.answer() already updates quiz.session_streak internally
@@ -1145,14 +1646,22 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
     if summary['top_confusions']:
         print(f"   Practice these: {', '.join(c['pair'] for c in summary['top_confusions'])}")
 
-    # LLM-generated natural-language summary (falls back to a template if
-    # Ollama is unavailable). One call per session, on /quit only.
-    session_summary = generate_session_summary(build_session_data(quiz))
-    print(f"\n{session_summary}\n")
+    # Structured lesson-complete block (deterministic — no Ollama call).
+    print_lesson_complete(quiz)
 
 # ── Entry point ────────────────────────────────────────────────────────────
 
 def main():
+    # Force UTF-8 on standard streams so Hangul renders correctly and does
+    # not raise UnicodeEncodeError when output is redirected (e.g. the frozen
+    # onefile exe piped to a file falls back to cp1252 otherwise). Harmless on
+    # a real console, where Python already uses the Unicode console API.
+    if sys.platform == "win32":
+        for stream in (sys.stdout, sys.stderr, sys.stdin):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except (AttributeError, ValueError, OSError):
+                pass
     parser = argparse.ArgumentParser(description="🇰🇷 Hangul Tutor CLI")
     parser.add_argument("--lesson", type=int, default=None, help="Start at lesson N")
     parser.add_argument("--mode", choices=["spell", "read_aloud", "match_sound",

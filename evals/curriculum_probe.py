@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Structured Hangul curriculum probe (22 questions).
+"""Structured Hangul curriculum probe (20 questions).
 
-Measures factual knowledge coverage across six areas: consonants, vowels,
-batchim, syllable structure, stroke order, romanization. Serves the target
+Measures factual knowledge coverage across five areas: consonants, vowels,
+batchim, syllable structure, romanization. Serves the target
 model in NON-thinking mode via a raw empty-think-block prompt, so results
 reflect knowledge rather than the Qwen3 chain-of-thought bug.
 
@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import add_log_path_arg, generate as _generate, git_commit
+from common import add_log_path_arg, default_log_path, generate as _generate, git_commit
 
 MODEL = os.environ.get("HANGUL_MODEL", "hf.co/eemoogee/hangul-expert-qwen3-8b")
 API = os.environ.get("OLLAMA_API", "http://localhost:11434")
@@ -58,8 +58,6 @@ PROBE = [
     ("batchim", "How many distinct sounds can a batchim represent?", "7 representative sounds"),
     ("syllable", "What are the parts of a Korean syllable block?", "initial consonant + vowel + optional final consonant (batchim)"),
     ("syllable", "How are Korean syllables written?", "written in blocks"),
-    ("stroke", "What is the stroke order for writing the letter ㄱ?", "single stroke, top-to-bottom then left-to-right"),
-    ("stroke", "What is the stroke order for writing the letter ㅁ?", "4 strokes, box shape"),
     ("romanization", "What is the romanization of ㄹ?", "'r' or 'l'"),
     ("romanization", "What is the romanization of the syllable 한?", "'han'"),
 ]
@@ -75,7 +73,9 @@ def ask(question: str) -> str:
     return _generate(prompt, MODEL, API, TIMEOUT)
 
 
-def main(log_path: str = "curriculum_probe_raw.jsonl") -> None:
+def main(log_path: str | None = None) -> None:
+    if log_path is None:
+        log_path = default_log_path("curriculum_probe_raw")
     commit = git_commit()
     with open(log_path, "a", encoding="utf-8") as logf:
         for i, (area, q, expected) in enumerate(PROBE, 1):
@@ -116,7 +116,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    add_log_path_arg(parser, "curriculum_probe_raw.jsonl")
+    add_log_path_arg(parser, default_log_path("curriculum_probe_raw"))
     return parser.parse_args()
 
 

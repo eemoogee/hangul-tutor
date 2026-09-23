@@ -20,6 +20,7 @@ Three interaction modes:
 import json
 import random
 import re
+import sys
 import subprocess
 import os
 from pathlib import Path
@@ -29,7 +30,7 @@ from hangul_quiz_engine import HangulQuiz
 from hangul_models import get_model
 
 MAX_RETRIES = 3
-TATOEBA_PATH = Path(__file__).parent / "data" / "tatoeba_kor_sentences.tsv"
+TATOEBA_PATH = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / "data" / "tatoeba_kor_sentences.tsv"
 
 
 # ── Syllable utilities ─────────────────────────────────────────────────────
@@ -132,18 +133,7 @@ def _translate_via_ollama(korean: str, model: str) -> Optional[str]:
     return None
 
 
-# ── Template-based sentence builder (no LLM needed) ────────────────────────
-
-# "이것은/저것은" (this/that) variants would double up on entries that
-# already carry their own demonstrative — e.g. reading_practice.jsonl's
-# "combo" source includes "이 방" (this room) — producing "이것은 이
-# 방입니다" ("This is this room"). Kept separate from the bare template so
-# build_template_sentence can pick the right set per word.
-DEMONSTRATIVE_TEMPLATES = [
-    ("이것은 {W}입니다", "This is {EN}"),
-    ("저것은 {W}입니다", "That is {EN}"),
-]
-BARE_TEMPLATE = ("{W}입니다", "It's {EN}")
+# ── Single-word vocab exposure (no LLM needed) ──────────────────────────────
 
 # Guaranteed to contain at least one real vocab match (아이 = "child", using
 # only 아 and 이) — used when the learner's own mastered syllables don't
@@ -151,7 +141,7 @@ BARE_TEMPLATE = ("{W}입니다", "It's {EN}")
 # something genuine to fall back to instead of giving up.
 _SAFE_DEFAULT_SYLLABLES = ["가", "나", "다", "아", "이"]
 
-READING_PRACTICE_PATH = Path(__file__).parent / "data" / "reading_practice.jsonl"
+READING_PRACTICE_PATH = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / "data" / "reading_practice.jsonl"
 _reading_practice_cache: Optional[list[dict]] = None
 
 
@@ -196,51 +186,25 @@ def _load_reading_practice() -> list[dict]:
     return entries
 
 
-def _find_real_sentence(allowed_syllables, quiz: 'HangulQuiz') -> Optional[dict]:
-    """Find a complete, ready-made sentence or phrase (the 'phrase'
-    source in reading_practice.jsonl — real subject+verb sentences like
-    "나는 먹는다" = "I eat", plus a few adjective+noun phrases) that's
-    fully spellable from allowed_syllables. Used AS-IS, not wrapped in a
-    naming template — several of these are already complete sentences,
-    and wrapping one in "이것은 X입니다" would double up into nonsense
-    ("This is I eat"). Returns a {'ko': ..., 'en': ...} dict, or None if
-    nothing matches."""
-    allowed_set = set(allowed_syllables)
-    candidates = []
-    for entry in _load_reading_practice():
-        if entry.get("source") != "phrase":
-            continue
-        ko = entry.get("korean", "")
-        chars = [c for c in ko if c != ' ']
-        if chars and all(c in allowed_set for c in chars):
-            candidates.append({"ko": ko, "en": entry["english"]})
-    return random.choice(candidates) if candidates else None
-
-
 def _find_real_word(allowed_syllables, quiz: 'HangulQuiz') -> Optional[dict]:
-    """Find a real vocabulary word or phrase that's spellable entirely
-    from allowed_syllables AND is suitable as the predicate in a simple
-    naming sentence like "This is {word}". Searches reading_practice.jsonl
-    first (richer — includes real phrases), then konglish_vocab.json.
+    """Find ONE real vocabulary word — a SINGLE token (no space in the
+    Korean string) — that is spellable entirely from allowed_syllables.
+    Searches reading_practice.jsonl first (richer — includes real words),
+    then konglish_vocab.json. Multi-word entries (e.g. "이 방" = "this
+    room", or a subject+verb phrase) are excluded, so the result is always
+    honest exposure of one word, never a phrase dressed up as a word.
     Skips konglish_vocab's 'useful_phrases' category on purpose: it's
     greetings, adverbs, and question words (안녕, 빨리, 뭐, 누구, 어디...),
-    none of which make a grammatical sentence in that slot — "This is
-    who" isn't a real sentence in either language. Returns a
+    none of which make sensible standalone vocabulary to drill. Returns a
     {'ko': ..., 'en': ...} dict, or None if nothing matches."""
     allowed_set = set(allowed_syllables)
     candidates = []
 
     for entry in _load_reading_practice():
-        if entry.get("source") == "phrase":
-            # Handled separately by _find_real_sentence — these are
-            # complete sentences now, not single words, and wrapping one
-            # in "이것은 X입니다" would double up into nonsense.
-            continue
         ko = entry.get("korean", "")
-        # Ignore spaces when checking coverage — a phrase like "이 방"
-        # only needs 이 and 방 individually known, not a space "syllable".
-        chars = [c for c in ko if c != ' ']
-        if chars and all(c in allowed_set for c in chars):
+        if " " in ko:
+            continue
+        if ko and all(c in allowed_set for c in ko):
             candidates.append({"ko": ko, "en": entry["english"]})
 
     vocab = quiz.get_konglish_vocab()
@@ -249,6 +213,8 @@ def _find_real_word(allowed_syllables, quiz: 'HangulQuiz') -> Optional[dict]:
             continue
         for entry in words:
             ko = entry.get("ko", "")
+            if " " in ko:
+                continue
             if ko and all(ch in allowed_set for ch in ko):
                 candidates.append(entry)
 
@@ -256,31 +222,17 @@ def _find_real_word(allowed_syllables, quiz: 'HangulQuiz') -> Optional[dict]:
 
 
 def build_template_sentence(allowed_syllables: list[str], quiz: 'HangulQuiz') -> dict:
-    """Build a Korean sentence — instant, no LLM needed. Previously this
-    filled generic grammar frames ({A}는 {B}입니다) with ARBITRARY drilled
-    syllables, which aren't real words and have no real meaning — so the
-    "English translation" ended up being the same Korean syllables reused
-    in an English-shaped sentence (e.g. "아 is 다"), which isn't English
-    at all and made this content impossible to grade correctly in
-    read_translate mode. This version instead finds a REAL word or phrase
-    that's fully spellable from known syllables, and builds a simple,
-    always-grammatical sentence around it with its real, correct English
-    meaning."""
-    # A complete, ready-made sentence (subject+verb, e.g. "I eat") is more
-    # valuable practice than a single-word naming sentence — prefer one
-    # when the learner's mastered syllables support it.
-    sentence = _find_real_sentence(allowed_syllables, quiz)
-    if sentence:
-        korean = sentence["ko"]
-        return {
-            "korean": korean,
-            "english": sentence["en"],
-            "answer": None,
-            "mode": "read_translate",
-            "syllables_used": extract_syllables(korean),
-            "method": "template"
-        }
-
+    """Return ONE real, spellable single word as honest vocab exposure —
+    instant, no LLM, no sentence construction. There are no grammar
+    templates anymore (no 이것은/저것은/입니다 wrapping) and no multi-word
+    real sentences: the learner sees a real word they can actually read,
+    framed as exposure ("a real Korean word you can already spell"), never
+    "you can now read this sentence". A word is only a candidate if it is
+    a single token (no space), enforced inside _find_real_word. Falls back
+    to a small safe-default syllable set when the learner's own syllables
+    don't spell any real word yet, so this always has something genuine to
+    show rather than giving up.
+    """
     word = _find_real_word(allowed_syllables, quiz) or _find_real_word(_SAFE_DEFAULT_SYLLABLES, quiz)
 
     if word is None:
@@ -296,22 +248,12 @@ def build_template_sentence(allowed_syllables: list[str], quiz: 'HangulQuiz') ->
             "method": "template"
         }
 
-    # Words/phrases that already start with their own demonstrative
-    # (이/그/저 — "this/that") only get the bare template, to avoid
-    # doubling up (see DEMONSTRATIVE_TEMPLATES comment above).
-    if word["ko"][0] in "이그저":
-        kr_template, en_template = BARE_TEMPLATE
-    else:
-        kr_template, en_template = random.choice(DEMONSTRATIVE_TEMPLATES + [BARE_TEMPLATE])
-    korean = kr_template.replace("{W}", word["ko"])
-    english = en_template.replace("{EN}", word["en"])
-
     return {
-        "korean": korean,
-        "english": english,
+        "korean": word["ko"],
+        "english": word["en"],
         "answer": None,
-        "mode": "read_translate",
-        "syllables_used": extract_syllables(korean),
+        "mode": "vocab_exposure",
+        "syllables_used": extract_syllables(word["ko"]),
         "method": "template"
     }
 
@@ -538,7 +480,12 @@ def check_conversation_answer(
     quiz: HangulQuiz
 ) -> dict:
     """Check the user's answer for a conversation turn.
-    Returns feedback dict with correct, feedback, and scoring info."""
+    Returns feedback dict with correct, feedback, and scoring info.
+
+    Only gradeable modes (read_translate, fill_blank, reply_korean) should
+    reach this function — exposure turns (vocab_exposure / syllable_practice)
+    are presented by their callers without grading. An unrecognized mode is a
+    caller bug, so it raises instead of silently passing."""
     mode = turn.get("mode", "read_translate")
     user_clean = user_input.strip()
 
@@ -600,7 +547,7 @@ def check_conversation_answer(
             "score": 1.0
         }
 
-    return {"correct": True, "feedback": "✅", "score": 1.0}
+    raise ValueError(f"no grading defined for conversation mode {mode!r}")
 
 
 # ── Demo ───────────────────────────────────────────────────────────────────
