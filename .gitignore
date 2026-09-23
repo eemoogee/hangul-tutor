@@ -32,3 +32,13 @@ dist/
 
 # Backup files (alternate naming convention)
 data/user_progress.json.bak-*
+
+# Additional backup naming convention
+data/user_progress.backup-*.json
+
+# Fine-tune data (all versions)
+hangul_finetune_v*.jsonl
+
+# Claude Code working directory
+.claude/
+
