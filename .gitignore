@@ -15,6 +15,11 @@ pedagogy_probe_raw.jsonl
 # Session verification/test scripts
 _verify_*.py
 test_*.py
+# Exceptions: committed verifiers/probes that must survive a clean clone.
+# Keep these AFTER the ignore patterns above — a negation only works if it
+# follows the rule it overrides.
+!scripts/_verify_*.py
+!scripts/_probe_*.py
 
 # Session notes and scratch files
 9-22_hangul-tutor-gamplay-test.md
