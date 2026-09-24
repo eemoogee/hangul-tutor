@@ -10,7 +10,14 @@
       "id": 1,
       "title": "Basic Vowels 1",
       "description": "The six simple vertical and horizontal vowels",
-      "letters": ["ㅏ", "ㅓ", "ㅗ", "ㅜ", "ㅡ", "ㅣ"],
+      "letters": [
+        "ㅏ",
+        "ㅓ",
+        "ㅗ",
+        "ㅜ",
+        "ㅡ",
+        "ㅣ"
+      ],
       "pronunciation": {
         "ㅏ": "ah (as in 'father')",
         "ㅓ": "uh (as in 'sun')",
@@ -20,15 +27,39 @@
         "ㅣ": "ee (as in 'see')"
       },
       "stroke_order": {
-        "ㅏ": ["vertical line top→bottom", "short horizontal dash rightward"],
-        "ㅓ": ["short horizontal dash leftward", "vertical line top→bottom"],
-        "ㅗ": ["short vertical dash downward", "horizontal line left→right"],
-        "ㅜ": ["horizontal line left→right", "short vertical dash downward"],
-        "ㅡ": ["horizontal line left→right"],
-        "ㅣ": ["vertical line top→bottom"]
+        "ㅏ": [
+          "vertical line top→bottom",
+          "short horizontal dash rightward"
+        ],
+        "ㅓ": [
+          "short horizontal dash leftward",
+          "vertical line top→bottom"
+        ],
+        "ㅗ": [
+          "short vertical dash downward",
+          "horizontal line left→right"
+        ],
+        "ㅜ": [
+          "horizontal line left→right",
+          "short vertical dash downward"
+        ],
+        "ㅡ": [
+          "horizontal line left→right"
+        ],
+        "ㅣ": [
+          "vertical line top→bottom"
+        ]
       },
-      "confusion_pairs": [["ㅏ", "ㅓ"], ["ㅗ", "ㅜ"]],
-      "note": "Important: a vowel can never be written by itself in Korean. Every syllable block needs something in the consonant slot, so when there's no real consonant sound, Korean fills that slot with 'ㅇ' as a silent placeholder. That's why ㅏ is always written 아, ㅓ is always written 어, and so on — you'll never see a bare vowel jamo standing alone in real text.",
+      "confusion_pairs": [
+        [
+          "ㅏ",
+          "ㅓ"
+        ],
+        [
+          "ㅗ",
+          "ㅜ"
+        ]
+      ],
       "example_words": {
         "ㅏ": "아이 (child)",
         "ㅓ": "어머니 (mother)",
@@ -36,13 +67,34 @@
         "ㅜ": "우유 (milk)",
         "ㅡ": "으 (interjection)",
         "ㅣ": "이 (this / tooth)"
+      },
+      "note": "Important: a vowel can never be written by itself in Korean. Every syllable block needs something in the consonant slot, so when there's no real consonant sound, Korean fills that slot with 'ㅇ' as a silent placeholder. That's why ㅏ is always written 아, ㅓ is always written 어, and so on — you'll never see a bare vowel jamo standing alone in real text.",
+      "block_rules": {
+        "vertical_vowels": [
+          "ㅏ",
+          "ㅓ",
+          "ㅣ"
+        ],
+        "horizontal_vowels": [
+          "ㅗ",
+          "ㅜ",
+          "ㅡ"
+        ],
+        "vertical_layout": "consonant sits left, vowel on right (e.g., ㄱ + ㅏ = 가, ㄱ + ㅓ = 거, ㄱ + ㅣ = 기)",
+        "horizontal_layout": "consonant sits on top, vowel below (e.g., ㄱ + ㅗ = 고, ㄱ + ㅜ = 구, ㄱ + ㅡ = 그)"
       }
     },
     {
       "id": 2,
       "title": "Basic Consonants 1",
       "description": "The five simplest consonants — no aspiration, no tension",
-      "letters": ["ㄱ", "ㄴ", "ㄷ", "ㄹ", "ㅁ"],
+      "letters": [
+        "ㄱ",
+        "ㄴ",
+        "ㄷ",
+        "ㄹ",
+        "ㅁ"
+      ],
       "pronunciation": {
         "ㄱ": "g/k (soft, between 'g' in 'go' and 'k' in 'skate')",
         "ㄴ": "n (as in 'no')",
@@ -51,38 +103,122 @@
         "ㅁ": "m (as in 'mom')"
       },
       "stroke_order": {
-        "ㄱ": ["horizontal left→right", "vertical top→bottom hooking left"],
-        "ㄴ": ["vertical top→bottom", "horizontal left→right"],
-        "ㄷ": ["horizontal left→right", "vertical top→bottom hooking left", "horizontal left→right below"],
-        "ㄹ": ["horizontal left→right", "vertical hooking left", "attached horizontal", "vertical hooking left"],
-        "ㅁ": ["vertical top→bottom", "horizontal top→right", "vertical right→bottom", "horizontal bottom←left"]
+        "ㄱ": [
+          "horizontal left→right",
+          "vertical top→bottom hooking left"
+        ],
+        "ㄴ": [
+          "vertical top→bottom",
+          "horizontal left→right"
+        ],
+        "ㄷ": [
+          "horizontal left→right",
+          "vertical top→bottom hooking left",
+          "horizontal left→right below"
+        ],
+        "ㄹ": [
+          "horizontal left→right",
+          "vertical hooking left",
+          "attached horizontal",
+          "vertical hooking left"
+        ],
+        "ㅁ": [
+          "vertical top→bottom",
+          "horizontal top→right",
+          "vertical right→bottom",
+          "horizontal bottom←left"
+        ]
       },
-      "confusion_pairs": [["ㄱ", "ㄴ"], ["ㄷ", "ㄹ"]],
-      "practice_syllables": ["가", "나", "다", "라", "마", "기", "니", "디", "리", "미", "구", "누", "두", "루", "무"]
+      "confusion_pairs": [
+        [
+          "ㄱ",
+          "ㄴ"
+        ],
+        [
+          "ㄷ",
+          "ㄹ"
+        ]
+      ],
+      "practice_syllables": [
+        "가",
+        "나",
+        "다",
+        "라",
+        "마",
+        "기",
+        "니",
+        "디",
+        "리",
+        "미",
+        "구",
+        "누",
+        "두",
+        "루",
+        "무"
+      ]
     },
     {
       "id": 3,
       "title": "Basic Consonants 2",
       "description": "Labial, sibilant, and silent consonants",
-      "letters": ["ㅂ", "ㅅ", "ㅇ"],
+      "letters": [
+        "ㅂ",
+        "ㅅ",
+        "ㅇ"
+      ],
       "pronunciation": {
         "ㅂ": "b/p (soft, between 'b' in 'boy' and 'p' in 'spot')",
         "ㅅ": "s/sh (s before ㅏㅓㅗㅜㅡㅐㅔ, sh before ㅣㅑㅕㅛㅠ)",
         "ㅇ": "silent at start of syllable, 'ng' at end (as in 'sing')"
       },
       "stroke_order": {
-        "ㅂ": ["vertical top→bottom", "attached short horizontal right→left", "mirror on right side"],
-        "ㅅ": ["diagonal top-left→bottom-right", "diagonal top-right→bottom-left"],
-        "ㅇ": ["small circle, drawn counterclockwise"]
+        "ㅂ": [
+          "vertical top→bottom",
+          "attached short horizontal right→left",
+          "mirror on right side"
+        ],
+        "ㅅ": [
+          "diagonal top-left→bottom-right",
+          "diagonal top-right→bottom-left"
+        ],
+        "ㅇ": [
+          "small circle, drawn counterclockwise"
+        ]
       },
-      "confusion_pairs": [["ㅂ", "ㅁ"], ["ㅅ", "ㅇ"]],
-      "practice_syllables": ["바", "사", "아", "보", "소", "오", "부", "수", "우"]
+      "confusion_pairs": [
+        [
+          "ㅂ",
+          "ㅁ"
+        ],
+        [
+          "ㅅ",
+          "ㅇ"
+        ]
+      ],
+      "practice_syllables": [
+        "바",
+        "사",
+        "아",
+        "보",
+        "소",
+        "오",
+        "부",
+        "수",
+        "우"
+      ]
     },
     {
       "id": 4,
       "title": "Basic Consonants 3",
       "description": "Affricate and aspirated consonants",
-      "letters": ["ㅈ", "ㅊ", "ㅋ", "ㅌ", "ㅍ", "ㅎ"],
+      "letters": [
+        "ㅈ",
+        "ㅊ",
+        "ㅋ",
+        "ㅌ",
+        "ㅍ",
+        "ㅎ"
+      ],
       "pronunciation": {
         "ㅈ": "j (as in 'jeans')",
         "ㅊ": "ch (as in 'cheese', aspirated — puff of air)",
@@ -92,15 +228,68 @@
         "ㅎ": "h (as in 'hat')"
       },
       "stroke_order": {
-        "ㅈ": ["horizontal hooking right", "attached short horizontal", "attached diagonal"],
-        "ㅊ": ["horizontal hooking right", "attached short horizontal", "attached diagonal", "dot above"],
-        "ㅋ": ["ㄱ shape", "horizontal line through middle"],
-        "ㅌ": ["ㄷ shape", "horizontal line through middle"],
-        "ㅍ": ["horizontal", "ㅁ-like box", "additional strokes"],
-        "ㅎ": ["small circle top", "horizontal line", "ㅇ shape below"]
+        "ㅈ": [
+          "horizontal hooking right",
+          "attached short horizontal",
+          "attached diagonal"
+        ],
+        "ㅊ": [
+          "horizontal hooking right",
+          "attached short horizontal",
+          "attached diagonal",
+          "dot above"
+        ],
+        "ㅋ": [
+          "ㄱ shape",
+          "horizontal line through middle"
+        ],
+        "ㅌ": [
+          "ㄷ shape",
+          "horizontal line through middle"
+        ],
+        "ㅍ": [
+          "horizontal",
+          "ㅁ-like box",
+          "additional strokes"
+        ],
+        "ㅎ": [
+          "small circle top",
+          "horizontal line",
+          "ㅇ shape below"
+        ]
       },
-      "confusion_pairs": [["ㅈ", "ㅊ"], ["ㄱ", "ㅋ"], ["ㄷ", "ㅌ"], ["ㅂ", "ㅍ"]],
-      "practice_syllables": ["자", "차", "카", "타", "파", "하", "조", "초", "코", "토", "포", "호"]
+      "confusion_pairs": [
+        [
+          "ㅈ",
+          "ㅊ"
+        ],
+        [
+          "ㄱ",
+          "ㅋ"
+        ],
+        [
+          "ㄷ",
+          "ㅌ"
+        ],
+        [
+          "ㅂ",
+          "ㅍ"
+        ]
+      ],
+      "practice_syllables": [
+        "자",
+        "차",
+        "카",
+        "타",
+        "파",
+        "하",
+        "조",
+        "초",
+        "코",
+        "토",
+        "포",
+        "호"
+      ]
     },
     {
       "id": 5,
@@ -108,21 +297,78 @@
       "description": "Combining basic consonants and vowels into syllable blocks (CV pattern)",
       "introduction": "Hangul is written in syllable blocks. Each block has at least one consonant (C) and one vowel (V) in CV pattern. The consonant goes left or top, vowel goes right or bottom.",
       "block_rules": {
-        "vertical_vowels": ["ㅏ", "ㅓ", "ㅣ", "ㅐ", "ㅔ"],
-        "horizontal_vowels": ["ㅗ", "ㅜ", "ㅡ"],
+        "vertical_vowels": [
+          "ㅏ",
+          "ㅓ",
+          "ㅣ",
+          "ㅐ",
+          "ㅔ"
+        ],
+        "horizontal_vowels": [
+          "ㅗ",
+          "ㅜ",
+          "ㅡ"
+        ],
         "vertical_layout": "C on left, V on right (e.g., ㄱ + ㅏ = 가)",
         "horizontal_layout": "C on top, V on bottom (e.g., ㄱ + ㅗ = 고)"
       },
-      "practice_syllables": ["가", "나", "다", "라", "마", "바", "사", "아", "자", "차", "카", "타", "파", "하",
-                          "고", "노", "도", "로", "모", "보", "소", "오", "조", "초", "코", "토", "포", "호",
-                          "기", "니", "디", "리", "미", "비", "시", "이", "지", "치", "키", "티", "피", "히"],
-      "confusion_pairs": [["가", "고"], ["나", "노"], ["다", "도"], ["서", "소"]]
+      "practice_syllables": [
+        "가",
+        "고",
+        "나",
+        "노",
+        "다",
+        "도",
+        "마",
+        "모",
+        "사",
+        "소",
+        "하",
+        "호"
+      ],
+      "confusion_pairs": [
+        [
+          "가",
+          "고"
+        ],
+        [
+          "나",
+          "노"
+        ],
+        [
+          "다",
+          "도"
+        ],
+        [
+          "서",
+          "소"
+        ]
+      ],
+      "mastery_syllables": [
+        "가",
+        "고",
+        "나",
+        "노",
+        "다",
+        "도",
+        "마",
+        "모",
+        "사",
+        "소",
+        "하",
+        "호"
+      ]
     },
     {
       "id": 6,
       "title": "Y-Vowels (Iotized Vowels)",
       "description": "Vowels with a 'y' sound added — formed by adding an extra stroke",
-      "letters": ["ㅑ", "ㅕ", "ㅛ", "ㅠ"],
+      "letters": [
+        "ㅑ",
+        "ㅕ",
+        "ㅛ",
+        "ㅠ"
+      ],
       "pronunciation": {
         "ㅑ": "yah (like 'ya' in 'yacht')",
         "ㅕ": "yuh (like 'young' without the -ng)",
@@ -130,15 +376,56 @@
         "ㅠ": "yoo (like 'you')"
       },
       "formation": "Each y-vowel is its base vowel (ㅏㅓㅗㅜ) with one extra stroke added",
-      "confusion_pairs": [["ㅏ", "ㅑ"], ["ㅓ", "ㅕ"], ["ㅗ", "ㅛ"], ["ㅜ", "ㅠ"]],
+      "confusion_pairs": [
+        [
+          "ㅏ",
+          "ㅑ"
+        ],
+        [
+          "ㅓ",
+          "ㅕ"
+        ],
+        [
+          "ㅗ",
+          "ㅛ"
+        ],
+        [
+          "ㅜ",
+          "ㅠ"
+        ]
+      ],
       "note": "Reminder: like any vowel, a y-vowel can't stand alone — ㅑ is written 야, ㅕ is written 여, and so on, with the silent 'ㅇ' placeholder in front.",
-      "practice_syllables": ["갸", "냐", "댜", "려", "며", "벼", "셔", "여", "죠", "쵸", "쿄", "텨", "표", "효", "규", "뉴", "듀", "류"]
+      "practice_syllables": [
+        "갸",
+        "겨",
+        "교",
+        "규",
+        "냐",
+        "녀",
+        "뇨",
+        "뉴"
+      ],
+      "mastery_syllables": [
+        "갸",
+        "겨",
+        "교",
+        "규",
+        "냐",
+        "녀",
+        "뇨",
+        "뉴"
+      ]
     },
     {
       "id": 7,
       "title": "Compound Vowels 1",
       "description": "Vowels formed by combining two simple vowels",
-      "letters": ["ㅐ", "ㅔ", "ㅒ", "ㅖ"],
+      "letters": [
+        "ㅐ",
+        "ㅔ",
+        "ㅒ",
+        "ㅖ"
+      ],
       "pronunciation": {
         "ㅐ": "ae (like 'e' in 'bed', open mouth)",
         "ㅔ": "e (like 'e' in 'bed', slightly more closed — nearly identical in modern Seoul Korean)",
@@ -151,15 +438,55 @@
         "ㅒ": "ㅑ + ㅣ",
         "ㅖ": "ㅕ + ㅣ"
       },
-      "confusion_pairs": [["ㅐ", "ㅔ"], ["ㅒ", "ㅖ"], ["ㅏ", "ㅐ"], ["ㅓ", "ㅔ"]],
+      "confusion_pairs": [
+        [
+          "ㅐ",
+          "ㅔ"
+        ],
+        [
+          "ㅒ",
+          "ㅖ"
+        ],
+        [
+          "ㅏ",
+          "ㅐ"
+        ],
+        [
+          "ㅓ",
+          "ㅔ"
+        ]
+      ],
       "note": "In modern Seoul Korean, ㅐ and ㅔ sound nearly identical. Most Koreans can't hear the difference. This is the single most common spelling confusion for native speakers too. Reminder: these are still vowels, so written alone they always take the silent 'ㅇ' placeholder — ㅐ is written 애, ㅔ is written 에.",
-      "practice_syllables": ["애", "개", "내", "배", "해", "에", "게", "네", "세", "제", "얘", "걔", "예", "계"]
+      "practice_syllables": [
+        "애",
+        "개",
+        "내",
+        "배",
+        "해",
+        "에",
+        "게",
+        "네",
+        "세",
+        "제",
+        "얘",
+        "걔",
+        "예",
+        "계"
+      ]
     },
     {
       "id": 8,
       "title": "Compound Vowels 2",
       "description": "W-vowels — combining ㅗ or ㅜ with another vowel",
-      "letters": ["ㅘ", "ㅙ", "ㅚ", "ㅝ", "ㅞ", "ㅟ", "ㅢ"],
+      "letters": [
+        "ㅘ",
+        "ㅙ",
+        "ㅚ",
+        "ㅝ",
+        "ㅞ",
+        "ㅟ",
+        "ㅢ"
+      ],
       "pronunciation": {
         "ㅘ": "wa (like 'wa' in 'wand')",
         "ㅙ": "wae (like 'we' in 'wet')",
@@ -170,19 +497,60 @@
         "ㅢ": "ui (like 'eu' + 'ee' — transitions from ㅡ to ㅣ)"
       },
       "formation": {
-        "ㅘ": "ㅗ + ㅏ", "ㅙ": "ㅗ + ㅐ", "ㅚ": "ㅗ + ㅣ",
-        "ㅝ": "ㅜ + ㅓ", "ㅞ": "ㅜ + ㅔ", "ㅟ": "ㅜ + ㅣ",
+        "ㅘ": "ㅗ + ㅏ",
+        "ㅙ": "ㅗ + ㅐ",
+        "ㅚ": "ㅗ + ㅣ",
+        "ㅝ": "ㅜ + ㅓ",
+        "ㅞ": "ㅜ + ㅔ",
+        "ㅟ": "ㅜ + ㅣ",
         "ㅢ": "ㅡ + ㅣ"
       },
-      "confusion_pairs": [["ㅘ", "ㅝ"], ["ㅙ", "ㅞ"], ["ㅚ", "ㅟ", "ㅙ", "ㅞ"]],
+      "confusion_pairs": [
+        [
+          "ㅘ",
+          "ㅝ"
+        ],
+        [
+          "ㅙ",
+          "ㅞ"
+        ],
+        [
+          "ㅚ",
+          "ㅟ",
+          "ㅙ",
+          "ㅞ"
+        ]
+      ],
       "note": "ㅙ, ㅞ, and ㅚ are all pronounced identically in modern Seoul Korean. Learners don't need to distinguish them by ear, only by spelling. Reminder: written alone, these still take the silent 'ㅇ' placeholder — ㅘ is written 와, ㅝ is written 워, and so on.",
-      "practice_syllables": ["와", "과", "화", "왜", "돼", "외", "최", "뭐", "워", "웨", "위", "귀", "쥐", "의", "희"]
+      "practice_syllables": [
+        "와",
+        "과",
+        "화",
+        "왜",
+        "돼",
+        "외",
+        "최",
+        "뭐",
+        "워",
+        "웨",
+        "위",
+        "귀",
+        "쥐",
+        "의",
+        "희"
+      ]
     },
     {
       "id": 9,
       "title": "Double Consonants (Tense)",
       "description": "Tense/double consonants — same shape, stronger articulation",
-      "letters": ["ㄲ", "ㄸ", "ㅃ", "ㅆ", "ㅉ"],
+      "letters": [
+        "ㄲ",
+        "ㄸ",
+        "ㅃ",
+        "ㅆ",
+        "ㅉ"
+      ],
       "pronunciation": {
         "ㄲ": "kk (tense 'g/k' — tighten throat, no air puff)",
         "ㄸ": "tt (tense 'd/t')",
@@ -190,15 +558,55 @@
         "ㅆ": "ss (tense 's', always sharp s sound)",
         "ㅉ": "jj (tense 'j')"
       },
-      "confusion_pairs": [["ㄱ", "ㄲ"], ["ㄷ", "ㄸ"], ["ㅂ", "ㅃ"], ["ㅅ", "ㅆ"], ["ㅈ", "ㅉ"]],
+      "confusion_pairs": [
+        [
+          "ㄱ",
+          "ㄲ"
+        ],
+        [
+          "ㄷ",
+          "ㄸ"
+        ],
+        [
+          "ㅂ",
+          "ㅃ"
+        ],
+        [
+          "ㅅ",
+          "ㅆ"
+        ],
+        [
+          "ㅈ",
+          "ㅉ"
+        ]
+      ],
       "note": "Tense consonants are written by doubling the basic consonant. The throat muscles tighten — no puff of air escapes.",
-      "practice_syllables": ["까", "따", "빠", "싸", "짜", "께", "떼", "뻬", "쎄", "쩨"]
+      "practice_syllables": [
+        "까",
+        "따",
+        "빠",
+        "싸",
+        "짜",
+        "께",
+        "떼",
+        "뻬",
+        "쎄",
+        "쩨"
+      ]
     },
     {
       "id": 10,
       "title": "Final Consonants (Batchim) 1",
       "description": "Syllable-final consonants — the bottom position in a syllable block",
-      "letters": ["ㄱ", "ㄴ", "ㄷ", "ㄹ", "ㅁ", "ㅂ", "ㅇ"],
+      "letters": [
+        "ㄱ",
+        "ㄴ",
+        "ㄷ",
+        "ㄹ",
+        "ㅁ",
+        "ㅂ",
+        "ㅇ"
+      ],
       "batchim_pronunciation": {
         "ㄱ": "k (unreleased — stop airflow, no pop)",
         "ㄴ": "n",
@@ -208,8 +616,40 @@
         "ㅂ": "p (unreleased — lips close, no pop)",
         "ㅇ": "ng (as in 'sing')"
       },
-      "example_syllables": ["각", "간", "갇", "갈", "감", "갑", "강", "먹", "문", "믿", "물", "몸", "밥", "방"],
-      "confusion_pairs": [["각", "간"], ["갇", "갈"], ["감", "갑"], ["강", "각"]],
+      "example_syllables": [
+        "각",
+        "간",
+        "갇",
+        "갈",
+        "감",
+        "갑",
+        "강",
+        "먹",
+        "문",
+        "믿",
+        "물",
+        "몸",
+        "밥",
+        "방"
+      ],
+      "confusion_pairs": [
+        [
+          "각",
+          "간"
+        ],
+        [
+          "갇",
+          "갈"
+        ],
+        [
+          "감",
+          "갑"
+        ],
+        [
+          "강",
+          "각"
+        ]
+      ],
       "note": "Only 7 distinct sounds at the end of a syllable, even though many more consonants can appear there. This is the hardest concept for beginners — mastering it unlocks real Korean words."
     },
     {
@@ -225,37 +665,283 @@
         "ㅁㄻ": "all pronounced as ㅁ [m] in final position",
         "ㅇ": "pronounced as ㅇ [ng] in final position"
       },
-      "example_syllables": ["밖", "앞", "옷", "있", "낮", "꽃", "좋", "앉", "많", "밟", "읊", "읽", "닭", "삶", "곬", "핥", "잃"],
-      "confusion_pairs": [["곧", "곳"], ["밖", "박"], ["있", "잇"], ["낮", "낫"]],
-      "note": "Despite being written differently, many batchim sound identical. This is the #1 spelling challenge in Korean."
+      "example_syllables": [
+        "방",
+        "밥",
+        "말",
+        "문",
+        "곰",
+        "먹",
+        "밖",
+        "옷"
+      ],
+      "confusion_pairs": [
+        [
+          "곧",
+          "곳"
+        ],
+        [
+          "밖",
+          "박"
+        ],
+        [
+          "있",
+          "잇"
+        ],
+        [
+          "낮",
+          "낫"
+        ]
+      ],
+      "note": "Despite being written differently, many batchim sound identical. This is the #1 spelling challenge in Korean.",
+      "mastery_syllables": [
+        "방",
+        "밥",
+        "말",
+        "문",
+        "곰",
+        "먹",
+        "밖",
+        "옷"
+      ]
     },
     {
       "id": 12,
       "title": "Reading Real Words",
-      "description": "Apply everything: read multi-syllable Korean words with full batchim rules",
+      "description": "Apply everything: read multi-syllable Korean words using all the letters you have learned",
       "vocabulary": [
-        {"word": "한글", "meaning": "Hangul (the Korean alphabet)", "breakdown": "한 (h+a+n) + 글 (g+eu+l)"},
-        {"word": "사랑", "meaning": "love", "breakdown": "사 (s+a) + 랑 (r+a+ng)"},
-        {"word": "감사합니다", "meaning": "thank you", "breakdown": "감(g+a+m) + 사(s+a) + 합(h+a+p→m) + 니(n+i) + 다(d+a)"},
-        {"word": "안녕하세요", "meaning": "hello (polite)", "breakdown": "안 + 녕 + 하 + 세 + 요"},
-        {"word": "김치", "meaning": "kimchi", "breakdown": "김 (g+i+m) + 치 (ch+i)"},
-        {"word": "학교", "meaning": "school", "breakdown": "학 (h+a+k) + 교 (g+y+o)"},
-        {"word": "음식", "meaning": "food", "breakdown": "음 (eu+m) + 식 (s+i+k)"},
-        {"word": "친구", "meaning": "friend", "breakdown": "친 (ch+i+n) + 구 (g+u)"},
-        {"word": "가족", "meaning": "family", "breakdown": "가 (g+a) + 족 (j+o+k)"},
-        {"word": "한국", "meaning": "Korea", "breakdown": "한 (h+a+n) + 국 (g+u+k)"}
+        {
+          "word": "한글",
+          "meaning": "Hangul (the Korean alphabet)",
+          "breakdown": "한 (h+a+n) + 글 (g+eu+l)",
+          "accepted_romanizations": [
+            "hangul",
+            "hangeul",
+            "han-geul",
+            "han-gul"
+          ]
+        },
+        {
+          "word": "사랑",
+          "meaning": "love",
+          "breakdown": "사 (s+a) + 랑 (r+a+ng)",
+          "accepted_romanizations": [
+            "sarang",
+            "sa-rang"
+          ]
+        },
+        {
+          "word": "김치",
+          "meaning": "kimchi",
+          "breakdown": "김 (g+i+m) + 치 (ch+i)",
+          "accepted_romanizations": [
+            "kimchi",
+            "gimchi",
+            "gim-chi",
+            "kim-chi"
+          ]
+        },
+        {
+          "word": "한국",
+          "meaning": "Korea",
+          "breakdown": "한 (h+a+n) + 국 (g+u+k)",
+          "accepted_romanizations": [
+            "hanguk",
+            "han-guk",
+            "hankuk"
+          ]
+        },
+        {
+          "word": "학교",
+          "meaning": "school",
+          "breakdown": "학 (h+a+k) + 교 (g+y+o)",
+          "accepted_romanizations": [
+            "hakgyo",
+            "hak-gyo",
+            "hagyo"
+          ]
+        },
+        {
+          "word": "음식",
+          "meaning": "food",
+          "breakdown": "음 (eu+m) + 식 (s+i+k)",
+          "accepted_romanizations": [
+            "eumsik",
+            "eum-sik"
+          ]
+        },
+        {
+          "word": "친구",
+          "meaning": "friend",
+          "breakdown": "친 (ch+i+n) + 구 (g+u)",
+          "accepted_romanizations": [
+            "chingu",
+            "chin-gu"
+          ]
+        },
+        {
+          "word": "가족",
+          "meaning": "family",
+          "breakdown": "가 (g+a) + 족 (j+o+k)",
+          "accepted_romanizations": [
+            "gajok",
+            "ga-jok"
+          ]
+        },
+        {
+          "word": "하늘",
+          "meaning": "sky",
+          "breakdown": "하 (h+a) + 늘 (n+eu+l)",
+          "accepted_romanizations": [
+            "haneul",
+            "ha-neul"
+          ]
+        },
+        {
+          "word": "바람",
+          "meaning": "wind",
+          "breakdown": "바 (b+a) + 람 (r+a+m)",
+          "accepted_romanizations": [
+            "baram",
+            "ba-ram"
+          ]
+        }
       ],
-      "practice_syllables": ["한", "글", "사", "랑", "감", "합", "니", "다", "안", "녕", "하", "세", "요", "김", "치", "학", "교", "음", "식", "친", "구", "가", "족", "국"],
-      "confusion_pairs": []
+      "mastery_words": [
+        "한글",
+        "사랑",
+        "김치",
+        "한국",
+        "학교",
+        "음식",
+        "친구",
+        "가족",
+        "하늘",
+        "바람"
+      ],
+      "practice_syllables": [
+        "한",
+        "글",
+        "사",
+        "랑",
+        "김",
+        "치",
+        "국",
+        "학",
+        "교",
+        "음",
+        "식",
+        "친",
+        "구",
+        "가",
+        "족",
+        "하",
+        "늘",
+        "바",
+        "람"
+      ],
+      "confusion_pairs": [
+        [
+          "한",
+          "학"
+        ],
+        [
+          "글",
+          "국"
+        ],
+        [
+          "사",
+          "가"
+        ],
+        [
+          "친",
+          "진"
+        ]
+      ]
     }
   ],
   "confusion_pairs_global": [
-    ["ㅏ", "ㅓ"], ["ㅗ", "ㅜ"], ["ㅐ", "ㅔ"], ["ㅏ", "ㅐ"], ["ㅓ", "ㅔ"],
-    ["ㄱ", "ㅋ"], ["ㄷ", "ㅌ"], ["ㅂ", "ㅍ"], ["ㅈ", "ㅊ"],
-    ["ㄱ", "ㄲ"], ["ㄷ", "ㄸ"], ["ㅂ", "ㅃ"], ["ㅅ", "ㅆ"], ["ㅈ", "ㅉ"],
-    ["ㅑ", "ㅕ"], ["ㅛ", "ㅠ"],
-    ["ㅘ", "ㅝ"], ["ㅙ", "ㅞ", "ㅚ"],
-    ["각", "간"], ["감", "갑"]
+    [
+      "ㅏ",
+      "ㅓ"
+    ],
+    [
+      "ㅗ",
+      "ㅜ"
+    ],
+    [
+      "ㅐ",
+      "ㅔ"
+    ],
+    [
+      "ㅏ",
+      "ㅐ"
+    ],
+    [
+      "ㅓ",
+      "ㅔ"
+    ],
+    [
+      "ㄱ",
+      "ㅋ"
+    ],
+    [
+      "ㄷ",
+      "ㅌ"
+    ],
+    [
+      "ㅂ",
+      "ㅍ"
+    ],
+    [
+      "ㅈ",
+      "ㅊ"
+    ],
+    [
+      "ㄱ",
+      "ㄲ"
+    ],
+    [
+      "ㄷ",
+      "ㄸ"
+    ],
+    [
+      "ㅂ",
+      "ㅃ"
+    ],
+    [
+      "ㅅ",
+      "ㅆ"
+    ],
+    [
+      "ㅈ",
+      "ㅉ"
+    ],
+    [
+      "ㅑ",
+      "ㅕ"
+    ],
+    [
+      "ㅛ",
+      "ㅠ"
+    ],
+    [
+      "ㅘ",
+      "ㅝ"
+    ],
+    [
+      "ㅙ",
+      "ㅞ",
+      "ㅚ"
+    ],
+    [
+      "각",
+      "간"
+    ],
+    [
+      "감",
+      "갑"
+    ]
   ],
   "quiz_modes": {
     "read_aloud": "Show a Hangul letter/syllable, user pronounces it. Model scores accuracy.",

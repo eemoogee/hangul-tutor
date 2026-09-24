@@ -318,6 +318,7 @@ if sys.platform == "win32":
     os.system("")
 
 BOLD = "\033[1m"
+DIM  = "\033[2m"
 GREEN = "\033[92m"
 RED = "\033[91m"
 YELLOW = "\033[93m"
@@ -392,8 +393,10 @@ def _lookup_letter_info(curriculum: dict, letter: str) -> tuple:
 # separate lesson files, e.g. simple vowels in lesson 1 but y-vowels
 # tucked into lesson 6). This is consonants first, then vowels, each in
 # their canonical sequence — 14 + 10 = the 24 basic letters.
-ALPHABET_CONSONANTS = ["ㄱ", "ㄴ", "ㄷ", "ㄹ", "ㅁ", "ㅂ", "ㅅ", "ㅇ", "ㅈ", "ㅊ", "ㅋ", "ㅌ", "ㅍ", "ㅎ"]
-ALPHABET_VOWELS = ["ㅏ", "ㅑ", "ㅓ", "ㅕ", "ㅗ", "ㅛ", "ㅜ", "ㅠ", "ㅡ", "ㅣ"]
+ALPHABET_CONSONANTS   = ["ㄱ", "ㄴ", "ㄷ", "ㄹ", "ㅁ", "ㅂ", "ㅅ", "ㅇ", "ㅈ", "ㅊ", "ㅋ", "ㅌ", "ㅍ", "ㅎ"]
+ALPHABET_VOWELS_BASIC = ["ㅏ", "ㅓ", "ㅗ", "ㅜ", "ㅡ", "ㅣ"]
+ALPHABET_VOWELS_Y     = ["ㅑ", "ㅕ", "ㅛ", "ㅠ"]
+ALPHABET_VOWELS       = ALPHABET_VOWELS_BASIC + ALPHABET_VOWELS_Y  # kept for any other reader
 
 # Hand-written, instant, visual/eye-catching shape mnemonics for the full
 # alphabet walkthrough. Deliberately NOT generated live via Ollama (unlike
@@ -440,6 +443,66 @@ POSITIONAL_QUIRKS = {
     "ㅇ": "SILENT at the start of a syllable — but sounds like 'ng' at the end!",
 }
 
+def _print_banner(glyphs: list, color=None, separator: str = " ", romans: list = None):
+    """Print a decorative single-row banner of Hangul glyphs.
+    color: a single ANSI code string, or None for plain.
+    separator: string between glyphs, default single space.
+    romans: if given, prints a muted romanization row underneath, each
+    entry left-justified in a 2-char slot to align under the double-width
+    Hangul glyphs (e.g. 'r/l' for ㄹ naturally takes the 3-col slot that
+    the double-wide Hangul + separator occupy)."""
+    line = separator.join(glyphs)
+    if color:
+        line = styled(line, color, BOLD)
+    else:
+        line = styled(line, BOLD)
+    print(f"\n   {line}")
+    if romans:
+        roman_line = " ".join(r.ljust(2) for r in romans)
+        print(f"   {styled(roman_line, DIM)}")
+    print()
+
+
+def _print_syllable_block_intro():
+    """Print the syllable block introduction shown at the vowel transition
+    in the alphabet walkthrough. Explains CV block layout visually using
+    two compact boxes (가 and 고), aligned CV equations with romanization,
+    layout labels, and short notes on letter reshaping and the ㅇ placeholder.
+    Kept as a standalone function so it can be called from other entry
+    points if needed in future."""
+
+    def compact_box(char, width=9):
+        inner = width - 2
+        pad = (inner - 2) // 2
+        line = "│" + " " * pad + char + " " * (inner - pad - 2) + "│"
+        top = "┌" + "─" * inner + "┐"
+        bot = "└" + "─" * inner + "┘"
+        return [top, line, bot]
+
+    print()
+    print(f"   {styled('In Korean, each syllable is written as one compact square — like this:', CYAN)}")
+    print()
+
+    left_box  = compact_box("가")
+    right_box = compact_box("고")
+    gap = "      "
+    for l, r in zip(left_box, right_box):
+        print("   " + l + gap + r)
+
+    print()
+    print("   " + styled(" ㄱ +  ㅏ  =  가", BOLD) + "     " + styled(" ㄱ +  ㅗ  =  고", BOLD))
+    print("    g  +  a   =  ga           g  +  o   =  go")
+    print()
+    print("   consonant left, vowel right     consonant on top, vowel below")
+    print()
+    print(f"   {styled('💡 Notice how ㄱ takes a different shape in each block — letters', CYAN)}")
+    print(f"   {styled('   reshape to fit the square depending on where the vowel sits.', CYAN)}")
+    print()
+    print("   " + styled("💡 Vowels don't appear alone in Korean. ㅏ is written 아, ㅓ is written 어 —", CYAN))
+    print(f"   {styled('   the ㅇ in front is silent, just filling in until a real consonant arrives.', CYAN)}")
+    print()
+
+
 def run_alphabet_intro(quiz: HangulQuiz):
     """The full 24-letter Hangul alphabet, front to back, in the real
     canonical order — consonants then vowels — meant as THE first thing a
@@ -450,8 +513,12 @@ def run_alphabet_intro(quiz: HangulQuiz):
     boundaries to break the flow."""
     curriculum = quiz.curriculum
     roman_table = quiz.get_romanization_table()
-    ordered = [("Consonants", ALPHABET_CONSONANTS, "🔤"), ("Vowels", ALPHABET_VOWELS, "🎵")]
-    total = len(ALPHABET_CONSONANTS) + len(ALPHABET_VOWELS)
+    ordered = [
+        ("Consonants",   ALPHABET_CONSONANTS,   "🔤"),
+        ("Basic Vowels", ALPHABET_VOWELS_BASIC,  "🎵"),
+        ("Y-Vowels",     ALPHABET_VOWELS_Y,      "🎵"),
+    ]
+    total = len(ALPHABET_CONSONANTS) + len(ALPHABET_VOWELS_BASIC) + len(ALPHABET_VOWELS_Y)
 
     print(f"\n{styled('🇰🇷✨ The Hangul Alphabet ✨🇰🇷', BOLD, GREEN)}")
     intro_line = f"{total} letters — 14 consonants, 10 vowels. Let's meet them all!"
@@ -460,7 +527,40 @@ def run_alphabet_intro(quiz: HangulQuiz):
 
     seen = 0
     for section_name, letters, icon in ordered:
-        print(f"\n{styled(f'{icon}  {section_name}', BOLD, YELLOW)}")
+        if section_name == "Consonants":
+            print(f"\n{styled(f'{icon}  {section_name}', BOLD, YELLOW)}")
+            _print_banner(list(ALPHABET_CONSONANTS), color=YELLOW,
+                          romans=[roman_table.get(c, "") for c in ALPHABET_CONSONANTS])
+        elif section_name == "Basic Vowels":
+            # ── Consonants → Vowels transition ───────────────────────
+            time.sleep(0.5)
+            divider = styled("ㄱ ㄴ ㄷ ㄹ ㅁ ㅂ ㅅ ㅇ ㅈ ㅊ ㅋ ㅌ ㅍ ㅎ", YELLOW, BOLD)
+            rule    = styled("─" * 45, YELLOW)
+            print(f"\n   {divider}")
+            print(f"   {rule}")
+            try:
+                input(f"\n   {styled('[↵  All 14 consonants done — now see what they can do]', CYAN)}")
+            except (EOFError, KeyboardInterrupt):
+                return
+            # Syllable block intro — bridge between C and V
+            _print_syllable_block_intro()
+            print(f"\n{styled(f'{icon}  {section_name}', BOLD, YELLOW)}")
+            _print_banner(ALPHABET_VOWELS_BASIC, color=CYAN,
+                          romans=[roman_table.get(v, "") for v in ALPHABET_VOWELS_BASIC])
+        elif section_name == "Y-Vowels":
+            # ── Basic Vowels → Y-Vowels transition ───────────────────
+            time.sleep(0.5)
+            divider = styled("ㅏ ㅓ ㅗ ㅜ ㅡ ㅣ", CYAN, BOLD)
+            rule    = styled("─" * 45, CYAN)
+            print(f"\n   {divider}")
+            print(f"   {rule}")
+            try:
+                input(f"\n   {styled('[↵  6 vowels down — 4 more to go]', CYAN)}")
+            except (EOFError, KeyboardInterrupt):
+                return
+            print(f"\n{styled(f'{icon}  Y-Vowels', BOLD, YELLOW)}")
+            _print_banner(ALPHABET_VOWELS_Y, color=CYAN,
+                          romans=[roman_table.get(v, "") for v in ALPHABET_VOWELS_Y])
         for letter in letters:
             seen += 1
             roman = roman_table.get(letter, "")
@@ -499,6 +599,33 @@ def run_alphabet_intro(quiz: HangulQuiz):
                     print(f"   {styled(msg, YELLOW)}")
 
     print(f"\n{styled('🎉 You have met the whole Hangul alphabet! 🎉', BOLD, GREEN)}")
+
+    # Simple strip banner — composed words only, no jamo row.
+    # Meanings revealed on [↵].
+    words   = ["하늘", "바람", "소리", "노래", "사랑"]
+    SEP     = "   "
+    inner   = SEP.join(words)
+    # Border width: each Korean glyph is 2 display cols, plus separators and padding
+    border_w = sum(2 for _ in "".join(words)) + (len(words) - 1) * len(SEP) + 4
+    top  = "╔" + "═" * border_w + "╗"
+    mid  = "║  " + inner + "  ║"
+    bot  = "╚" + "═" * border_w + "╝"
+
+    print()
+    for line in (top, mid, bot):
+        print(f"   {styled(line, GREEN, BOLD)}")
+    print()
+
+    try:
+        input(f"   {styled('[↵]', CYAN)}")
+    except (EOFError, KeyboardInterrupt):
+        return
+
+    meanings = ["sky", "wind", "sound", "song", "love"]
+    print()
+    print(f"   {styled(inner, GREEN, BOLD)}")
+    print("   " + styled(SEP.join(f"{m:<5}" for m in meanings).rstrip(), CYAN))
+    print()
 
 
 def _offer_lesson_picker(quiz: HangulQuiz) -> dict:
@@ -596,22 +723,15 @@ def _highlight_in_sentence(sentence: str, target: str) -> Optional[str]:
 
 
 def print_title_screen():
-    """A quick startup banner with a light reveal effect. Shown on EVERY
-    launch (not just first-run), so it's deliberately brief — a couple
-    seconds total — rather than the slower, savor-it pacing used for the
-    alphabet/letter animations, which only play once per letter and can
-    afford to linger. Each composition row types out letter by letter
-    (dramatic but quick — well under a second per row) rather than
-    appearing all at once, then the romanization line beneath it appears
-    in full once the jamo line finishes.
+    """Startup banner shown on every launch. Demonstrates Hangul's
+    combinatorial logic in two stages:
+    1. Animate 한글 from its component jamo (slowed for impact).
+    2. A 5x6 CV chart fills in: four C+V+syllable demonstrations at
+       gradually accelerating pace, then remaining cells scatter in
+       randomly. The chart shows the whole system at a glance before
+       the learner has been taught a single letter."""
 
-    Rather than just claim Hangul is rational and easy, this DEMONSTRATES
-    it: builds the word 한글 ('Hangul', the writing system's own name)
-    live from its component jamo (ㅎ+ㅏ+ㄴ=한, ㄱ+ㅡ+ㄹ=글) — the exact
-    same combining logic every syllable in the app uses — with
-    romanization aligned underneath each jamo so the sound-mapping is as
-    visible as the shape-mapping. Decomposition verified against the
-    actual Unicode Hangul syllable formula, not eyeballed."""
+    # Stage 1: 한글 composition animation
     print()
     rows = [
         [("ㅎ", "h"), ("ㅏ", "a"), ("ㄴ", "n"), ("한", "han")],
@@ -623,15 +743,172 @@ def print_title_screen():
         for piece in jamo_pieces:
             sys.stdout.write(piece)
             sys.stdout.flush()
-            time.sleep(0.08)
-        print()  # close out the jamo line once fully revealed
+            time.sleep(0.15)
+        print()
         print(roman_line)
-        time.sleep(0.2)
-    time.sleep(0.2)
+        time.sleep(0.3)
+    time.sleep(0.3)
     print(f"\n   {styled('한글', BOLD, GREEN)}  —  \"Hangul\": literally, the great script")
-    time.sleep(0.35)
+    time.sleep(0.6)
+
+    # Stage 2: CV chart animation
+    _title_chart_animation()
+
     print(styled("\n✨  Learn to read Korean, one letter at a time  ✨", BOLD, GREEN))
     print()
+
+
+def _title_chart_animation():
+    """CV chart reveal for the title screen. Five consonants x six vowels.
+    Four C+V+syllable demonstration pairs animate at gradually decreasing
+    pace, then remaining cells scatter in randomly."""
+    import random
+
+    consonants = list("ㄱㄴㅁㅅㅎ")
+    vowels     = list("ㅏㅓㅗㅜㅡㅣ")
+
+    def dw(s):
+        w = 0
+        for ch in s:
+            cp = ord(ch)
+            if (0xAC00<=cp<=0xD7A3 or 0x1100<=cp<=0x11FF or 0x3130<=cp<=0x318F):
+                w += 2
+            else:
+                w += 1
+        return w
+
+    def compose(cho, jung):
+        CHOSEONG  = list("ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ")
+        JUNGSEONG = list("ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ")
+        try:
+            code = 0xAC00 + (CHOSEONG.index(cho)*21*28) + (JUNGSEONG.index(jung)*28)
+            return chr(code)
+        except ValueError:
+            return cho + jung
+
+    def cell(content, *codes):
+        s = styled(content, *codes) if codes else content
+        return f" {s} "
+
+    def raw_cell(content): return f" {content} "
+
+    # Measure border from template row
+    template = "\u2551" + raw_cell("ㄱ") + "\u2502" + "\u2502".join(raw_cell(compose("ㄱ", v)) for v in vowels) + "\u2551"
+    row_dw = dw(template)
+    pipe_cols = set()
+    col = 0
+    for ch in template:
+        if ch == "\u2502":
+            pipe_cols.add(col)
+        col += 2 if (0xAC00<=ord(ch)<=0xD7A3 or 0x1100<=ord(ch)<=0x11FF or 0x3130<=ord(ch)<=0x318F) else 1
+
+    def build_hline(left, div, right, fill="\u2550"):
+        inner_w = row_dw - 2
+        line = left; c = 1
+        for _ in range(inner_w):
+            line += div if c in pipe_cols else fill
+            c += 1
+        return line + right
+
+    top   = build_hline("\u2554", "\u2564", "\u2557")
+    div   = build_hline("\u255f", "\u253c", "\u2562", "\u2500")
+    inner = build_hline("\u255f", "\u253c", "\u2562", "\u2500")
+    bot   = build_hline("\u255a", "\u2567", "\u255d")
+
+    revealed_c = set()
+    revealed_v = set()
+    filled     = set()
+
+    def build_header():
+        h = "\u2551" + cell("  ") + "\u2502"
+        h += "\u2502".join(cell(vowels[vi], CYAN, BOLD) if vi in revealed_v else raw_cell("  ") for vi in range(len(vowels)))
+        return h + "\u2551"
+
+    def build_row(ci):
+        cho = consonants[ci]
+        c_cell = cell(cho, YELLOW, BOLD) if ci in revealed_c else raw_cell("  ")
+        r = "\u2551" + c_cell + "\u2502"
+        for vi in range(len(vowels)):
+            if (ci, vi) in filled:
+                r += cell(compose(cho, vowels[vi]), GREEN, BOLD)
+            else:
+                r += raw_cell("  ")
+            if vi < len(vowels) - 1:
+                r += "\u2502"
+        return r + "\u2551"
+
+    total_lines = 3 + (2 * len(consonants) - 1) + 1
+    CURSOR_UP  = "\033[1A"
+    CURSOR_COL = "\033[1G"
+
+    def reprint_line(offset, new_line):
+        sys.stdout.write(CURSOR_UP * offset + CURSOR_COL)
+        sys.stdout.write(f"   {new_line}\n")
+        sys.stdout.write("\n" * (offset - 1))
+        sys.stdout.flush()
+
+    def header_offset(): return total_lines - 1
+
+    def row_offset(ci):
+        return 1 + (len(consonants) - 1 - ci) * 2 + 1
+
+    # Print initial blank skeleton
+    print(f"   {styled(top, GREEN, BOLD)}")
+    print(f"   {build_header()}")
+    print(f"   {styled(div, GREEN, BOLD)}")
+    for ci in range(len(consonants)):
+        print(f"   {build_row(ci)}")
+        if ci < len(consonants) - 1:
+            print(f"   {styled(inner, GREEN, BOLD)}")
+    print(f"   {styled(bot, GREEN, BOLD)}")
+    time.sleep(0.5)
+
+    # Demonstration pairs with gradually accelerating timings
+    demo_pairs = [
+        (consonants.index("ㄱ"), vowels.index("ㅏ")),
+        (consonants.index("ㄴ"), vowels.index("ㅗ")),
+        (consonants.index("ㅁ"), vowels.index("ㅣ")),
+        (consonants.index("ㅅ"), vowels.index("ㅜ")),
+    ]
+    pair_timings = [
+        (0.7, 0.7, 1.0),
+        (0.5, 0.5, 0.7),
+        (0.35, 0.35, 0.5),
+        (0.2, 0.2, 0.3),
+    ]
+
+    for (ci, vi), (t_c, t_v, t_syl) in zip(demo_pairs, pair_timings):
+        revealed_c.add(ci)
+        reprint_line(row_offset(ci), build_row(ci))
+        time.sleep(t_c)
+        revealed_v.add(vi)
+        reprint_line(header_offset(), build_header())
+        time.sleep(t_v)
+        filled.add((ci, vi))
+        reprint_line(row_offset(ci), build_row(ci))
+        time.sleep(t_syl)
+
+    # Random scatter fill
+    remaining = [(ci, vi)
+                 for ci in range(len(consonants))
+                 for vi in range(len(vowels))
+                 if (ci, vi) not in filled]
+    random.shuffle(remaining)
+
+    for ci, vi in remaining:
+        c_changed = ci not in revealed_c
+        v_changed = vi not in revealed_v
+        revealed_c.add(ci)
+        revealed_v.add(vi)
+        filled.add((ci, vi))
+        if v_changed:
+            reprint_line(header_offset(), build_header())
+        if c_changed:
+            reprint_line(row_offset(ci), build_row(ci))
+        reprint_line(row_offset(ci), build_row(ci))
+        time.sleep(0.07)
+
+    time.sleep(0.5)
 
 
 def show_start_menu(quiz: HangulQuiz) -> dict:
@@ -847,6 +1124,88 @@ def print_romanization_key(quiz: HangulQuiz):
     print(f"   {styled('Batchim (final consonant):', BOLD)} appended after a dash using the")
     print(f"   same consonant codes above — e.g. 각 (ㄱ+ㅏ+ㄱ batchim) romanizes as 'ga-g'.")
 
+
+# Consonant and vowel sets for the CV chart.
+# Basic vowels: the six simple vowels introduced in Lesson 1.
+# Y-vowels: the four iotized vowels added in Lesson 6.
+_CHART_CONSONANTS = list("ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎ")
+_CHART_VOWELS_BASIC = list("ㅏㅓㅗㅜㅡㅣ")
+_CHART_VOWELS_Y     = list("ㅑㅕㅛㅠ")
+
+
+def print_cv_chart(quiz: HangulQuiz, y_vowels: bool = False, compact: bool = False):
+    """Print a consonant × vowel syllable chart.
+
+    y_vowels=True adds the four iotized vowels (ㅑㅕㅛㅠ) as extra columns.
+    compact=True omits the horizontal row separators, halving the height.
+
+    Colors follow the app's conventions with one addition: vowel headers
+    are CYAN (reference/info), consonant headers are YELLOW (lesson
+    context), composed syllable blocks are bold GREEN (matching
+    _composition_rows' convention throughout the app). The distinction
+    between C and V headers helps first-time learners not read the
+    header row as part of the syllable grid.
+
+    Border style: double-line outer (╔═╗) with single-line inner grid
+    (┼─│) — the double outer reads as "this is a reference poster",
+    inner lines stay subordinate."""
+
+    vowels = _CHART_VOWELS_BASIC + (_CHART_VOWELS_Y if y_vowels else [])
+    roman  = quiz.get_romanization_table()
+
+    # Cell width: 1 space + double-width Hangul glyph (2 cols) + 1 space = 4
+    # display columns. All jamo and composed syllable blocks are exactly
+    # 2 display columns wide in monospace, so no per-cell padding tricks needed.
+    CW = 4  # cell display width including borders
+
+    def cell(content, *style_codes):
+        """Return a styled 4-wide cell body (no border chars)."""
+        s = styled(content, *style_codes) if style_codes else content
+        return f" {s} "
+
+    def hline(left, mid, right, fill="═"):
+        """Full-width horizontal rule."""
+        seg = fill * (CW - 1) + mid
+        return left + seg + (seg * (len(vowels) - 1)) + fill * (CW - 1) + right
+
+    def inner_hline():
+        seg = "─" * (CW - 1) + "┼"
+        return "╟" + seg + (seg * (len(vowels) - 1)) + "─" * (CW - 1) + "╢"
+
+    variant = "y-vowels" if y_vowels else "basic"
+    layout  = "compact" if compact else "full"
+    title   = f"CV Syllable Chart — {variant}, {layout}"
+    print(f"\n{styled(title, BOLD, CYAN)}")
+
+    # Top border
+    print(hline("╔", "╤", "╗"))
+
+    # Vowel header row: empty corner cell + one cell per vowel
+    header = "║" + cell("  ") + "│"
+    header += "│".join(cell(v, CYAN, BOLD) for v in vowels)
+    header += "║"
+    print(header)
+
+    # Separator between header and body
+    print(hline("╟", "┼", "╢", "─"))
+
+    # Body: one row per consonant
+    for i, cho in enumerate(_CHART_CONSONANTS):
+        row = "║" + cell(cho, YELLOW, BOLD) + "│"
+        cells = []
+        for jung in vowels:
+            syl = quiz._compose_syllable(cho, jung)
+            cells.append(cell(syl, GREEN, BOLD))
+        row += "│".join(cells) + "║"
+        print(row)
+        # Row separator (omitted in compact mode; always omitted after last row)
+        if not compact and i < len(_CHART_CONSONANTS) - 1:
+            print(inner_hline())
+
+    # Bottom border
+    print(hline("╚", "╧", "╝"))
+    print()
+
 def run_beginner_intro(quiz: HangulQuiz, lesson: dict):
     """Walk through the current lesson's letters one at a time — letter,
     romanization, pronunciation, stroke order — at the learner's own pace.
@@ -988,6 +1347,7 @@ def print_question(q: QuizQuestion, quiz: HangulQuiz = None):
     mode_icons = {
         "spell": "🔤", "read_aloud": "🔊", "match_sound": "🎯",
         "build_syllable": "🧩", "missing_vowel": "🔍",
+        "decompose_syllable": "🔬",
         "batchim_challenge": "📦", "confusion_drill": "⚡",
         "word_contrast": "📖", "sudden_death": "💀", "nonword_decode": "🔣"
     }
@@ -997,7 +1357,7 @@ def print_question(q: QuizQuestion, quiz: HangulQuiz = None):
     print(f"\n{icon} {styled(label, CYAN)}")
 
     rendered = False
-    if quiz is not None and q.mode in ("build_syllable", "missing_vowel", "confusion_drill", "word_contrast") and q.letter:
+    if quiz is not None and q.mode in ("build_syllable", "missing_vowel", "decompose_syllable", "confusion_drill", "word_contrast") and q.letter:
         try:
             syl = quiz.syllable_breakdown(q.letter)
             if q.mode == "build_syllable":
@@ -1027,6 +1387,19 @@ def print_question(q: QuizQuestion, quiz: HangulQuiz = None):
                 print(jamo_line)
                 print(roman_line)
                 print("   Which vowel completes it?")
+                rendered = True
+            elif q.mode == "decompose_syllable":
+                # The INVERSE of build_syllable, so the inverse rule applies:
+                # the composed BLOCK is safe to show (it is the question) and
+                # the jamo are NOT (they are the answer). build_syllable shows
+                # the jamo and hides the block; here we show the block and
+                # hide the jamo. Never print syl.cho / syl.jung / syl.components
+                # in this branch.
+                print(f"   Break this block into its parts:")
+                print(f"   {styled(syl.text, BOLD, CYAN)}   "
+                      f"=   {styled('?', BOLD, YELLOW)} + "
+                      f"{styled('?', BOLD, YELLOW)}")
+                print("   Which consonant + vowel make it?")
                 rendered = True
             elif q.mode == "confusion_drill" and q.other:
                 # Genuinely contrastive render (the gap identified against
@@ -1383,9 +1756,17 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
   {styled('/mode NAME', CYAN)}— Lock quiz mode (spell, read, match, build, vowel, batchim, confusion, auto)
   {styled('/alphabet', CYAN)} — Walk through all 24 basic letters, consonants then vowels
   {styled('/intro', CYAN)}    — Walk through this lesson's letters one at a time (true-beginner mode)
-  {styled('/table', CYAN)}    — Show this lesson's reference table again
-  {styled('/roman', CYAN)}    — Show the full romanization key (what "read aloud" grades you against)
+
+{styled('Reference:', BOLD)}
+  {styled('/table', CYAN)}    — Show this lesson's reference table
+  {styled('/roman', CYAN)}    — Show the full romanization key
+  {styled('/chart', CYAN)}    — Consonant × vowel syllable chart (basic vowels)
+               {styled('/chart compact', CYAN)}  — same, no row separators
+               {styled('/chart y', CYAN)}         — add y-vowels (ㅑ ㅕ 㛄 ㅠ)
+               {styled('/chart y compact', CYAN)} — y-vowels, compact
   {styled('/mnemonic X', CYAN)}— Get a mnemonic for letter X
+
+{styled('Other:', BOLD)}
   {styled('/talk', CYAN)}     — Try reading a Korean sentence (uses your mastered syllables)
   {styled('/template', CYAN)} — Same, but instant (no LLM)
   {styled('/konglish', CYAN)} — Decode a Konglish word (sound it out, guess English)
@@ -1444,6 +1825,16 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
 
             elif action == 'table':
                 print_reference_table(quiz, lesson)
+
+            elif action == 'chart':
+                # /chart           — basic vowels, full grid
+                # /chart compact   — basic vowels, no row separators
+                # /chart y         — + y-vowels, full grid
+                # /chart y compact — + y-vowels, compact
+                flags = [t.lower() for t in cmd[1:]]
+                print_cv_chart(quiz,
+                               y_vowels=('y' in flags),
+                               compact=('compact' in flags))
 
             elif action == 'mode':
                 choice = cmd[1].lower() if len(cmd) > 1 else ""
@@ -1646,8 +2037,12 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
     if summary['top_confusions']:
         print(f"   Practice these: {', '.join(c['pair'] for c in summary['top_confusions'])}")
 
-    # Structured lesson-complete block (deterministic — no Ollama call).
-    print_lesson_complete(quiz)
+    # Structured lesson-complete block — only shown when the current lesson
+    # is actually mastered, so quitting mid-lesson doesn't print a false
+    # "LESSON COMPLETE" banner.
+    if (quiz.current_lesson is not None
+            and quiz.lesson_mastery(quiz.current_lesson["id"])["is_mastered"]):
+        print_lesson_complete(quiz)
 
 # ── Entry point ────────────────────────────────────────────────────────────
 

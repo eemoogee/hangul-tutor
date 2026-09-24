@@ -61,6 +61,11 @@ class QuizQuestion:
     example_en: str = ""
     other_example_ko: str = ""
     other_example_en: str = ""
+    # Alternate accepted answers beyond correct_answer — currently used by
+    # read_word, whose vocabulary entries carry an accepted_romanizations
+    # list (e.g. both 'hangul' and 'hangeul'). Empty for every other mode,
+    # which just grade against correct_answer as before.
+    accepted: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -127,12 +132,18 @@ class Syllable:
 # with its distractor logic specifically designed to defeat sound-only
 # guessing (see _batchim_question's same_sound_in_choices comment) — closer
 # in character to reading/writing than to romanization-driven recall.
+# read_word is the whole-word case of read_aloud — the prompt shows a
+# Hangul word and asks for its romanization — so it belongs in the same
+# bucket. (It also has to be classified SOMEWHERE: next_question only
+# draws from the two direction buckets whenever both are non-empty, so a
+# mode in neither is effectively never selected when both spell and
+# read_aloud are due.)
 # confusion_drill and word_contrast are deliberately left out of both
 # buckets: their prompt shape varies by entry/pair rather than having one
 # fixed direction, so they stay outside this weighting rather than being
 # force-fit into either bucket.
-ROMANIZATION_FIRST_MODES = frozenset({"spell", "match_sound", "build_syllable", "missing_vowel"})
-HANGUL_FIRST_MODES = frozenset({"read_aloud", "batchim_challenge"})
+ROMANIZATION_FIRST_MODES = frozenset({"spell", "match_sound", "build_syllable", "missing_vowel", "decompose_syllable"})
+HANGUL_FIRST_MODES = frozenset({"read_aloud", "read_word", "batchim_challenge"})
 
 
 @dataclass
@@ -634,13 +645,17 @@ class HangulQuiz:
         generator's actual pool, so due-ness is computed against the same
         items the chosen mode would actually quiz:
           - spell / read_aloud / match_sound -> _get_lesson_syllable_pool
-          - build_syllable / missing_vowel  -> practice_syllables or example_syllables
+          - read_word                       -> mastery_words
+          - build_syllable / missing_vowel / decompose_syllable
+                                            -> practice_syllables or example_syllables
           - batchim_challenge               -> example_syllables
           - confusion_drill (or anything else) -> no syllable pool, returns []
         """
         if mode in ("spell", "read_aloud", "match_sound"):
             return self._get_lesson_syllable_pool(lesson)
-        if mode in ("build_syllable", "missing_vowel"):
+        if mode == "read_word":
+            return lesson.get("mastery_words", [])
+        if mode in ("build_syllable", "missing_vowel", "decompose_syllable"):
             return lesson.get("practice_syllables") or lesson.get("example_syllables") or []
         if mode == "batchim_challenge":
             return lesson.get("example_syllables", [])
@@ -689,6 +704,24 @@ class HangulQuiz:
         # Restrict modes based on lesson content
         if lesson.get("practice_syllables") or lesson.get("example_syllables"):
             available_modes += ["build_syllable", "missing_vowel"]
+            # decompose_syllable rides along with build_syllable (its inverse)
+            # rather than carrying its own independent rate gate — the two are
+            # one construction/deconstruction pair and share a pool + a gating
+            # condition. Whether they should ALSO share a rate is a curriculum
+            # question, tracked as the known-issue comment in
+            # _build_syllable_question.
+            available_modes.append("decompose_syllable")
+
+        # Whole-word reading (Lesson 12 and any other word-based lesson).
+        # Deliberately NOT added to available_modes here: these modes get
+        # drawn through the direction-bucket logic below, and a word-based
+        # lesson's read_word is meant to be the PRIMARY exercise, not one
+        # competitor among several. Adding it there diluted the observed
+        # rate to ~20% even behind a 60% gate — the gate fired 60% of the
+        # time, then the hangul-first bucket split between read_aloud and
+        # read_word, then the due-preference filter could drop it again
+        # (0.60 × 0.60 × 0.5 ≈ 0.20). It's selected directly up front in
+        # the mode pick below instead. See READ_WORD_RATE.
         if "batchim_pronunciation_rules" in lesson or "batchim_pronunciation" in lesson:
             available_modes.append("batchim_challenge")
 
@@ -734,6 +767,15 @@ class HangulQuiz:
 
         if mode:
             chosen_mode = mode
+        elif lesson.get("mastery_words") and random.random() < self.READ_WORD_RATE:
+            # Word-based lesson: whole-word reading is the primary
+            # exercise (see READ_WORD_RATE). Picked directly here rather
+            # than through the bucket/available_modes logic below, so the
+            # observed rate actually matches READ_WORD_RATE instead of
+            # being diluted by the hangul-first split and due filter.
+            # WHICH word is still due-based — _read_word_question routes
+            # its mastery_words pool through _select_from_pool.
+            chosen_mode = "read_word"
         else:
             # Prefer modes whose current-lesson pool has at least one due
             # item — mirroring _select_from_pool's due-preference one level
@@ -791,6 +833,10 @@ class HangulQuiz:
             return self._spell_question(lesson)
         elif mode == "read_aloud":
             return self._read_aloud_question(lesson)
+        elif mode == "read_word":
+            if lesson.get("mastery_words"):
+                return self._read_word_question(lesson)
+            return self._read_aloud_question(lesson)  # degrade-gracefully, same as confusion_drill/word_contrast
         elif mode == "match_sound":
             return self._match_sound_question(lesson)
         elif mode == "build_syllable":
@@ -810,6 +856,8 @@ class HangulQuiz:
             return self._nonword_decode_question(lesson)
         elif mode == "sequence_decode":
             return self._sequence_decode_question(lesson)
+        elif mode == "decompose_syllable":
+            return self._decompose_syllable_question(lesson)
         else:
             return self._spell_question(lesson)
 
@@ -900,6 +948,11 @@ class HangulQuiz:
             mode="spell",
             prompt=f"Type the Hangul for: **{roman}**",
             correct_answer=target,
+            # Also accept the romanization the prompt already showed — a
+            # learner who types 'i' when asked for 이 clearly knows the
+            # answer; penalising them for using the form the question
+            # itself displayed is misleading feedback.
+            accepted=[roman],
             choices=self._make_choices(target, pool),
             hint=hint,
             lesson_id=lesson["id"],
@@ -922,6 +975,50 @@ class HangulQuiz:
             lesson_id=lesson["id"],
             letter=target
         )
+
+    def _read_word_question(self, lesson: dict) -> QuizQuestion:
+        """Show a whole word from lesson['mastery_words'], ask the user to
+        type its romanization. Same shape as _read_aloud_question, but the
+        target is a full word rather than a single syllable, and grading is
+        against that word's accepted_romanizations list (a word can have
+        more than one accepted spelling, e.g. 'hangul'/'hangeul') instead
+        of the app's single-syllable ROMANIZATION string. Word selection
+        still goes through _select_from_pool, keyed on the word string, so
+        it gets the same spaced-repetition due preference as every other
+        mode."""
+        target = self._select_from_pool(lesson["mastery_words"])
+
+        # Look up this word's vocabulary entry for its meaning, breakdown,
+        # and accepted romanizations. A word with no matching entry (data
+        # drift) still produces a usable question: fall back to the
+        # syllabus-derived romanization as the single accepted answer and
+        # leave the breakdown hint empty rather than crashing.
+        vocab = next((v for v in lesson.get("vocabulary", [])
+                      if v.get("word") == target), None)
+        accepted = list(vocab.get("accepted_romanizations", [])) if vocab else []
+        if not accepted:
+            accepted = [self._word_romanization(target)]
+        breakdown = vocab.get("breakdown", "") if vocab else ""
+
+        return QuizQuestion(
+            mode="read_word",
+            prompt=f"Read this word aloud, then type its romanization:\n\n   **{target}**",
+            correct_answer=accepted[0],
+            accepted=accepted,
+            hint=breakdown,
+            lesson_id=lesson["id"],
+            letter=target
+        )
+
+    def _word_romanization(self, word: str) -> str:
+        """Concatenated per-syllable romanization for a whole word — the
+        fallback answer for a mastery word whose vocabulary entry is
+        missing or carries no accepted_romanizations. Reuses
+        _hangul_to_roman_hint (the same source read_aloud grades against)
+        so a multi-syllable word stays consistent with single-syllable
+        spelling. No separator, matching how '한글' composes to 'hangeul'
+        rather than 'han-geul'."""
+        return "".join(self._hangul_to_roman_hint(ch) for ch in word)
 
     def _match_sound_question(self, lesson: dict) -> QuizQuestion:
         """Multiple choice: pick the right Hangul given romanization."""
@@ -950,6 +1047,20 @@ class HangulQuiz:
             return self._spell_question(lesson)  # fallback
 
         # Decompose syllable into consonant + vowel
+        #
+        # ⚠️ KNOWN ISSUE (flagged 2026-09, not yet fixed — needs a curriculum
+        # pass): this mode PRINTS the decomposition it just computed
+        # ("Consonant: {cho} | Vowel: {jung}") as part of its prompt. That is
+        # the exact answer decompose_syllable mode asks for, so the two modes
+        # overlap: build_syllable gives the jamo away and only tests block
+        # assembly, while decompose_syllable hides the block and tests the
+        # jamo. Running both in the same lesson (which they do — see
+        # next_question) means a learner can be told "ㄷ + ㅗ" by one question
+        # and then asked to produce "ㄷ + ㅗ" by the next. The intended fix is
+        # a curriculum/sequencing decision (gate build_syllable to the lessons
+        # where block assembly is still the new skill, and let
+        # decompose_syllable take over once assembly is established), which is
+        # why this is a comment and not a code change here.
         cho, jung, jong = self._decompose_syllable(target)
         return QuizQuestion(
             mode="build_syllable",
@@ -972,6 +1083,20 @@ class HangulQuiz:
             return self._spell_question(lesson)
 
         cho, jung, jong = self._decompose_syllable(target)
+
+        # Batchim guard — without this, a batchim target is served as
+        # "ㄷ + ? = dot" and graded on the vowel ALONE, silently accepting
+        # an answer that ignores the final consonant entirely. Measured
+        # impact before this guard: lessons 10 and 11 are 100% batchim
+        # (22 pool syllables, 0 bare CV), so every missing_vowel question
+        # in those two lessons mis-graded. Mirrors the same guard in
+        # _batchim_question (~line 1108), which rejects the INVERSE case
+        # (no batchim) for the same class of reason: the mode's single
+        # graded component can't represent the target, so degrade to
+        # spell rather than grade a partial answer as correct.
+        if jong:
+            return self._spell_question(lesson)
+
         roman = self._hangul_to_roman_hint(target)
         vowel_options = random.sample(["ㅏ", "ㅓ", "ㅗ", "ㅜ", "ㅡ", "ㅣ", "ㅑ", "ㅕ", "ㅛ", "ㅠ", "ㅐ", "ㅔ"], 4)
         if jung not in vowel_options:
@@ -986,6 +1111,108 @@ class HangulQuiz:
             lesson_id=lesson["id"],
             letter=target
         )
+
+    def _decompose_syllable_question(self, lesson: dict) -> QuizQuestion:
+        """Show a composed block, user names its consonant + vowel.
+
+        The INVERSE of build_syllable: there the jamo pair is given and the
+        block is the answer; here the block is given and the jamo pair is
+        the answer. Because of that inversion, the prompt and the choices
+        must never render the block's component letters — the block is safe
+        to show (it is the question), the jamo are not (they are the answer).
+
+        Bare CV only. Batchim targets and bare-jamo pool entries both degrade
+        to _spell_question rather than being served with an unanswerable or
+        ambiguous prompt (see the guards below).
+
+        correct_answer is a formatted string "ㄷ + ㅗ" — order-significant,
+        both components required. Graded via _normalize_jamo_pair so that
+        input spacing/punctuation ('ㄷ+ㅗ', 'ㄷ ㅗ') is not what is being
+        tested, while component ORDER still is ('ㅗㄷ' fails)."""
+        pool = lesson.get("practice_syllables") or lesson.get("example_syllables")
+        if not pool:
+            return self._spell_question(lesson)  # same fallback as siblings
+
+        target = self._select_from_pool(pool)
+        cho, jung, jong = self._decompose_syllable(target)
+
+        # Bare jamo (not a composed block) — nothing to decompose.
+        if not cho and not jung:
+            return self._spell_question(lesson)
+        # Batchim — out of scope for this mode for now. Measured pool
+        # composition (scripts/_probe_pool_cv_vs_batchim.py): 102/136 are
+        # bare CV, and lessons 2-9 are 100% bare CV, so this guard leaves
+        # the mode fully usable where it matters rather than degrading it.
+        if jong:
+            return self._spell_question(lesson)
+
+        answer = f"{cho} + {jung}"
+        return QuizQuestion(
+            mode="decompose_syllable",
+            prompt=(f"Break **{target}** into its parts.\n"
+                    f"Which consonant + vowel make this block?"),
+            correct_answer=answer,
+            choices=self._decomposition_choices(cho, jung, pool),
+            hint=(f"Say it: '{self._hangul_to_roman_hint(target)}' — "
+                  f"which two letters combine into that sound?"),
+            lesson_id=lesson["id"],
+            letter=target
+        )
+
+    def _decomposition_choices(self, cho: str, jung: str, pool: list[str]) -> list[str]:
+        """Distractor jamo-pairs for decompose_syllable, drawn from the SAME
+        lesson pool so the wrong answers are plausible (real syllables this
+        learner has met) rather than random noise.
+
+        _make_choices can't be reused here: it draws whole SYLLABLES from the
+        pool, whereas this mode's options are 'consonant + vowel' PAIRS.
+        Each distractor is another bare-CV pool item decomposed the same way,
+        deduped against the correct answer, then shuffled in."""
+        correct = f"{cho} + {jung}"
+        candidates = []
+        for syllable in pool:
+            if syllable == f"{cho}{jung}":
+                continue
+            d_cho, d_jung, d_jong = self._decompose_syllable(syllable)
+            if not d_cho and not d_jung:
+                continue          # bare jamo — not a composed block
+            if d_jong:
+                continue          # batchim — not a valid option shape
+            pair = f"{d_cho} + {d_jung}"
+            if pair != correct and pair not in candidates:
+                candidates.append(pair)
+
+        wrong = random.sample(candidates, min(3, len(candidates)))
+
+        # Small lessons may not yield 3 distinct wrong pairs — pad from the
+        # broader known set so the question always has a usable option count.
+        if len(wrong) < 3:
+            pool_for_pad = self._get_known_syllables()
+            for syllable in random.sample(pool_for_pad, min(len(pool_for_pad), 40)):
+                if len(wrong) >= 3:
+                    break
+                d_cho, d_jung, d_jong = self._decompose_syllable(syllable)
+                if not d_cho or not d_jung or d_jong:
+                    continue
+                pair = f"{d_cho} + {d_jung}"
+                if pair != correct and pair not in candidates and pair not in wrong:
+                    wrong.append(pair)
+
+        choices = [correct] + wrong
+        random.shuffle(choices)
+        return choices
+
+    def _normalize_jamo_pair(self, s: str) -> str:
+        """Strip everything but the jamo from a decompose_syllable answer so
+        that typing 'ㄷ+ㅗ', 'ㄷ,ㅗ' or 'ㄷ ㅗ' all compare equal.
+
+        Preserves ORDER — 'ㅗㄷ' normalizes to 'ㅗㄷ' and does NOT match
+        'ㄷㅗ'. That is deliberate: this mode tests whether the learner knows
+        which letter is the consonant and which is the vowel, so accepting a
+        reversed pair would grade away the exact thing being taught."""
+        if not s:
+            return ""
+        return "".join(ch for ch in s if ch in _JAMO_CHARS)
 
     def _batchim_sound_groups(self) -> dict:
         """Map each batchim letter to the OTHER letters that share its
@@ -1543,8 +1770,15 @@ class HangulQuiz:
         # a no-op there anyway; excluding the whole mode is simpler and
         # more honest than relying on that being a coincidence. ALSO
         # skipped for nonword_decode: correct_answer is a concatenated
-        # romanization string (e.g. 'nudo'), not Hangul at all.
-        if question.mode not in ("read_aloud", "missing_vowel", "word_contrast", "nonword_decode", "sequence_decode"):
+        # romanization string (e.g. 'nudo'), not Hangul at all. ALSO
+        # skipped for read_word: same reasoning as read_aloud — the
+        # expected answer is a romanization ('hangeul'), and the word
+        # itself lives in question.letter. ALSO skipped for
+        # decompose_syllable: correct_answer is a jamo PAIR string
+        # ('ㄷ + ㅗ'), not a composed block — _compose_bare_vowel would try
+        # to read it as a single jamo and mangle it into a lone composed
+        # syllable. The mode grades its own way (see the branch below).
+        if question.mode not in ("read_aloud", "read_word", "missing_vowel", "word_contrast", "nonword_decode", "sequence_decode", "decompose_syllable"):
             user_clean = self._compose_bare_vowel(user_clean)
             expected = self._compose_bare_vowel(expected)
 
@@ -1559,6 +1793,19 @@ class HangulQuiz:
                 feedback = f"✅ Correct! **{question.letter}** romanizes as **{expected}**."
             else:
                 feedback = f"❌ **{question.letter}** romanizes as **{expected}**. You typed '{user_clean}'."
+        elif question.mode == "read_word":
+            # Whole-word reading: accept any of the word's
+            # accepted_romanizations, compared with hyphens/spaces/case
+            # normalized away so 'han-geul', 'Han Geul' and 'hangeul' all
+            # count as the same answer (see _normalize_roman).
+            accepted = question.accepted or [question.correct_answer]
+            is_correct = self._normalize_roman(user_clean) in [
+                self._normalize_roman(a) for a in accepted
+            ]
+            if is_correct:
+                feedback = f"✅ Correct! **{question.letter}** reads as **{expected}**."
+            else:
+                feedback = f"❌ **{question.letter}** reads as **{expected}**. You typed '{user_clean}'."
         elif question.mode == "nonword_decode":
             # Graded as an exact romanization spelling match (case-insensitive),
             # same as read_aloud. The answer is a concatenated romanization
@@ -1580,10 +1827,28 @@ class HangulQuiz:
                 feedback = f"✅ Correct! **{expected}** is right."
             else:
                 feedback = f"❌ Not quite. The answer is **{expected}**."
-        else:
-            is_correct = user_clean == expected
+        elif question.mode == "decompose_syllable":
+            # Graded on the jamo PAIR, order-significant, both components
+            # required. _normalize_jamo_pair strips spacing/punctuation so
+            # 'ㄷ+ㅗ' and 'ㄷ ㅗ' both count, but NOT order — 'ㅗㄷ' fails,
+            # because knowing which letter is the consonant is the point.
+            is_correct = (self._normalize_jamo_pair(user_clean)
+                          == self._normalize_jamo_pair(expected))
             if is_correct:
-                feedback = f"✅ Perfect! **{user_clean}** is correct."
+                feedback = (f"✅ Correct! **{question.letter}** is "
+                            f"**{expected}**.")
+            else:
+                feedback = (f"❌ Not quite. **{question.letter}** is "
+                            f"**{expected}** (consonant first). "
+                            f"You typed '{user_clean}'.")
+        else:
+            # Check correct_answer first, then any accepted alternates
+            # (e.g. spell mode accepts the romanization string that the
+            # prompt already showed, so typing 'i' for 이 counts correct).
+            is_correct = (user_clean == expected
+                          or user_clean.lower() in [a.lower() for a in (question.accepted or [])])
+            if is_correct:
+                feedback = f"✅ Perfect! **{expected}** is correct."
             else:
                 feedback = f"❌ You typed **{user_clean}** but the answer is **{expected}**."
 
@@ -1818,23 +2083,47 @@ class HangulQuiz:
     MASTERY_CONFIDENCE = 3
     MASTERY_FRACTION = 0.8
 
+    # Share of questions in a word-based lesson (one with mastery_words)
+    # that are whole-word reading. Primary rather than occasional because
+    # such a lesson's mastery is measured per word (see lesson_mastery),
+    # so word questions must dominate the session for that trigger to be
+    # reachable in a normal session. Chosen so words are the clear
+    # majority while spell/read_aloud/match_sound still run ~40% of the
+    # time to keep sharpening the single-syllable components.
+    READ_WORD_RATE = 0.60
+
     def lesson_mastery(self, lesson_id: int = None) -> dict:
         """Report mastery of a lesson's quiz pool. Uses the SAME pool the
-        quiz actually draws from (_get_lesson_syllable_pool) and the same
-        keys answer()/_mark_mastered write into mastered_letters, so
-        'mastered' here means exactly the items the learner has been
-        graded on. Returns a dict with mastered_count, pool_size, needed
-        (items required to tip over), fraction, and is_mastered.
-        is_mastered is False for an empty pool (nothing to master)."""
+        quiz actually draws from (_get_lesson_syllable_pool) and reads
+        LearnerItem.confidence (the ratio/ramp signal) rather than the
+        flat mastered_letters int, so mastery is consistent with the
+        confidence signal .due, the romanization taper, and every other
+        adaptive system already reads. Returns a dict with mastered_count,
+        pool_size, needed (items required to tip over), fraction, and
+        is_mastered. is_mastered is False for an empty pool (nothing to
+        master)."""
         lesson = self._get_lesson(lesson_id) if lesson_id is not None else self.current_lesson
         if lesson is None:
             return {"mastered_count": 0, "pool_size": 0, "needed": 0,
                     "fraction": 0.0, "is_mastered": False}
-        pool = self._get_lesson_syllable_pool(lesson)
+        # Word-based lessons (Lesson 12) track mastery per WORD rather than
+        # per syllable — the same word string is what _read_word_question
+        # quizzes and what _record_learner_item keys its LearnerItem on, so
+        # the pool to measure must match. Lessons with mastery_syllables
+        # (5, 6, 11) declare a focused SUBSET of their practice_syllables as
+        # the mastery target, so the gate checks against that rather than
+        # the full pool — question generation still draws from the full
+        # practice_syllables via _get_lesson_syllable_pool, untouched.
+        # Every other lesson keeps its existing syllable pool.
+        if lesson.get("mastery_words"):
+            pool = lesson["mastery_words"]
+        elif lesson.get("mastery_syllables"):
+            pool = lesson["mastery_syllables"]
+        else:
+            pool = self._get_lesson_syllable_pool(lesson)
         pool_size = len(pool)
-        mastered = self.progress.get("mastered_letters", {})
         mastered_count = sum(1 for s in pool
-                             if mastered.get(s, 0) >= self.MASTERY_CONFIDENCE)
+                             if self._get_item(s).confidence >= self.MASTERY_CONFIDENCE)
         # Round up so e.g. a 6-item pool needs 5 (ceil(4.8)), never 4.
         needed = math.ceil(pool_size * self.MASTERY_FRACTION) if pool_size else 0
         is_mastered = pool_size > 0 and mastered_count >= needed
@@ -1847,6 +2136,10 @@ class HangulQuiz:
         }
 
     # ── Helpers ────────────────────────────────────────────────────────
+
+    def _normalize_roman(self, s: str) -> str:
+        """Strip hyphens, spaces, lowercase for flexible romanization matching."""
+        return s.replace("-", "").replace(" ", "").lower()
 
     def _compose_bare_vowel(self, s: str) -> str:
         """Normalize a bare vowel jamo to its silent-ㅇ-composed syllable
