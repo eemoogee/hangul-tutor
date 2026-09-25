@@ -32,7 +32,8 @@ from typing import Optional
 PROJECT_ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from hangul_quiz_engine import HangulQuiz, QuizQuestion, _initial_roman, _VOWEL_JAMO
+from hangul_quiz_engine import (HangulQuiz, QuizQuestion, _initial_roman, _VOWEL_JAMO,
+                                normalize_roman)
 from hangul_conversation import (
     generate_conversation_turn, check_conversation_answer, build_template_sentence
 )
@@ -192,7 +193,7 @@ def print_lesson_complete(quiz) -> None:
     # --- Data ---
     accuracy = round(100 * quiz.session_correct / max(1, quiz.session_total))
     questions = quiz.session_total
-    best_streak = quiz.progress.get("streak_best", 0)
+    best_streak = max(quiz.progress.get("streak_best", 0), quiz.session_best_streak)
 
     # Weakest letter scoped to current lesson's pool
     weakest = None
@@ -217,11 +218,13 @@ def print_lesson_complete(quiz) -> None:
         """One key-value row inside the box. value_styles applied only to value."""
         label_field = f"  {label:<14}"  # left-align label in 16-char field (2 indent + 14)
         right_pad = 2
-        pad = W - len(label_field) - len(value) - right_pad
+        # _vwidth, not len: a Hangul value (the Weakest letter) is 2 columns
+        # wide, and len() under-counted it, pushing the right border out.
+        pad = W - len(label_field) - _vwidth(value) - right_pad
         if pad < 0:
             pad = 0
         val = styled(value, *value_styles) if value_styles else value
-        return f"║{label_field}{val}{' ' * pad}║"
+        return f"║{label_field}{val}{' ' * (pad + right_pad)}║"
 
     def blank_row() -> str:
         return f"║{' ' * W}║"
@@ -249,8 +252,8 @@ def print_lesson_complete(quiz) -> None:
             letters_str = " ".join(letters[:5]) + " …"
         else:
             letters_str = " ".join(letters)
-        lpad = (W - len(letters_str)) // 2
-        rpad = W - len(letters_str) - lpad
+        lpad = (W - _vwidth(letters_str)) // 2
+        rpad = W - _vwidth(letters_str) - lpad
         lines.append(f"║{' ' * lpad}{letters_str}{' ' * rpad}║")
 
     lines.append(styled("╚" + "═" * W + "╝", CYAN))
@@ -328,6 +331,17 @@ RESET = "\033[0m"
 
 def styled(text: str, *styles) -> str:
     return ''.join(styles) + text + RESET
+
+
+_MD_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+
+
+def md(text: str) -> str:
+    """Render the engine's **bold** markers as real terminal bold. The quiz
+    engine writes prompts and feedback with Markdown-style **...** (it has
+    no terminal knowledge), and they used to reach the screen as literal
+    asterisks: '✅ Correct! **가** is right.'"""
+    return _MD_BOLD_RE.sub(lambda m: styled(m.group(1), BOLD), text)
 
 # ── Letter reveal ─────────────────────────────────────────────────────────
 # Present a single letter as its REAL glyph, featured in a framed "card"
@@ -411,15 +425,15 @@ ALPHABET_MNEMONICS = {
     "ㄷ": "A door, propped open on its hinge. 🚪",
     "ㄹ": "A wiggly river, bending back and forth. 🌊",
     "ㅁ": "A square mouth, lips pressed together, humming a low 'mmm'. 👄",
-    "ㅂ": "A tiny table standing on two legs. 🪑",
+    "ㅂ": "A bucket with two handles sticking up — 'b' for bucket. 🪣",
     "ㅅ": "A mountain summit. ⛰️",
     "ㅇ": "A balloon — round and silent as it floats... until it lands with a boiNG! 🎈",
     "ㅈ": "A person mid-jump, leg kicking out behind. 🤸",
-    "ㅊ": "Jumping and cheering, with a little spark above! 🎉",
-    "ㅋ": "A key with an extra tooth. 🔑",
-    "ㅌ": "The middle prong of a trident. 🔱",
-    "ㅍ": "Goalposts on a soccer field. 🥅",
-    "ㅎ": "A face wearing a little top hat, tipped just so. 🎩",
+    "ㅊ": "ㅈ with a little hat — cheering 'ch!' Extra stroke = extra puff of air. 🎉",
+    "ㅋ": "ㄱ with an extra line — a 'k' that kicks out a puff of air. 🔑",
+    "ㅌ": "ㄷ with a lid on top — a 't' with a puff of air, like 'top'. 📦",
+    "ㅍ": "Goalposts on a soccer field — a 'p' that puffs, like 'pop'. 🥅",
+    "ㅎ": "A head wearing a little top hat — 'h' for hat. 🎩",
     "ㅏ": "An arm reaching right as your mouth opens — 'ah'! 👉",
     "ㅑ": "Like ㅏ, but waving with both hands — 'ya ya ya!' 👋",
     "ㅓ": "The mirror image of ㅏ — pointing left instead. 👈",
@@ -589,11 +603,10 @@ def run_alphabet_intro(quiz: HangulQuiz):
                 print(f"{styled('Skipping ahead to lesson picking!', YELLOW)}")
                 return
             if response:
-                resp = response.lower()
                 # A slashed romanization like "r/l" means EITHER spelling is
-                # right — accept "r" and "l" too, not just the literal "r/l".
-                accepted = [p.strip() for p in roman.lower().split("/")]
-                if resp == roman.lower() or resp in accepted:
+                # right — roman_variants accepts "r" and "l" (and "r/l").
+                if (normalize_roman(response) in quiz.roman_variants(letter)
+                        or response.lower() == roman.lower()):
                     print(f"   {styled('✅ Nailed it!', GREEN)}")
                 else:
                     msg = f'Close — {letter} is "{roman}". No score kept, just practice!'
@@ -625,7 +638,11 @@ def run_alphabet_intro(quiz: HangulQuiz):
     meanings = ["sky", "wind", "sound", "song", "love"]
     print()
     print(f"   {styled(inner, GREEN, BOLD)}")
-    print("   " + styled(SEP.join(f"{m:<5}" for m in meanings).rstrip(), CYAN))
+    # Each word is 2 Hangul blocks = 4 columns, plus the 3-space SEP = a
+    # 7-column slot per word; pad each meaning to that slot so it sits
+    # directly under its word (padding to 5 + SEP drifted 1 column per word).
+    slot = 4 + len(SEP)
+    print("   " + styled("".join(f"{m:<{slot}}" for m in meanings).rstrip(), CYAN))
     print()
 
 
@@ -643,10 +660,12 @@ def _offer_lesson_picker(quiz: HangulQuiz) -> dict:
     except (EOFError, KeyboardInterrupt):
         choice = ""
     try:
-        lid = int(choice) if choice else 1
+        return quiz.start_lesson(int(choice) if choice else 1)
     except ValueError:
-        lid = 1
-    return quiz.start_lesson(lid)
+        # Not a number, or no such lesson (e.g. '99') — this used to crash
+        # the app before the first question.
+        print(f"{styled('No such lesson — starting at Lesson 1.', YELLOW)}")
+        return quiz.start_lesson(1)
 
 
 _HANGUL_WIDE_RANGES = (
@@ -986,13 +1005,17 @@ def print_lesson_intro_rich(lesson: dict, quiz):
         time.sleep(0.6)
 
     letters = lesson.get("letters") or []
-    if letters:
-        note = lesson.get("note", "")
-        if note:
-            print(f"\n{styled('📝 Note:', YELLOW)} {note}")
-        return
+    # Every lesson's note is real teaching content (e.g. Lesson 11's
+    # "곧 and 곳 both sound like 'got'") — it used to be shown only for
+    # lessons that introduce new letters.
+    note = lesson.get("note", "")
+    if note:
+        print(f"\n{styled('📝 Note:', YELLOW)} {note}")
 
-    block_rules = lesson.get("block_rules") or {}
+    # Block-building rules are shown only for lessons that are ABOUT blocks
+    # (no new letters). Lesson 1 also carries block_rules, but its examples
+    # use ㄱ, which isn't taught until Lesson 2.
+    block_rules = (lesson.get("block_rules") or {}) if not letters else {}
     if block_rules:
         print(styled("How syllable blocks are built:", YELLOW))
         time.sleep(0.3)
@@ -1022,20 +1045,18 @@ def print_lesson_intro_rich(lesson: dict, quiz):
 
     confusion_pairs = lesson.get("confusion_pairs") or []
     if confusion_pairs:
-        print(styled("Watch for these:", YELLOW))
+        print(styled("\nWatch for these look-alikes:", YELLOW))
+        # A group can hold more than two letters (ㅚ ㅟ ㅙ ㅞ); the old
+        # `for a, b in ...` unpacking crashed on those.
         rendered = " · ".join(
-            styled(a, CYAN) + " vs " + styled(b, CYAN)
-            for a, b in confusion_pairs[:4]
+            " vs ".join(styled(x, CYAN) for x in group)
+            for group in confusion_pairs[:4]
         )
         print(f"   {rendered}")
         time.sleep(0.5)
 
-    batchim_rules = lesson.get("batchim_pronunciation_rules") or {}
-    if batchim_rules:
-        print(styled("Batchim sounds in this lesson:", YELLOW))
-        for letters_key, description in batchim_rules.items():
-            print(f"   {letters_key} → {description}")
-        time.sleep(0.4)
+    # (Batchim rules aren't listed here: print_reference_table, which
+    # always runs right after this, shows the same table.)
 
     print()
     print(styled("Let's practice →", GREEN))
@@ -1201,8 +1222,9 @@ def print_romanization_key(quiz: HangulQuiz):
     print("   " + "   ".join(f"{l}={table[l]}" for l in consonants if l in table))
     print(f"   {styled('Vowels:', BOLD)}")
     print("   " + "   ".join(f"{l}={table[l]}" for l in vowels if l in table))
-    print(f"   {styled('Batchim (final consonant):', BOLD)} appended after a dash using the")
-    print(f"   same consonant codes above — e.g. 각 (ㄱ+ㅏ+ㄱ batchim) romanizes as 'ga-g'.")
+    print(f"   {styled('Batchim (final consonant):', BOLD)} spelled by how it SOUNDS at the end of a block —")
+    print("   ㄱㄲㅋ→k  ㄴ→n  ㄷㅌㅅㅆㅈㅊㅎ→t  ㄹ→l  ㅁ→m  ㅂㅍ→p  ㅇ→ng   e.g. 각 = 'gak', 옷 = 'ot'.")
+    print(f"   {styled('Also accepted:', BOLD)} 'l' for a starting ㄹ (라 = ra or la), 'sh' for ㅅ before ㅣ (시 = si or shi).")
 
 
 # Consonant and vowel sets for the CV chart.
@@ -1244,13 +1266,14 @@ def print_cv_chart(quiz: HangulQuiz, y_vowels: bool = False, compact: bool = Fal
         return f" {s} "
 
     def hline(left, mid, right, fill="═"):
-        """Full-width horizontal rule."""
-        seg = fill * (CW - 1) + mid
-        return left + seg + (seg * (len(vowels) - 1)) + fill * (CW - 1) + right
+        """Full-width horizontal rule: one CW-wide run per column (the
+        consonant column plus one per vowel), joined by `mid`. The runs
+        used to be CW-1 wide, so every column drifted one space left of
+        the │ dividers in the rows below."""
+        return left + mid.join([fill * CW] * (len(vowels) + 1)) + right
 
     def inner_hline():
-        seg = "─" * (CW - 1) + "┼"
-        return "╟" + seg + (seg * (len(vowels) - 1)) + "─" * (CW - 1) + "╢"
+        return hline("╟", "┼", "╢", "─")
 
     variant = "y-vowels" if y_vowels else "basic"
     layout  = "compact" if compact else "full"
@@ -1387,13 +1410,23 @@ def run_beginner_intro(quiz: HangulQuiz, lesson: dict):
             print(f"{styled('Walkthrough ended early.', YELLOW)}")
             return
         if response:
-            if response.lower() == roman.lower():
+            # Same check as the alphabet walkthrough: "r" or "l" both count
+            # for ㄹ (the old exact match demanded the literal text "r/l").
+            if (normalize_roman(response) in quiz.roman_variants(letter)
+                    or response.lower() == roman.lower()):
                 print(f"   {styled('✅ Correct!', GREEN)}")
             else:
                 msg = f'Not quite — {letter} is "{roman}".'
                 print(f"   {styled(msg, YELLOW)} (This one's just for practice, no score kept.)")
 
     print(f"\n{styled('🐣 Walkthrough complete!', GREEN)} Type /table for a quick-reference recap anytime, or just answer the next question to start quizzing.")
+
+
+def _print_prompt(text: str):
+    """Print an engine prompt with **bold** rendered and EVERY line indented
+    (multi-line prompts used to indent only their first line)."""
+    for line in md(text).split("\n"):
+        print(line if line.startswith(" ") else "   " + line)
 
 
 def print_question(q: QuizQuestion, quiz: HangulQuiz = None):
@@ -1445,7 +1478,7 @@ def print_question(q: QuizQuestion, quiz: HangulQuiz = None):
                 # but not the composed result, which is the answer. Cut
                 # syl.components before its last (whole-block) entry.
                 given = syl.components[:-1]
-                print(f"   Build the syllable for **{syl.romanization}**")
+                print(f"   Build the syllable for {styled(syl.romanization, BOLD)}")
                 jamo_pieces, roman_line, indent = _composition_rows(
                     given, connector=" + ", final_connector=" + "
                 )
@@ -1498,7 +1531,7 @@ def print_question(q: QuizQuestion, quiz: HangulQuiz = None):
                     pair_cells, connector="     ", final_connector="     "
                 )
                 print(f"   {styled('⚠️ Confusion drill', BOLD, YELLOW)} — "
-                      f"which one is **{syl.romanization}**?")
+                      f"which one is {styled(syl.romanization, BOLD)}?")
                 sys.stdout.write(indent)
                 for piece in jamo_pieces:
                     sys.stdout.write(piece)
@@ -1543,7 +1576,7 @@ def print_question(q: QuizQuestion, quiz: HangulQuiz = None):
                     jamo_pieces, roman_line, indent = _composition_rows(
                         pair_cells, connector="     ", final_connector="     "
                     )
-                    print(f"   {q.prompt}")
+                    _print_prompt(q.prompt)
                     sys.stdout.write(indent)
                     for piece in jamo_pieces:
                         sys.stdout.write(piece)
@@ -1588,7 +1621,7 @@ def print_question(q: QuizQuestion, quiz: HangulQuiz = None):
                     # they behaved the same way.
                     other_line = (_highlight_in_sentence(q.other_example_ko, q.other)
                                   or q.other_example_ko)
-                    print(f"   {q.prompt}")
+                    _print_prompt(q.prompt)
                     print(f"   {target_line}")
                     print(f"   {other_line}")
                 rendered = True
@@ -1598,16 +1631,16 @@ def print_question(q: QuizQuestion, quiz: HangulQuiz = None):
     # nonword_decode: prompt is already fully composed by the engine
     # (includes the "not a real word" framing), so just print it as-is.
     if q.mode == "nonword_decode":
-        print(f"   {q.prompt}")
+        _print_prompt(q.prompt)
         rendered = True
 
     if not rendered:
-        print(f"   {q.prompt}")
+        _print_prompt(q.prompt)
 
     if q.choices:
         labels = ['A', 'B', 'C', 'D']
         for label, choice in zip(labels, q.choices):
-            print(f"     {label}) {choice}")
+            print(f"     {styled(label + ')', CYAN)} {choice}")
         # More modes now carry a choices list (not just the original MC
         # ones), so it's worth spelling out that typing the real answer
         # directly still works too — this isn't a forced multiple-choice.
@@ -1618,6 +1651,32 @@ def print_question(q: QuizQuestion, quiz: HangulQuiz = None):
     if q.hint:
         print(f"   {styled('💡 Type /hint if you want a hint.', YELLOW)}")
 
+def show_breakdown(quiz: HangulQuiz, q: QuizQuestion):
+    """After a miss, show HOW the answer is built instead of only what it
+    is — the same composition row (ㄱ + ㅏ = 가, sounds underneath) the
+    lessons teach with, so every mistake doubles as a mini-lesson. Multi-
+    block answers (words, nonwords) get one 'block = sound' per syllable.
+    Silently does nothing for anything it can't break down safely."""
+    text = q.letter
+    if not text or q.mode in ("word_contrast", "konglish", "konglish_spell"):
+        return
+    try:
+        blocks = [ch for ch in text if 0xAC00 <= ord(ch) <= 0xD7A3]
+        if len(blocks) == 1 and len(text) == 1:
+            syl = quiz.syllable_breakdown(text)
+            jamo_pieces, roman_line, indent = _composition_rows(syl.components)
+            print(f"   {styled('How it works:', DIM)}")
+            print(indent + "".join(jamo_pieces))
+            print(roman_line)
+            if syl.jong and q.mode == "batchim_challenge":
+                print(f"   {styled(f'At the bottom of a block, {syl.jong} sounds like {quiz._batchim_sound(syl.jong)!r}.', DIM)}")
+        elif len(blocks) > 1:
+            parts = [f"{b} = {quiz.syllable_breakdown(b).romanization}" for b in blocks]
+            print(f"   {styled('Block by block:', DIM)} " + "  ·  ".join(parts))
+    except Exception:
+        pass
+
+
 MODE_ALIASES = {
     "spell": "spell",
     "read": "read_aloud", "read_aloud": "read_aloud",
@@ -1627,15 +1686,56 @@ MODE_ALIASES = {
     "batchim": "batchim_challenge", "batchim_challenge": "batchim_challenge",
     "confusion": "confusion_drill", "confusion_drill": "confusion_drill",
     "contrast": "word_contrast", "word_contrast": "word_contrast",
+    "decompose": "decompose_syllable", "decompose_syllable": "decompose_syllable",
+    "word": "read_word", "read_word": "read_word",
+    "decode": "nonword_decode", "nonword_decode": "nonword_decode",
+    "sequence": "sequence_decode", "sequence_decode": "sequence_decode",
     "auto": None, "random": None,
 }
+MODE_USAGE = "spell, read, match, build, decompose, vowel, batchim, confusion, contrast, word, decode, sequence, or auto"
 
 KNOWN_ACTIONS = {
     'q', 'quit', 'exit', 'help', 'roman', 'romanize', 'romanization',
     'stats', 'lessons', 'lesson', 'mode', 'mnemonic', 'talk',
-    'template', 'konglish', 'kspell', 'hint', 'skip', 'intro', 'table',
-    'alphabet', 'rain',
+    'template', 'konglish', 'kspell', 'hint', 'h', 'skip', 'intro', 'table',
+    'alphabet', 'rain', 'chart',
 }
+
+# Sudden death: start with this many hearts, lose one per miss. A streak of
+# SUDDEN_DEATH_HEAL_EVERY correct answers wins one back, up to the maximum.
+SUDDEN_DEATH_LIVES = 3
+SUDDEN_DEATH_HEAL_EVERY = 10
+
+# Offline streak milestones — a small celebration that needs no LLM.
+STREAK_MILESTONES = {
+    10: "🔥 10 in a row! You're getting the hang of this.",
+    25: "🚀 25 in a row! Your eyes are starting to read Hangul on their own.",
+    50: "🏅 50 in a row! That's real fluency with these letters.",
+    100: "👑 100 in a row! 대박! (amazing!)",
+}
+
+# Longest the mastery bar is drawn; bigger pools are scaled down to fit.
+MASTERY_BAR_WIDTH = 20
+
+
+def _ask(prompt: str) -> Optional[str]:
+    """input() that returns None instead of raising on Ctrl+C / closed
+    input. Used by the nested prompts inside commands (/talk, /konglish,
+    ...), where a Ctrl+C used to crash straight out of the app with a
+    traceback — skipping the progress save."""
+    try:
+        return input(prompt).strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return None
+
+
+def _mastery_bar(done: int, total: int) -> str:
+    if total <= MASTERY_BAR_WIDTH:
+        return "█" * done + "░" * (total - done)
+    filled = round(MASTERY_BAR_WIDTH * done / total)
+    return "█" * filled + "░" * (MASTERY_BAR_WIDTH - filled)
+
 
 def _advance_and_show(quiz: HangulQuiz) -> dict:
     """Run complete_lesson (which marks the current lesson done and bumps
@@ -1667,33 +1767,214 @@ def _offer_advance(quiz: HangulQuiz, lesson_id: int):
         print(f"{styled('Keep drilling any lesson with /lesson N, or check /stats.', CYAN)}")
         return None
 
-    try:
-        ans = input(f"\n{styled(f'Move on to Lesson {lesson_id + 1}? [Y/n] ', CYAN)}").strip().lower()
-    except (EOFError, KeyboardInterrupt):
-        ans = "n"
-    if ans in ("", "y", "yes"):
+    ans = _ask(f"\n{styled(f'Move on to Lesson {lesson_id + 1}? [Y/n] ', CYAN)}")
+    if ans is not None and ans.lower() in ("", "y", "yes"):
         return _advance_and_show(quiz)
     print(f"{styled('No rush — staying here. Type /lessons to see all lessons, or /lesson N to jump to one whenever you want.', YELLOW)}")
     return None
 
 
+def _show_reading_reward(quiz: HangulQuiz):
+    """Every 5-answer streak, show something real the learner can read.
+    Offline (default) this is an instant real word they can already spell;
+    with --use-llm it tries a live model sentence first and falls back to
+    the same word if that fails."""
+    known = quiz.get_mastered_syllables(min_confidence=3)
+    if len(known) < 3:
+        return
+    # Only the LLM path actually builds a sentence; the offline path returns
+    # a single exposure word, so a "Building a sentence" banner there would
+    # be a lie.
+    if USE_LLM:
+        print(f"\n{styled('📖 Building a sentence from what you know...', YELLOW)}")
+    sentence = generate_mini_sentence(known, quiz) if USE_LLM else None
+    turn_mode = "read_translate" if sentence else None
+    if not sentence:
+        turn = build_template_sentence(known, quiz)
+        if turn and turn.get("korean"):
+            eng = turn.get("english")
+            sentence = f"{styled(turn['korean'], BOLD)}  —  {eng}" if eng else turn["korean"]
+            turn_mode = turn.get("mode")
+    if not sentence:
+        return
+    # vocab_exposure means a real single word the learner can spell, not a
+    # sentence — framing it as "you can now read" would overclaim.
+    if turn_mode == "vocab_exposure":
+        print(f"\n{styled('📖 A real Korean word you can already spell:', GREEN)}")
+    else:
+        print(f"\n{styled('📖 You can now read:', GREEN)}")
+    print(f"   {sentence}")
+
+
+def _print_exposure(turn: dict):
+    """Show a single-word / bare-syllable exposure turn — no grading."""
+    label = ("📖 A real Korean word you can already spell:"
+             if turn.get("mode") == "vocab_exposure"
+             else "📖 Practice reading these syllables:")
+    print(f"\n{styled(label, GREEN)}")
+    print(f"   {styled(turn['korean'], BOLD)}")
+    if turn.get("english"):
+        print(f"   {styled(turn['english'], YELLOW)}")
+
+
+def _run_talk(quiz: HangulQuiz):
+    """/talk — read a Korean sentence built from mastered syllables."""
+    print(f"\n{styled('💬 Finding a Korean sentence you can read...', CYAN)}")
+    turn = generate_conversation_turn(quiz, mode="read_translate", use_llm=USE_LLM)
+    if not turn:
+        print(f"   {styled('Not enough syllables mastered yet — keep practicing!', YELLOW)}")
+        return
+    if turn.get("mode") in ("vocab_exposure", "syllable_practice"):
+        # Exposure (the offline or LLM-failed fallback), not a sentence to
+        # translate — shown honestly, with no fake grading or streak bump.
+        _print_exposure(turn)
+        return
+    method_labels = {'template': '📋 Template', 'tatoeba': '📚 Real sentence', 'llm': '🤖 LLM'}
+    label = method_labels.get(turn.get('method', 'llm'), '🤖 LLM')
+    print(f"\n{styled(f'{label} — read this Korean:', CYAN)}")
+    print(f"   {styled(turn['korean'], BOLD)}")
+    if not turn.get("english"):
+        # No trusted translation to grade against — grading the learner
+        # against a placeholder like "(translation unavailable)" marked every
+        # answer wrong and reset their streak. Make it a self-check instead.
+        print(f"   {styled('(No translation available for this one — read it aloud as a self-check.)', YELLOW)}")
+        return
+    print(f"\n   {styled('Translate to English:', YELLOW)}")
+    user = _ask(f"{styled('>', BOLD)} ")
+    if not user:
+        print(f"   The Korean means: {styled(turn['english'], BOLD)}")
+        return
+    result = check_conversation_answer(user, turn, quiz)
+    print(f"   {md(result['feedback'])}")
+    if result.get('correct'):
+        quiz.session_streak += 1
+        quiz.session_best_streak = max(quiz.session_best_streak, quiz.session_streak)
+    else:
+        quiz.session_streak = 0
+
+
+def _ask_with_hint(q: QuizQuestion) -> Optional[str]:
+    """Prompt for an answer, letting /hint be typed first. None = cancelled."""
+    while True:
+        user = _ask(f"\n{styled('>', BOLD)} ")
+        if user is None:
+            return None
+        if user.lower() in ('/hint', '/h'):
+            print(f"   {styled('💡', YELLOW)} {q.hint}" if q.hint else "   (No hint for this one.)")
+            continue
+        return user
+
+
+def _run_konglish(quiz: HangulQuiz):
+    """/konglish — sound out an English loanword written in Hangul."""
+    q = quiz.konglish_question()
+    print_question(q)
+    user = _ask_with_hint(q)
+    if user is None:
+        return
+    # Lenient on form ('mouse' for 'mouse (computer)', either side of
+    # 'mart / store'), strict on content — an empty answer or a stray
+    # letter is never correct (the old substring check accepted both).
+    if quiz.check_konglish(user, q):
+        print(f"   ✅ Yes! {styled(q.letter, BOLD)} = {q.correct_answer}")
+    else:
+        print(f"   Not quite — it's {styled(q.correct_answer, BOLD)}. "
+              f"Sound it out: {q.letter} = {q.hint.split(' — ')[0].replace('Romanized: ', '')}")
+
+
+def _run_kspell(quiz: HangulQuiz):
+    """/kspell — spell an English loanword in Hangul."""
+    q = quiz.konglish_spell_question()
+    print_question(q)
+    user = _ask_with_hint(q)
+    if user is None:
+        return
+    # Grades outside quiz.answer(), so resolve an A-D letter here too.
+    resolved = quiz.resolve_choice(user, q.choices)
+    if resolved == q.correct_answer:
+        print(f"   ✅ Perfect! {styled(resolved, BOLD)} is right.")
+    else:
+        print(f"   ❌ The Hangul spelling is {styled(q.correct_answer, BOLD)}")
+
+
+def _print_help():
+    print(f"""
+{styled('Commands:', BOLD)}
+  {styled('/stats', CYAN)}      — Show your progress
+  {styled('/lessons', CYAN)}    — List all lessons (or just type a lesson number)
+  {styled('/lesson N', CYAN)}   — Jump to lesson N
+  {styled('/mode NAME', CYAN)}  — Practice one question type: {MODE_USAGE}
+  {styled('/alphabet', CYAN)}   — Walk through all 24 basic letters, consonants then vowels
+  {styled('/intro', CYAN)}      — Walk through this lesson's letters one at a time
+
+{styled('While answering:', BOLD)}
+  {styled('/hint', CYAN)}       — A nudge for the current question (also {styled('/h', CYAN)})
+  {styled('/skip', CYAN)}       — Reveal the answer and move on (resets your streak)
+
+{styled('Reference:', BOLD)}
+  {styled('/table', CYAN)}      — This lesson's reference table
+  {styled('/roman', CYAN)}      — The full romanization (spelling) key
+  {styled('/chart', CYAN)}      — Consonant × vowel syllable chart
+                 {styled('/chart compact', CYAN)}  — same, no row separators
+                 {styled('/chart y', CYAN)}        — add the y-vowels (ㅑ ㅕ ㅛ ㅠ)
+  {styled('/mnemonic X', CYAN)} — A memory trick for letter X
+
+{styled('Games & extras:', BOLD)}
+  {styled('/rain', CYAN)}       — Hangul Rain: type falling syllables before they land
+  {styled('/talk', CYAN)}       — Read a Korean sentence made from syllables you've mastered
+  {styled('/template', CYAN)}   — Same, but instant (no LLM)
+  {styled('/konglish', CYAN)}   — Sound out an English loanword written in Hangul
+  {styled('/kspell', CYAN)}     — Spell an English loanword in Hangul
+  {styled('/quit', CYAN)}       — Save and exit
+""")
+
+
 def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
-    """Main interactive quiz loop."""
+    """Main interactive quiz loop. Progress is saved after every answer and
+    again on the way out — including Ctrl+C or an unexpected error, which
+    used to exit without saving anything from the session."""
     print(f"\n{styled('🇰🇷 Hangul Tutor', BOLD, GREEN)}")
     engine_label = f"Ollama: {summarize_models()}" if USE_LLM else "Offline (no LLM needed)"
     print(f"{engine_label} | Lesson: {quiz.current_lesson['title']}")
     print(f"Type {styled('/help', CYAN)} for commands, {styled('/quit', RED)} to exit")
 
+    try:
+        _interactive_loop_body(quiz, args, lesson_info)
+    except KeyboardInterrupt:
+        print(f"\n{styled('👋 안녕히 가세요! (Goodbye!)', GREEN)}")
+    finally:
+        quiz.save_progress()
+    _print_session_summary(quiz)
+
+
+def _print_session_summary(quiz: HangulQuiz):
+    summary = quiz.get_progress_summary()
+    print(f"\n{styled('📊 Session Summary:', BOLD)}")
+    print(f"   Correct: {summary['session_score']} ({summary['session_pct']}%)")
+    print(f"   Best streak this session: {quiz.session_best_streak}   (all-time: {summary['streak_best']})")
+    if summary['top_confusions']:
+        print(f"   Practice these: {', '.join(c['pair'] for c in summary['top_confusions'])}")
+    if quiz.session_total and USE_LLM:
+        # Optional natural-language recap (--use-llm), as the flag promises.
+        print(f"   {generate_session_summary(build_session_data(quiz))}")
+
+    # Structured lesson-complete block — only shown when the current lesson
+    # is actually mastered, so quitting mid-lesson doesn't print a false
+    # "LESSON COMPLETE" banner.
+    if (quiz.current_lesson is not None
+            and quiz.lesson_mastery(quiz.current_lesson["id"])["is_mastered"]):
+        print_lesson_complete(quiz)
+
+
+def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
     # --mode locks the quiz to a single question type; None means auto-pick
     locked_mode = args.mode
     if locked_mode:
         print(f"Mode locked to: {styled(locked_mode, CYAN)}")
 
-    # Show the lesson's teaching content (e.g. the ㅇ-placeholder rule) —
-    # this data already existed in curriculum.json but was never displayed.
-    # Use lesson_info (from quiz.start_lesson()), NOT the raw
-    # quiz.current_lesson dict — only lesson_info has computed fields like
-    # letter_romanization; the raw curriculum entry doesn't carry those.
+    # Show the lesson's teaching content. Use lesson_info (from
+    # quiz.start_lesson()), NOT the raw quiz.current_lesson dict — only
+    # lesson_info has computed fields like letter_romanization.
     lesson = lesson_info
     print_lesson_intro_rich(lesson, quiz)
     print_reference_table(quiz, lesson)
@@ -1702,7 +1983,7 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
     # is instant (hardcoded table); only with --use-llm, and only for a
     # letter without a stock mnemonic, does it make a blocking model call —
     # in which case say so, since that can take a moment on a cold start.
-    if "letters" in lesson and lesson["letters"]:
+    if lesson.get("letters"):
         first_letter = lesson["letters"][0]
         if USE_LLM and first_letter not in ALPHABET_MNEMONICS:
             print(f"\n{styled('🧠 Generating a mnemonic...', YELLOW)} (first response from a model can take a moment)")
@@ -1710,102 +1991,50 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
         print(f"\n{styled('🧠 Mnemonic for', YELLOW)} {styled(first_letter, BOLD)}:")
         print(f"   {mnemonic}")
 
-    waiting_for_question = not args.sudden_death
+    sudden_death = args.sudden_death
+    lives = SUDDEN_DEATH_LIVES
+    run_answered = run_correct = run_streak = run_best = 0
+    if sudden_death:
+        print(f"\n{styled('💀 SUDDEN DEATH', BOLD, RED)} — {SUDDEN_DEATH_LIVES} hearts. "
+              f"Each miss costs one; every {SUDDEN_DEATH_HEAL_EVERY} in a row wins one back.")
+
     current_question = None
-    sudden_death_lives = 3
     # Lesson ids the learner has already been offered advancement on and
     # said "not yet" to — so a mastered-but-not-advanced lesson doesn't
     # re-prompt after every single subsequent correct answer.
     mastery_offered = set()
+    # The streak value the reading reward last fired at. The reward used
+    # to re-fire whenever a new question was drawn while the streak still
+    # sat on a multiple of 5 — e.g. after /skip or /mode.
+    last_reward_streak = 0
 
     # Wall-clock time when the current question was first displayed —
-    # used to compute response_time_ms for the per-item EMA. Set only
-    # inside the is_new_question branch (same scope as current_question
-    # itself), so it persists through /hint passes without being reset.
+    # used to compute response_time_ms for the per-item EMA. Persists
+    # through /hint passes without being reset.
     question_shown_at = None
 
     while True:
-        is_new_question = False
-
-        if args.sudden_death:
-            if sudden_death_lives <= 0:
-                print(f"\n{styled('💀 SUDDEN DEATH — GAME OVER!', RED)}")
-                print(f"   Streak: {quiz.session_streak} | Score: {quiz.session_correct}/{quiz.session_total}")
-                break
-            if current_question is None:
-                current_question = quiz.next_question(mode="sudden_death" if sudden_death_lives == 1 else locked_mode)
-                is_new_question = True
-
         if current_question is None:
-            # Determine question mode based on progress
-            if quiz.session_streak >= 5 and quiz.session_streak % 5 == 0:
-                # Every 5-correct streak, reward with a readable snippet.
-                # Offline (default) this is an instant template sentence
-                # built from real words the learner can spell; with
-                # --use-llm it tries a live model sentence first and falls
-                # back to the same template if that fails.
-                known = quiz.get_mastered_syllables(min_confidence=3)
-                if len(known) >= 3:
-                    # Only the LLM path actually builds a sentence; the
-                    # offline template path returns a single exposure word, so
-                    # a "Building a sentence" banner there would be a lie.
-                    if USE_LLM:
-                        print(f"\n{styled('📖 Building a sentence from what you know...', YELLOW)}")
-                    sentence = generate_mini_sentence(known, quiz) if USE_LLM else None
-                    turn_mode = "read_translate" if sentence else None
-                    if not sentence:
-                        turn = build_template_sentence(known, quiz)
-                        if turn and turn.get("korean"):
-                            eng = turn.get("english")
-                            sentence = f"{turn['korean']}  —  {eng}" if eng else turn["korean"]
-                            turn_mode = turn.get("mode")
-                    if sentence:
-                        # vocab_exposure means build_template_sentence
-                        # found a real word the learner can spell, but
-                        # deliberately did NOT wrap it in grammar
-                        # (이것은/입니다 etc.) the learner hasn't mastered
-                        # yet — see build_template_sentence's docstring.
-                        # Framing this as "you can now read" would repeat
-                        # exactly the honesty problem that check exists
-                        # to prevent, so exposure content gets its own,
-                        # more honest framing instead.
-                        if turn_mode == "vocab_exposure":
-                            print(f"\n{styled('📖 A real Korean word you can already spell:', GREEN)}")
-                        else:
-                            print(f"\n{styled('📖 You can now read:', GREEN)}")
-                        print(f"   {sentence}")
-                    else:
-                        # Previously this just trailed off with no
-                        # resolution — "Building..." printed, then
-                        # silence, looking like the app hung or forgot.
-                        print(f"   {styled('(Not enough combinable syllables yet — keep practicing!)', YELLOW)}")
+            streak = quiz.session_streak
+            if (not sudden_death and streak >= 5 and streak % 5 == 0
+                    and streak != last_reward_streak):
+                last_reward_streak = streak
+                _show_reading_reward(quiz)
             current_question = quiz.next_question(mode=locked_mode)
-            is_new_question = True
-
-        # Only redraw the full question card when it's actually a NEW
-        # question — previously this ran every single loop pass, so
-        # something like /hint (which doesn't advance the question) would
-        # print the hint and then immediately redraw the whole card right
-        # under it, looking like the question had just reset. The card is
-        # already visible a few lines up in scrollback; no need to force
-        # it again for commands that don't change what's being asked.
-        if is_new_question:
+            # Only draw the question card when it's actually new — /hint and
+            # other commands don't redraw it (it's still visible above).
             print_question(current_question, quiz)
             question_shown_at = time.time()
 
-        # Get user input
         try:
             user_input = input(f"\n{styled('>', BOLD)} ").strip()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             print(f"\n{styled('👋 안녕히 가세요! (Goodbye!)', GREEN)}")
-            break
+            return
 
-        # Blank Enter: don't grade it as a wrong answer (and don't feed ""
-        # into quiz.answer(), which an old _compose_bare_vowel bug turned
-        # into "ㅏ" and minted phantom confusions). Re-prompt with a nudge.
+        # Blank Enter: don't grade it as a wrong answer — re-prompt.
         if not user_input:
-            if current_question:
-                print(f"{styled('(blank — /hint for a hint, /skip to reveal the answer)', YELLOW)}")
+            print(f"{styled('(blank — /hint for a hint, /skip to reveal the answer)', YELLOW)}")
             continue
 
         # Bare lesson number ("5", "5.") → jump to that lesson, so the
@@ -1816,44 +2045,19 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
         if _num.isdigit():
             user_input = f"/lesson {_num}"
 
-        # Handle commands
+        # ── Commands ─────────────────────────────────────────────────
         if user_input.startswith('/'):
-            cmd = user_input[1:].lower().split()
+            cmd = user_input[1:].split()
             if not cmd:
                 continue
-            action = cmd[0]
+            action = cmd[0].lower()
 
             if action in ('q', 'quit', 'exit'):
                 print(f"\n{styled('👋 안녕히 가세요! (Goodbye!)', GREEN)}")
-                break
+                return
 
             elif action == 'help':
-                print(f"""
-{styled('Commands:', BOLD)}
-  {styled('/stats', CYAN)}    — Show your progress
-  {styled('/lessons', CYAN)}  — List all lessons
-  {styled('/lesson N', CYAN)} — Jump to lesson N
-  {styled('/mode NAME', CYAN)}— Lock quiz mode (spell, read, match, build, vowel, batchim, confusion, auto)
-  {styled('/alphabet', CYAN)} — Walk through all 24 basic letters, consonants then vowels
-  {styled('/intro', CYAN)}    — Walk through this lesson's letters one at a time (true-beginner mode)
-
-{styled('Reference:', BOLD)}
-  {styled('/table', CYAN)}    — Show this lesson's reference table
-  {styled('/roman', CYAN)}    — Show the full romanization key
-  {styled('/chart', CYAN)}    — Consonant × vowel syllable chart (basic vowels)
-               {styled('/chart compact', CYAN)}  — same, no row separators
-               {styled('/chart y', CYAN)}         — add y-vowels (ㅑ ㅕ 㛄 ㅠ)
-               {styled('/chart y compact', CYAN)} — y-vowels, compact
-  {styled('/mnemonic X', CYAN)}— Get a mnemonic for letter X
-
-{styled('Other:', BOLD)}
-  {styled('/talk', CYAN)}     — Try reading a Korean sentence (uses your mastered syllables)
-  {styled('/template', CYAN)} — Same, but instant (no LLM)
-  {styled('/konglish', CYAN)} — Decode a Konglish word (sound it out, guess English)
-  {styled('/kspell', CYAN)}   — Spell an English word in Hangul
-  {styled('/rain', CYAN)}     — Hangul Rain — type falling syllables before they hit the ground
-  {styled('/quit', CYAN)}     — Exit
-""")
+                _print_help()
 
             elif action in ('roman', 'romanize', 'romanization'):
                 print_romanization_key(quiz)
@@ -1867,33 +2071,39 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
                             print(f"   Confused pairs: {', '.join(c['pair'] for c in v)}")
                     else:
                         print(f"   {k.replace('_', ' ').title()}: {v}")
+                m = quiz.lesson_mastery()
+                if m["pool_size"]:
+                    print(f"   This lesson: {m['mastered_count']}/{m['pool_size']} solid "
+                          f"(need {m['needed']} to master)")
+                for label, key in (("Hangul Rain best", "rain_best"),
+                                   ("Sudden death best", "sudden_death_best")):
+                    if quiz.progress.get(key):
+                        print(f"   {label}: {quiz.progress[key]}")
 
             elif action == 'lessons':
                 print(f"\n{styled('📚 Lessons:', BOLD)}")
                 for l in quiz.list_lessons():
                     mark = styled('✓', GREEN) if l['completed'] else ''
-                    print(f"   {l['id']:2}. {l['title']} {mark}")
-                print(f"{styled('   Jump to one with /lesson N (e.g. /lesson 5).', YELLOW)}")
+                    here = styled('  ← you are here', CYAN) if l['id'] == quiz.current_lesson['id'] else ''
+                    print(f"   {l['id']:2}. {l['title']} {mark}{here}")
+                print(f"{styled('   Jump to one by typing its number (e.g. 5) or /lesson 5.', YELLOW)}")
 
-            elif action == 'lesson' and len(cmd) > 1:
+            elif action == 'lesson':
+                if len(cmd) < 2:
+                    print(f"{styled('Usage: /lesson N  (e.g. /lesson 5) — /lessons lists them all.', YELLOW)}")
+                    continue
                 try:
-                    lid = int(cmd[1])
-                    info = quiz.start_lesson(lid)
-                    print_lesson_intro_rich(info, quiz)
-                    print_reference_table(quiz, info)
-                    # Keep the loop's 'lesson' variable in sync — previously
-                    # only the local 'info' was updated here, so /intro and
-                    # /table (which both read the outer 'lesson' var) would
-                    # keep showing whichever lesson was active at the start
-                    # of the session, not the one just jumped to.
-                    lesson = info
-                    # Previously this didn't touch current_question, so
-                    # jumping lessons left one leftover question from
-                    # whatever lesson/mode was active before — mismatched
-                    # against the lesson intro that was just printed.
-                    current_question = None
+                    info = quiz.start_lesson(int(cmd[1]))
                 except (ValueError, IndexError):
-                    print(f"{styled('Invalid lesson number', RED)}")
+                    total = len(quiz.curriculum["lessons"])
+                    print(f"{styled(f'Invalid lesson number — pick 1 to {total}.', RED)}")
+                    continue
+                print_lesson_intro_rich(info, quiz)
+                print_reference_table(quiz, info)
+                # Keep 'lesson' in sync so /intro and /table follow the jump,
+                # and drop the leftover question from the old lesson.
+                lesson = info
+                current_question = None
 
             elif action == 'intro':
                 run_beginner_intro(quiz, lesson)
@@ -1905,27 +2115,20 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
                 print_reference_table(quiz, lesson)
 
             elif action == 'chart':
-                # /chart           — basic vowels, full grid
-                # /chart compact   — basic vowels, no row separators
-                # /chart y         — + y-vowels, full grid
-                # /chart y compact — + y-vowels, compact
                 flags = [t.lower() for t in cmd[1:]]
-                print_cv_chart(quiz,
-                               y_vowels=('y' in flags),
-                               compact=('compact' in flags))
+                print_cv_chart(quiz, y_vowels=('y' in flags), compact=('compact' in flags))
 
             elif action == 'rain':
                 try:
-                    print("Launching Hangul Rain... (Ctrl+C to quit)")
+                    print("Launching Hangul Rain... (Esc to quit)")
                     launch_rain_mode(quiz)
+                    quiz.save_progress()
                 except RuntimeError as e:
                     print(str(e))
                 except KeyboardInterrupt:
                     pass
-                # Redraw the outstanding question so the quiz resumes where it
-                # left off. print_question is the real function name (there is
-                # no reprint_question in this file); guard on current_question
-                # since a slash command can arrive before the first question.
+                # Redraw the outstanding question so the quiz resumes where
+                # it left off.
                 if current_question:
                     print_question(current_question, quiz)
 
@@ -1934,214 +2137,138 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
                 if choice in MODE_ALIASES:
                     locked_mode = MODE_ALIASES[choice]
                     current_question = None  # force new question in the new mode
-                    label = locked_mode or "auto (random)"
+                    label = locked_mode or "auto (a mix of everything)"
                     print(f"{styled(f'Mode: {label}', CYAN)}")
                 else:
-                    print(f"{styled('Usage: /mode <spell|read|match|build|vowel|batchim|confusion|auto>', RED)}")
+                    print(f"{styled(f'Usage: /mode NAME — one of: {MODE_USAGE}', RED)}")
 
             elif action == 'mnemonic':
                 letter = cmd[1] if len(cmd) > 1 else ""
                 if not letter:
                     print(f"{styled('Usage: /mnemonic ㄱ', RED)}")
                 else:
-                    mnemonic = mnemonic_for(letter)
                     print(f"\n{styled(f'🧠 Mnemonic for {letter}:', YELLOW)}")
-                    print(f"   {mnemonic}")
+                    print(f"   {mnemonic_for(letter)}")
 
             elif action == 'talk':
-                print(f"\n{styled('💬 Generating a Korean sentence...', CYAN)}")
-                turn = generate_conversation_turn(quiz, mode="read_translate",
-                                                   use_llm=USE_LLM)
-                if turn:
-                    turn_mode = turn.get("mode")
-                    if turn_mode in ("vocab_exposure", "syllable_practice"):
-                        # Single-word / bare-syllable EXPOSURE (the offline or
-                        # LLM-failed fallback), not a sentence to translate.
-                        # Show it honestly — no fake "translate this", no
-                        # grading, no streak bump. The old path graded it
-                        # always-correct via check_conversation_answer's
-                        # fall-through, silently inflating the streak.
-                        label = ("📖 A real Korean word you can already spell:"
-                                 if turn_mode == "vocab_exposure"
-                                 else "📖 Practice reading these syllables:")
-                        print(f"\n{styled(label, GREEN)}")
-                        print(f"   {styled(turn['korean'], BOLD)}")
-                        if turn.get("english"):
-                            print(f"   {styled(turn['english'], YELLOW)}")
-                    else:
-                        method = turn.get('method', 'llm')
-                        method_labels = {'template': '📋 Template', 'tatoeba': '📚 Real sentence', 'llm': '🤖 LLM'}
-                        label = method_labels.get(method, '🤖 LLM')
-                        print(f"\n{styled(f'{label} — read this Korean:', CYAN)}")
-                        print(f"   {styled(turn['korean'], BOLD)}")
-                        print(f"\n   {styled('Translate to English:', YELLOW)}")
-                        user = input(f"{styled('>', BOLD)} ").strip()
-                        result = check_conversation_answer(user, turn, quiz)
-                        print(f"   {result['feedback']}")
-                        if result.get('correct'):
-                            quiz.session_streak += 1
-                        else:
-                            quiz.session_streak = 0
-                else:
-                    print(f"   {styled('Not enough syllables mastered yet — keep practicing!', YELLOW)}")
+                _run_talk(quiz)
 
             elif action == 'template':
-                mastered = quiz.get_mastered_syllables(min_confidence=3)
-                turn = build_template_sentence(mastered, quiz)
-                # build_template_sentence now only ever returns an exposure
-                # turn (vocab_exposure / syllable_practice) — a single word or
-                # bare syllables, never a read_translate sentence. Show it
-                # honestly: no "translate this" prompt, no grading.
-                turn_mode = turn.get("mode")
-                label = ("📖 A real Korean word you can already spell:"
-                         if turn_mode == "vocab_exposure"
-                         else "📖 Practice reading these syllables:")
-                print(f"\n{styled(label, GREEN)}")
-                print(f"   {styled(turn['korean'], BOLD)}")
-                if turn.get("english"):
-                    print(f"   {styled(turn['english'], YELLOW)}")
+                # Always an exposure turn (a real word, or bare syllables) —
+                # shown honestly: no "translate this", no grading.
+                _print_exposure(build_template_sentence(
+                    quiz.get_mastered_syllables(min_confidence=3), quiz))
 
             elif action == 'konglish':
-                q = quiz.konglish_question()
-                print_question(q)
-                # Loop so /hint can be typed before committing to an answer —
-                # previously this was a single blocking input() with no
-                # chance to ask for the hint that print_question pointed to.
-                while True:
-                    user = input(f"\n{styled('>', BOLD)} ").strip()
-                    if user.lower() in ('/hint', '/h') and q.hint:
-                        print(f"   {styled('💡', YELLOW)} {q.hint}")
-                        continue
-                    break
-                # Exact (case/space-insensitive) match. The old substring
-                # test marked an empty Enter or a stray single letter
-                # correct — "" is "in" every string, and "a" is in
-                # "camera" — so it's a real comparison now, and empty input
-                # is always wrong.
-                ans = " ".join(user.lower().split())
-                if ans and ans == " ".join(q.correct_answer.lower().split()):
-                    print(f"   ✅ Yes! **{q.letter}** = {q.correct_answer}")
-                else:
-                    print(f"   Not quite — it's **{q.correct_answer}** (sounds like: {q.letter})")
+                _run_konglish(quiz)
 
             elif action == 'kspell':
-                q = quiz.konglish_spell_question()
-                print_question(q)
-                while True:
-                    user = input(f"\n{styled('>', BOLD)} ").strip()
-                    if user.lower() in ('/hint', '/h') and q.hint:
-                        print(f"   {styled('💡', YELLOW)} {q.hint}")
-                        continue
-                    break
-                # This grades outside the main quiz.answer() path, so it
-                # needs its own call to the same letter-resolution helper
-                # — otherwise typing 'B' here would just be marked wrong
-                # instead of resolving to the choice it refers to.
-                resolved = quiz.resolve_choice(user, q.choices)
-                if resolved == q.correct_answer:
-                    print(f"   ✅ Perfect! **{resolved}** is right.")
+                _run_kspell(quiz)
+
+            elif action in ('hint', 'h'):
+                if current_question.hint:
+                    print(f"   {styled('💡', YELLOW)} {md(current_question.hint)}")
                 else:
-                    print(f"   ❌ The Hangul spelling is **{q.correct_answer}**")
+                    print(f"   {styled('No hint for this one — you can /skip to see the answer.', YELLOW)}")
 
-            elif action == 'hint' and current_question:
-                print(f"   {styled('💡', YELLOW)} {current_question.hint}")
-
-            elif action == 'skip' and current_question:
+            elif action == 'skip':
                 print(f"   Answer was: {styled(current_question.correct_answer, GREEN)}")
+                show_breakdown(quiz, current_question)
+                # Skipping ends the streak — otherwise a streak could be
+                # kept alive by skipping every hard question.
+                if quiz.session_streak:
+                    print(f"   {styled('Streak reset.', DIM)}")
+                quiz.session_streak = 0
+                run_streak = 0
                 current_question = None
 
-            elif action in ('hint', 'skip'):
-                # Recognized command, just not applicable right now — distinct
-                # from a genuinely unknown command (handled below).
-                print(f"{styled('No active question to do that with.', YELLOW)}")
-
             elif action not in KNOWN_ACTIONS:
-                # Previously fell through silently — e.g. '/12.' instead of
-                # '/lesson 12' just reprinted the same question with no sign
-                # anything went wrong. Now it says so.
                 print(f"{styled(f'Unknown command: /{action}', RED)} — type /help to see what's available.")
 
             continue
 
-        # Process answer
-        if current_question:
-            # Compute response time — elapsed since the question was
-            # displayed. Falls back to None (not measured) if
-            # question_shown_at was never set (e.g. a question that
-            # somehow bypassed the display branch). None means the
-            # timing update is skipped entirely in _record_learner_item.
-            if question_shown_at is not None:
-                elapsed_ms = (time.time() - question_shown_at) * 1000
-            else:
-                elapsed_ms = None
-            result = quiz.answer(user_input, current_question, response_ms=elapsed_ms)
-            print(f"   {result.feedback}")
+        # ── Answer ───────────────────────────────────────────────────
+        # Wrong writing system (e.g. 'ga' where Hangul is expected)? Say so
+        # and let them try again, rather than grading it.
+        nudge = quiz.script_mismatch(user_input, current_question)
+        if nudge:
+            print(f"   {styled(nudge, YELLOW)}")
+            continue
 
-            # quiz.answer() already updates quiz.session_streak internally
-            # (+1 on correct, reset to 0 on wrong) — this used to ALSO
-            # bump it here, so every correct answer counted twice and the
-            # displayed streak ran at double speed. Sudden-death lives and
-            # the encouragement trigger still need handling here; the
-            # streak number itself doesn't.
+        elapsed_ms = (time.time() - question_shown_at) * 1000 if question_shown_at else None
+        result = quiz.answer(user_input, current_question, response_ms=elapsed_ms)
+        print(f"   {md(result.feedback)}")
+        if not result.correct:
+            show_breakdown(quiz, current_question)
+
+        if sudden_death:
+            run_answered += 1
             if result.correct:
-                if args.sudden_death:
-                    sudden_death_lives += 1
-                # Periodic encouragement — an optional Ollama flourish, so
-                # it only runs with --use-llm (silent otherwise, no hang).
-                # Accuracy is real session accuracy now; it used to be
-                # streak/streak, i.e. always 100%, making the message wrong.
-                if USE_LLM and quiz.session_streak > 0 and quiz.session_streak % 7 == 0:
-                    print(f"\n{styled('🌟 Generating encouragement...', YELLOW)}")
-                    accuracy = 100 * quiz.session_correct / max(1, quiz.session_total)
-                    enc = generate_encouragement(quiz.session_streak, accuracy)
-                    if not enc.startswith('['):
-                        print(f"\n{styled('🌟', YELLOW)} {enc}")
+                run_correct += 1
+                run_streak += 1
+                run_best = max(run_best, run_streak)
+                if run_streak % SUDDEN_DEATH_HEAL_EVERY == 0 and lives < SUDDEN_DEATH_LIVES:
+                    lives += 1
+                    print(f"   {styled('💖 +1 heart for the streak!', GREEN)}")
             else:
-                if args.sudden_death:
-                    sudden_death_lives -= 1
+                run_streak = 0
+                lives -= 1
+            hearts = "❤️ " * lives + "🖤 " * (SUDDEN_DEATH_LIVES - lives)
+            print(f"   {hearts} {styled(f'Score: {run_correct}', BOLD)}")
+            if lives <= 0:
+                quiz.save_progress()
+                best = quiz.progress.get("sudden_death_best", 0)
+                print(f"\n{styled('💀 GAME OVER', BOLD, RED)}")
+                print(f"   Correct answers: {run_correct} of {run_answered}   Longest streak: {run_best}")
+                if run_correct > best:
+                    quiz.progress["sudden_death_best"] = run_correct
+                    print(f"   {styled('🏆 New personal best!', BOLD, GREEN)}")
+                else:
+                    print(f"   Personal best: {best}")
+                again = _ask(f"\n{styled('Play again? [Y/n] ', CYAN)}")
+                if again is None or again.lower() not in ("", "y", "yes"):
+                    return
+                lives = SUDDEN_DEATH_LIVES
+                run_answered = run_correct = run_streak = run_best = 0
+        else:
+            streak = quiz.session_streak
+            print(f"   {styled(f'🔥 Streak: {streak}', GREEN if streak > 3 else '')}")
+            if result.correct and streak in STREAK_MILESTONES:
+                print(f"   {styled(STREAK_MILESTONES[streak], BOLD, YELLOW)}")
 
-            if args.sudden_death:
-                print(f"   {styled(f'❤️ Lives: {sudden_death_lives}', RED if sudden_death_lives == 1 else '')}")
-            else:
-                print(f"   {styled(f'🔥 Streak: {quiz.session_streak}', GREEN if quiz.session_streak > 3 else '')}")
+            m = quiz.lesson_mastery()
+            if m["pool_size"] > 0 and quiz.current_lesson["id"] not in quiz.progress["completed_lessons"]:
+                bar = _mastery_bar(m["mastered_count"], m["pool_size"])
+                _mc, _ps = m["mastered_count"], m["pool_size"]
+                print(f"   {styled(f'📊 Mastery: {_mc}/{_ps} [{bar}]', CYAN)}")
 
-                m = quiz.lesson_mastery()
-                if m["pool_size"] > 0 and not quiz.current_lesson["id"] in quiz.progress["completed_lessons"]:
-                    bar = "█" * m["mastered_count"] + "░" * (m["pool_size"] - m["mastered_count"])
-                    _mc, _ps, _need = m["mastered_count"], m["pool_size"], m["needed"]
-                    print(f"   {styled(f'📊 Mastery: {_mc}/{_ps} [{bar}] (need {_need})', CYAN)}")
+        # Periodic encouragement — an optional Ollama flourish, so it only
+        # runs with --use-llm (silent otherwise, no hang).
+        if (result.correct and USE_LLM and quiz.session_streak > 0
+                and quiz.session_streak % 7 == 0):
+            print(f"\n{styled('🌟 Generating encouragement...', YELLOW)}")
+            accuracy = 100 * quiz.session_correct / max(1, quiz.session_total)
+            enc = generate_encouragement(quiz.session_streak, accuracy)
+            if not enc.startswith('['):
+                print(f"\n{styled('🌟', YELLOW)} {enc}")
 
-            # Lesson progression (normal mode only). When the active
-            # lesson's pool crosses the mastery bar, congratulate once and
-            # offer to advance. mastery_offered suppresses re-asking after a
-            # "not yet", so the learner isn't nagged on every later answer.
-            if result.correct and not args.sudden_death:
-                _lid = quiz.current_lesson["id"]
-                if (_lid not in quiz.progress["completed_lessons"]
-                        and _lid not in mastery_offered
-                        and quiz.lesson_mastery(_lid)["is_mastered"]):
-                    mastery_offered.add(_lid)
-                    _advanced = _offer_advance(quiz, _lid)
-                    if _advanced is not None:
-                        lesson = _advanced
+        # Lesson progression (normal mode only). When the active lesson's
+        # pool crosses the mastery bar, congratulate once and offer to
+        # advance; mastery_offered stops it re-asking after a "not yet".
+        if result.correct and not sudden_death:
+            _lid = quiz.current_lesson["id"]
+            if (_lid not in quiz.progress["completed_lessons"]
+                    and _lid not in mastery_offered
+                    and quiz.lesson_mastery(_lid)["is_mastered"]):
+                mastery_offered.add(_lid)
+                _advanced = _offer_advance(quiz, _lid)
+                if _advanced is not None:
+                    lesson = _advanced
 
-            current_question = None
+        # Save after every answer, so nothing is lost if the window closes.
+        quiz.save_progress()
+        current_question = None
 
-    # Save on exit
-    quiz.save_progress()
-    summary = quiz.get_progress_summary()
-    print(f"\n{styled('📊 Session Summary:', BOLD)}")
-    print(f"   Correct: {summary['session_score']} ({summary['session_pct']}%)")
-    print(f"   Best Streak: {summary['streak_best']}")
-    if summary['top_confusions']:
-        print(f"   Practice these: {', '.join(c['pair'] for c in summary['top_confusions'])}")
-
-    # Structured lesson-complete block — only shown when the current lesson
-    # is actually mastered, so quitting mid-lesson doesn't print a false
-    # "LESSON COMPLETE" banner.
-    if (quiz.current_lesson is not None
-            and quiz.lesson_mastery(quiz.current_lesson["id"])["is_mastered"]):
-        print_lesson_complete(quiz)
 
 # ── Entry point ────────────────────────────────────────────────────────────
 
@@ -2158,10 +2285,10 @@ def main():
                 pass
     parser = argparse.ArgumentParser(description="🇰🇷 Hangul Tutor CLI")
     parser.add_argument("--lesson", type=int, default=None, help="Start at lesson N")
-    parser.add_argument("--mode", choices=["spell", "read_aloud", "match_sound",
-                        "build_syllable", "missing_vowel", "batchim_challenge",
-                        "confusion_drill"], help="Lock to a single quiz mode")
-    parser.add_argument("--sudden-death", action="store_true", help="One wrong = game over")
+    parser.add_argument("--mode", choices=sorted(k for k, v in MODE_ALIASES.items() if v),
+                        metavar="MODE", help=f"Lock to a single quiz mode: {MODE_USAGE}")
+    parser.add_argument("--sudden-death", action="store_true",
+                        help=f"Survival mode: {SUDDEN_DEATH_LIVES} hearts, lose one per miss")
     parser.add_argument("--mnemonic", type=str, help="Print a mnemonic for a Hangul letter and exit")
     parser.add_argument("--use-llm", action="store_true",
                         help="Enable optional local-Ollama enrichments: generated mnemonics for "
@@ -2174,6 +2301,8 @@ def main():
                              "HANGUL_MODEL_MNEMONIC / _ENCOURAGEMENT / _SENTENCE / _TRANSLATE / "
                              "_SUMMARY env vars.")
     args = parser.parse_args()
+    if args.mode:
+        args.mode = MODE_ALIASES[args.mode]   # accept short names like 'read'
 
     # Enable the optional Ollama path when explicitly asked (--use-llm) or
     # implicitly when a model is named (--model), since naming a model with

@@ -412,6 +412,9 @@ class HangulQuiz:
         self.session_streak = 0
         self.session_correct = 0
         self.session_total = 0
+        # Last (mode, letter) pair asked — used by _select_from_pool to avoid
+        # asking the exact same question back-to-back.
+        self._last_asked: tuple = ("", "")
         # Longest streak reached at any point this session. session_streak
         # resets to 0 on a miss, so reading it at quit time lost any streak
         # that ended before the last answer.
@@ -692,8 +695,13 @@ class HangulQuiz:
         """
         if not pool:
             return pool  # let the caller's existing empty-pool handling fire, unchanged
-        due_items = [s for s in pool if self._get_item(s).due]
-        return random.choice(due_items) if due_items else random.choice(pool)
+        due_items = [s for s in pool if self._get_item(self._compose_bare_vowel(s)).due]
+        candidates = due_items if due_items else pool
+        # Avoid repeating the exact same letter back-to-back. Only skip it
+        # when there's an alternative — a single-item pool has no choice.
+        last_letter = self._last_asked[1]
+        non_repeat = [s for s in candidates if s != last_letter]
+        return random.choice(non_repeat if non_repeat else candidates)
 
     def _mode_target_pool(self, mode: str, lesson: dict) -> list[str]:
         """The syllable pool `mode` draws its quiz target from — used by
@@ -830,6 +838,9 @@ class HangulQuiz:
 
         if mode:
             chosen_mode = mode
+            q = self._generate_question(chosen_mode)
+            self._last_asked = (chosen_mode, q.letter)
+            return q
         elif lesson.get("mastery_words") and random.random() < self.READ_WORD_RATE:
             # Word-based lesson: whole-word reading is the primary
             # exercise (see READ_WORD_RATE). Picked directly here rather
@@ -839,6 +850,9 @@ class HangulQuiz:
             # WHICH word is still due-based — _read_word_question routes
             # its mastery_words pool through _select_from_pool.
             chosen_mode = "read_word"
+            q = self._generate_question(chosen_mode)
+            self._last_asked = (chosen_mode, q.letter)
+            return q
         else:
             # Prefer modes whose current-lesson pool has at least one due
             # item — mirroring _select_from_pool's due-preference one level
@@ -887,7 +901,20 @@ class HangulQuiz:
                 # behavior for lessons/situations where the split doesn't
                 # apply, not a new code path.
                 chosen_mode = random.choice(candidates)
-        return self._generate_question(chosen_mode)
+
+            # Avoid repeating the exact same mode back-to-back when there
+            # is an alternative — same principle as the letter anti-repeat
+            # in _select_from_pool. Only applies to the auto-picked path;
+            # an explicit /mode lock or read_word override bypasses this.
+            last_mode = self._last_asked[0]
+            if chosen_mode == last_mode and len(candidates) > 1:
+                alternatives = [m for m in candidates if m != last_mode]
+                if alternatives:
+                    chosen_mode = random.choice(alternatives)
+
+        q = self._generate_question(chosen_mode)
+        self._last_asked = (chosen_mode, q.letter)
+        return q
 
     def _generate_question(self, mode: str) -> QuizQuestion:
         lesson = self.current_lesson
@@ -2231,16 +2258,14 @@ class HangulQuiz:
             return f"Lesson {lid} complete! Next: Lesson {self.progress['current_lesson']}"
         return "No active lesson."
 
-    # Mastery thresholds for auto-advancing a lesson. A learner is
-    # considered to have mastered a lesson once MASTERY_FRACTION of the
-    # lesson's quizzable pool has reached confidence MASTERY_CONFIDENCE
-    # (the same >=3 bar get_progress_summary already calls "mastered").
-    # A fraction rather than "every item" is deliberate: pools run up to
-    # 42 syllables (Lesson 5) and questions are randomly sampled, so
-    # requiring 100% would be a grind and some items might never even be
-    # shown. Both are plain constants so the bar is easy to tune.
+    # Minimum confidence (0–5) an item must reach to count as mastered.
+    # Every item in a lesson's mastery_syllables (or mastery_words) set
+    # must reach this bar for the lesson to complete — there is no fraction
+    # or partial-completion shortcut. mastery_syllables is an explicit
+    # pedagogical contract: the curriculum author chose those items because
+    # they represent the lesson's core accomplishment, not because they
+    # happen to exist in a practice pool.
     MASTERY_CONFIDENCE = 2
-    MASTERY_FRACTION = 0.65
 
     # Share of questions in a word-based lesson (one with mastery_words)
     # that are whole-word reading. Primary rather than occasional because
@@ -2252,28 +2277,25 @@ class HangulQuiz:
     READ_WORD_RATE = 0.60
 
     def lesson_mastery(self, lesson_id: int = None) -> dict:
-        """Report mastery of a lesson's quiz pool. Uses the SAME pool the
-        quiz actually draws from (_get_lesson_syllable_pool) and reads
-        LearnerItem.confidence (the ratio/ramp signal) rather than the
-        flat mastered_letters int, so mastery is consistent with the
-        confidence signal .due, the romanization taper, and every other
-        adaptive system already reads. Returns a dict with mastered_count,
-        pool_size, needed (items required to tip over), fraction, and
-        is_mastered. is_mastered is False for an empty pool (nothing to
-        master)."""
+        """Report mastery progress against the lesson's explicit mastery set.
+
+        The mastery set is mastery_words (word-based lessons like Lesson 12),
+        mastery_syllables (every other lesson — now required in curriculum.json
+        for all lessons), or as a last resort the full syllable pool.
+
+        mastery_syllables is a pedagogical contract: every item in the set
+        must reach MASTERY_CONFIDENCE. Pool size has no bearing on completion —
+        a lesson with 6 items in its mastery set and 42 in its practice pool
+        still completes when those 6 are solid, not when some fraction of 42
+        are. MASTERY_FRACTION is gone.
+
+        Returns mastered_count, pool_size (= mastery set size), needed
+        (= pool_size, since all items are required), fraction, and is_mastered.
+        is_mastered is False for an empty mastery set."""
         lesson = self._get_lesson(lesson_id) if lesson_id is not None else self.current_lesson
         if lesson is None:
             return {"mastered_count": 0, "pool_size": 0, "needed": 0,
                     "fraction": 0.0, "is_mastered": False}
-        # Word-based lessons (Lesson 12) track mastery per WORD rather than
-        # per syllable — the same word string is what _read_word_question
-        # quizzes and what _record_learner_item keys its LearnerItem on, so
-        # the pool to measure must match. Lessons with mastery_syllables
-        # (5, 6, 11) declare a focused SUBSET of their practice_syllables as
-        # the mastery target, so the gate checks against that rather than
-        # the full pool — question generation still draws from the full
-        # practice_syllables via _get_lesson_syllable_pool, untouched.
-        # Every other lesson keeps its existing syllable pool.
         if lesson.get("mastery_words"):
             pool = lesson["mastery_words"]
         elif lesson.get("mastery_syllables"):
@@ -2283,13 +2305,11 @@ class HangulQuiz:
         pool_size = len(pool)
         mastered_count = sum(1 for s in pool
                              if self._get_item(self._compose_bare_vowel(s)).confidence >= self.MASTERY_CONFIDENCE)
-        # Round up so e.g. a 6-item pool needs 5 (ceil(4.8)), never 4.
-        needed = math.ceil(pool_size * self.MASTERY_FRACTION) if pool_size else 0
-        is_mastered = pool_size > 0 and mastered_count >= needed
+        is_mastered = pool_size > 0 and mastered_count >= pool_size
         return {
             "mastered_count": mastered_count,
             "pool_size": pool_size,
-            "needed": needed,
+            "needed": pool_size,
             "fraction": (mastered_count / pool_size) if pool_size else 0.0,
             "is_mastered": is_mastered,
         }
