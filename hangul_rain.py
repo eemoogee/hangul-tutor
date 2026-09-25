@@ -19,6 +19,7 @@ Public entry points:
 """
 
 import json
+import os
 import random
 import re
 import time
@@ -157,6 +158,21 @@ def syllable_to_roman(hangul: str) -> str:
 TICK = 0.1
 STARTING_LIVES = 3
 INVADERS_PER_LEVEL = 20
+START_SPEED = 10          # ticks per one-row fall at level 1 (lower = faster)
+KEY_ESC = "\x1b"
+
+
+class _PlayfieldClip:
+    """Wraps a curses window so addstr() silently skips any row past
+    height-3 (the HUD rows) or above the top edge."""
+
+    def __init__(self, scr):
+        self._scr = scr
+        self._last_row = scr.getmaxyx()[0] - 3
+
+    def addstr(self, y, x, *args):
+        if 0 <= y <= self._last_row:
+            self._scr.addstr(y, x, *args)
 
 
 # ── Invader (adapted from kgutwin/typing, MIT) ───────────────────────────────
@@ -178,9 +194,11 @@ class Invader:
 
     @classmethod
     def new(cls, hangul: str, romanization: str, max_x: int):
-        x = 9e99
-        while x + len(hangul) > max_x:
-            x = random.randint(0, max_x)
+        # Hangul blocks are 2 columns wide in a terminal, and the typing
+        # hint underneath ("[ga]") is len(romanization) + 2 wide — keep
+        # whichever is wider fully on screen.
+        width = max(2 * len(hangul), len(romanization) + 2)
+        x = random.randint(1, max(1, max_x - width))
         return cls(hangul, romanization, x)
 
     def __len__(self):
@@ -197,10 +215,14 @@ class Invader:
     def destroyed(self):
         return self.damage >= len(self) + 3
 
+    @property
+    def targetable(self):
+        return not (self.disabled or self.exploded)
+
     def hit_by(self, c: str) -> bool:
         """Advance `damage` if `c` matches the next expected romanization
         character. Returns True on a match."""
-        if c is None or self.disabled or self.exploded:
+        if c is None or not self.targetable:
             return False
 
         if c == self.romanization[self.damage]:
@@ -225,10 +247,14 @@ class Invader:
             self.fall_ticks_left -= 1
 
     def draw_to(self, scr):
+        # The bottom two rows (height-2 divider, height-1 status line) are
+        # reserved for the HUD — never draw an invader, its typing hint or
+        # its explosion there. Matters mostly when the window shrinks
+        # mid-game and a block ends up below the new playfield.
+        scr = _PlayfieldClip(scr)
         if len(self) <= self.damage <= len(self) + 3:
             # Explosion animation — kept verbatim from the original; `len(self)`
-            # now resolves to the romanization length, which is what the
-            # original intended all along.
+            # resolves to the romanization length.
             self.damage += 1
             frame = self.damage - (1 + len(self))
             x = '@' if self.exploded else '*'
@@ -248,9 +274,9 @@ class Invader:
                            x + (' ' * (len(self) + 2)) + x)
 
         elif self.damage > 0:
-            # Partially typed: show the Hangul block, plus a dim progress
-            # hint line below it, e.g. [g_] for 가 after typing g.
-            scr.addstr(self.y, self.x, self.c)
+            # Partially typed (this is the invader being aimed at): show the
+            # block highlighted, plus a progress hint below, e.g. [g_] for 가.
+            scr.addstr(self.y, self.x, self.c, curses.A_BOLD | curses.A_REVERSE)
             typed = self.romanization[:self.damage]
             remaining = "_" * (len(self) - self.damage)
             hint = "[{}{}]".format(typed, remaining)
@@ -259,7 +285,7 @@ class Invader:
             except curses.error:
                 pass
         else:
-            scr.addstr(self.y, self.x, self.c)
+            scr.addstr(self.y, self.x, self.c, curses.A_BOLD)
 
 
 # ── RainLevel (adapted from kgutwin/typing Level, MIT) ───────────────────────
@@ -271,30 +297,63 @@ class RainLevel:
     is removed entirely. Instead, if any invader reaches the bottom row the
     player loses one life (start with STARTING_LIVES). Game over at 0 lives.
     Kept from the original: falling speed escalation, a score, an
-    invaders_left counter, and the HUD line at the bottom.
+    invaders_left counter, and the HUD line at the bottom. Lives and score
+    carry over from one level to the next.
     """
 
-    def __init__(self, n: int, pool: list, previous_points: int = 0):
+    def __init__(self, n: int, pool: list, previous_points: int = 0,
+                 lives: int = STARTING_LIVES):
         self.n = n
         self.pool = pool                      # list of (hangul, romanization)
         self.points = previous_points
         self.invaders = []
         self.invaders_left = INVADERS_PER_LEVEL
-        self.lives = STARTING_LIVES
-        self.speed = 10                       # number of TICKs per fall
+        self.lives = lives
+        # Each level starts a notch faster than the last.
+        self.speed = max(2, START_SPEED - (n - 1))
         self.create_new_in = 10
         self.max_x = 10
         self.bottom_row = 99
+        self.misses = 0
+        self.last_miss = ""                   # shown briefly in the HUD
+        self.miss_flash = 0
+
+    def _target_for(self, c: str):
+        """Which invader a keystroke goes to. An invader you've already
+        started typing keeps focus (so a shared first letter can't jump to
+        a different block halfway through); otherwise the LOWEST matching
+        invader — the most urgent one — takes the hit."""
+        live = [i for i in self.invaders if i.targetable]
+        started = [i for i in live if i.damage > 0]
+        if started:
+            locked = max(started, key=lambda i: i.y)
+            if locked.romanization[locked.damage] == c:
+                return locked
+            # Wrong letter for the word you're on — allow switching only to
+            # a fresh invader that this key starts.
+        fresh = [i for i in live if i.damage == 0 and i.romanization[0] == c]
+        return max(fresh, key=lambda i: i.y) if fresh else None
 
     def move(self, c=None):
         """Advance one tick. `c` is the just-typed character (or None)."""
+        if c is not None:
+            target = self._target_for(c)
+            if target is not None:
+                # Switching to a new invader abandons any half-typed one.
+                for i in self.invaders:
+                    if i is not target and i.targetable and i.damage > 0:
+                        i.damage = 0
+                target.hit_by(c)
+            else:
+                self.misses += 1
+                self.last_miss = c
+                self.miss_flash = 8
+
         for i in self.invaders:
-            if i.hit_by(c):
-                c = None                     # one keystroke hits one invader
             if i.disabled and not i.scored:
                 self.points += self.n * len(i)
                 i.scored = True
-            else:
+            elif not i.disabled:
                 i.fall(self.speed)
 
         # Life loss: any live invader that has reached the bottom row.
@@ -304,39 +363,44 @@ class RainLevel:
                 self.lives -= 1
 
         self.invaders = [i for i in self.invaders if not i.destroyed]
+        if self.miss_flash:
+            self.miss_flash -= 1
 
-        # Spawn.
+        # Spawn. Speed escalates once per spawn at the level's midpoint —
+        # the old check ran every tick while invaders_left sat on a multiple
+        # of 12, so the speed dropped to its minimum within a second or two.
         if self.create_new_in > 0:
             self.create_new_in -= 1
         elif self.invaders_left > 0:
             hangul, roman = random.choice(self.pool)
             self.invaders.append(Invader.new(hangul, roman, self.max_x))
             self.invaders_left -= 1
+            if self.invaders_left == INVADERS_PER_LEVEL // 2 and self.speed > 2:
+                self.speed -= 1
             e = max(11 - self.n, 1)
             self.create_new_in = random.randint(e, 20)
-
-        # Speed escalation.
-        if self.invaders_left % 12 == 0 and self.speed > 1:
-            self.speed -= 1
 
     def draw(self, scr):
         height, width = scr.getmaxyx()
         self.max_x = width - 2
         self.bottom_row = height - 3
 
-        if self.game_over:
-            scr.addstr(height // 2, (width // 2) - 7, 'G A M E   O V E R')
-        else:
-            for i in self.invaders:
-                try:
-                    i.draw_to(scr)
-                except curses.error:
-                    pass
+        for i in self.invaders:
+            try:
+                i.draw_to(scr)
+            except curses.error:
+                pass
 
         scr.hline(height - 2, 0, '-', width)
-        scr.addstr(height - 1, 0,
-                   'Level %2d   Score: %7d  Remaining: %3d  Lives: %3d' % (
-                       self.n, self.points, self.invaders_left, self.lives))
+        hud = 'Level %d   Score: %d   Left: %d   Lives: %s   (Esc = quit)' % (
+            self.n, self.points, self.invaders_left + len(self.invaders),
+            '<3 ' * self.lives)
+        if self.miss_flash:
+            hud += '   miss: %r' % self.last_miss
+        try:
+            scr.addstr(height - 1, 0, hud[:width - 1])
+        except curses.error:
+            pass
 
     @property
     def complete(self):
@@ -350,30 +414,69 @@ class RainLevel:
 # ── Game loop / launcher ─────────────────────────────────────────────────────
 
 def _build_pool(quiz) -> list:
-    """(hangul, romanization) pairs from the current lesson's practice pool.
-    Skips any syllable whose romanization lookup failed."""
+    """(hangul, romanization) pairs from the current lesson's quiz pool —
+    the same pool the quiz itself draws from, so every lesson is playable
+    (the old version read only practice_syllables, leaving Lessons 1, 10
+    and 11 with "nothing to play"). Falls back to the current lesson's
+    letters' basic vowels if the pool is somehow empty."""
     lesson = getattr(quiz, "current_lesson", None) or {}
-    syllables = lesson.get("practice_syllables") or []
+    try:
+        syllables = quiz._get_lesson_syllable_pool(lesson) if lesson else []
+    except Exception:
+        syllables = lesson.get("practice_syllables") or []
+    if not syllables:
+        syllables = ["아", "어", "오", "우", "으", "이"]
 
     pool = []
     for s in syllables:
         roman = syllable_to_roman(s)
-        if roman == '?' or roman == s:      # lookup failed / unchanged
+        if "/" in roman:                    # bare ㄹ -> 'r/l': type the first
+            roman = roman.split("/")[0]
+        if not roman or roman == '?' or roman == s:   # lookup failed
             continue
         pool.append((s, roman))
     return pool
 
 
+def _center(scr, y: int, text: str, attr=0):
+    height, width = scr.getmaxyx()
+    try:
+        scr.addstr(y, max(0, (width - len(text)) // 2), text[:width - 1], attr)
+    except curses.error:
+        pass
+
+
+def _banner(scr, lines: list, wait: float):
+    """Show a centered message for `wait` seconds (any key skips ahead)."""
+    scr.erase()
+    height, _ = scr.getmaxyx()
+    top = height // 2 - len(lines) // 2
+    for k, line in enumerate(lines):
+        _center(scr, top + k, line, curses.A_BOLD if k == 0 else 0)
+    scr.refresh()
+    end = time.time() + wait
+    while time.time() < end:
+        try:
+            scr.getkey()
+            break
+        except curses.error:
+            time.sleep(0.05)
+
+
 def rain_main(stdscr, pool: list):
-    """Curses main loop: nodelay tick loop, one key read per tick."""
+    """Curses main loop: nodelay tick loop, one key read per tick. Returns
+    (score, level reached)."""
     curses.curs_set(0)
     stdscr.nodelay(1)
     stdscr.leaveok(1)
 
-    level = RainLevel(1, pool)
-    last_points = level.points
+    _banner(stdscr, ["H A N G U L   R A I N",
+                     "",
+                     "Type each falling block's sound (가 = ga) before it lands.",
+                     "You have %d lives. Esc quits." % STARTING_LIVES], 3.0)
 
-    while not level.game_over:
+    level = RainLevel(1, pool)
+    while True:
         stdscr.erase()
         level.draw(stdscr)
         stdscr.refresh()
@@ -383,22 +486,52 @@ def rain_main(stdscr, pool: list):
         except curses.error:
             c = ''
 
-        level.move(c if c else None)
+        if c == KEY_ESC:
+            break
+        # Only single printable letters count as typing; arrow keys and the
+        # like arrive as multi-character names and are ignored.
+        key = c.lower() if len(c) == 1 and c.isalpha() else None
+        level.move(key)
+
+        if level.game_over:
+            _banner(stdscr, ["G A M E   O V E R",
+                             "",
+                             "Score: %d    Level: %d" % (level.points, level.n)], 3.0)
+            break
+        if level.complete:
+            _banner(stdscr, ["Level %d cleared!" % level.n,
+                             "",
+                             "Score: %d  —  get ready, it speeds up..." % level.points], 2.0)
+            level = RainLevel(level.n + 1, pool, level.points, level.lives)
         time.sleep(TICK)
 
-    return level.points
+    return level.points, level.n
 
 
 def launch_rain_mode(quiz):
     """Build the pool from the quiz's current lesson and run Hangul Rain.
 
-    Prints a one-line summary afterwards. Returns (score, level_reached)."""
+    Prints a short summary afterwards, and records a new high score in
+    quiz.progress['rain_best'] (the caller saves progress). Returns
+    (score, level_reached)."""
     pool = _build_pool(quiz)
     if not pool:
-        print("Hangul Rain: no practice syllables for this lesson — nothing to play.")
+        print("Hangul Rain: no syllables to play for this lesson.")
         return (0, 0)
 
     curses = _require_curses()
-    score = curses.wrapper(rain_main, pool)
-    print("Hangul Rain — final score: {} (level 1)".format(score))
-    return (score, 1)
+    # curses waits ~1s after Esc to see if it starts an escape sequence;
+    # shorten that so Esc quits promptly (must be set before curses starts).
+    os.environ.setdefault("ESCDELAY", "25")
+    score, level_reached = curses.wrapper(rain_main, pool)
+    print("Hangul Rain — final score: {} (reached level {})".format(score, level_reached))
+    progress = getattr(quiz, "progress", None)
+    if isinstance(progress, dict):
+        best = progress.get("rain_best", 0)
+        if score > best:
+            progress["rain_best"] = score
+            if best:
+                print("🏆 New high score! (previous best: {})".format(best))
+        elif best:
+            print("High score: {}".format(best))
+    return (score, level_reached)
