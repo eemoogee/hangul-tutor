@@ -37,6 +37,7 @@ from hangul_conversation import (
     generate_conversation_turn, check_conversation_answer, build_template_sentence
 )
 from hangul_models import get_model, set_default_model, summarize_models
+from hangul_rain import launch_rain_mode
 
 # Whether optional Ollama enrichments are enabled. OFF by default — the app
 # is fully functional offline. Set once from --use-llm in main(). Every
@@ -953,6 +954,7 @@ def show_start_menu(quiz: HangulQuiz) -> dict:
     return resume_info
 
 
+# Retained as a public fallback — currently not called internally; print_lesson_intro_rich handles all three call sites.
 def print_lesson_intro(introduction: str = "", note: str = ""):
     """Print a lesson's 'introduction' and/or 'note' text, if it has any.
     These carry real teaching content (e.g. the ㅇ-placeholder rule) that
@@ -961,6 +963,84 @@ def print_lesson_intro(introduction: str = "", note: str = ""):
         print(f"\n{styled('📘', CYAN)} {introduction}")
     if note:
         print(f"\n{styled('📝 Note:', YELLOW)} {note}")
+
+def _extract_layout_example(layout_str: str) -> str:
+    """Extract the example trio from a block_rules layout string.
+    'C on left, V on right (e.g., ㄱ + ㅏ = 가)' → 'ㄱ + ㅏ = 가'
+    Returns empty string if pattern not found."""
+    import re
+    m = re.search(r'e\.g\.,\s*(.+?)\)', layout_str)
+    return m.group(1).strip() if m else ""
+
+def print_lesson_intro_rich(lesson: dict, quiz):
+    """Rich animated lesson intro for lessons with structured teaching data.
+    Falls back to print_lesson_intro for lessons without it."""
+    print()
+    print(styled(f"── Lesson {lesson['id']}: {lesson['title']} ──", BOLD, CYAN))
+    print(f"   {styled(lesson.get('description', ''), DIM)}")
+    time.sleep(0.5)
+
+    introduction = lesson.get("introduction", "")
+    if introduction:
+        print(introduction)
+        time.sleep(0.6)
+
+    letters = lesson.get("letters") or []
+    if letters:
+        note = lesson.get("note", "")
+        if note:
+            print(f"\n{styled('📝 Note:', YELLOW)} {note}")
+        return
+
+    block_rules = lesson.get("block_rules") or {}
+    if block_rules:
+        print(styled("How syllable blocks are built:", YELLOW))
+        time.sleep(0.3)
+        for key in ("vertical_layout", "horizontal_layout"):
+            layout = block_rules.get(key, "")
+            example = _extract_layout_example(layout)
+            if not example:
+                continue
+            parts = example.split(" + ")
+            if len(parts) == 2 and "=" in parts[1]:
+                cho, rest = parts
+                jung, result = rest.split("=", 1)
+                jung = jung.strip()
+                result = result.strip()
+                print("   ", end="", flush=True)
+                print(cho, end="", flush=True)
+                time.sleep(0.3)
+                print(f" + {jung}", end="", flush=True)
+                time.sleep(0.3)
+                print(" = ", end="", flush=True)
+                time.sleep(0.2)
+                print(styled(result, GREEN, BOLD), end="", flush=True)
+                print()
+            else:
+                print(f"   {example}")
+        time.sleep(0.5)
+
+    confusion_pairs = lesson.get("confusion_pairs") or []
+    if confusion_pairs:
+        print(styled("Watch for these:", YELLOW))
+        rendered = " · ".join(
+            styled(a, CYAN) + " vs " + styled(b, CYAN)
+            for a, b in confusion_pairs[:4]
+        )
+        print(f"   {rendered}")
+        time.sleep(0.5)
+
+    batchim_rules = lesson.get("batchim_pronunciation_rules") or {}
+    if batchim_rules:
+        print(styled("Batchim sounds in this lesson:", YELLOW))
+        for letters_key, description in batchim_rules.items():
+            print(f"   {letters_key} → {description}")
+        time.sleep(0.4)
+
+    print()
+    print(styled("Let's practice →", GREEN))
+    time.sleep(0.3)
+    print()
 
 def print_reference_table(quiz: HangulQuiz, lesson: dict):
     """Print a full reference table for the lesson's letters/content before
@@ -1554,7 +1634,7 @@ KNOWN_ACTIONS = {
     'q', 'quit', 'exit', 'help', 'roman', 'romanize', 'romanization',
     'stats', 'lessons', 'lesson', 'mode', 'mnemonic', 'talk',
     'template', 'konglish', 'kspell', 'hint', 'skip', 'intro', 'table',
-    'alphabet',
+    'alphabet', 'rain',
 }
 
 def _advance_and_show(quiz: HangulQuiz) -> dict:
@@ -1565,7 +1645,7 @@ def _advance_and_show(quiz: HangulQuiz) -> dict:
     msg = quiz.complete_lesson()
     new_info = quiz.start_lesson(quiz.progress["current_lesson"])
     print(f"\n{styled('📖 ' + msg, BOLD)}")
-    print_lesson_intro(new_info.get("introduction", ""), new_info.get("note", ""))
+    print_lesson_intro_rich(new_info, quiz)
     print_reference_table(quiz, new_info)
     return new_info
 
@@ -1615,7 +1695,7 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
     # quiz.current_lesson dict — only lesson_info has computed fields like
     # letter_romanization; the raw curriculum entry doesn't carry those.
     lesson = lesson_info
-    print_lesson_intro(lesson.get("introduction", ""), lesson.get("note", ""))
+    print_lesson_intro_rich(lesson, quiz)
     print_reference_table(quiz, lesson)
 
     # Show a mnemonic for the first letter as a warm welcome. Offline this
@@ -1771,6 +1851,7 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
   {styled('/template', CYAN)} — Same, but instant (no LLM)
   {styled('/konglish', CYAN)} — Decode a Konglish word (sound it out, guess English)
   {styled('/kspell', CYAN)}   — Spell an English word in Hangul
+  {styled('/rain', CYAN)}     — Hangul Rain — type falling syllables before they hit the ground
   {styled('/quit', CYAN)}     — Exit
 """)
 
@@ -1798,10 +1879,7 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
                 try:
                     lid = int(cmd[1])
                     info = quiz.start_lesson(lid)
-                    title = info['title']
-                    print(f"\n{styled(f'📖 Lesson {lid}: {title}', BOLD)}")
-                    print(f"   {info['description']}")
-                    print_lesson_intro(info.get('introduction', ''), info.get('note', ''))
+                    print_lesson_intro_rich(info, quiz)
                     print_reference_table(quiz, info)
                     # Keep the loop's 'lesson' variable in sync — previously
                     # only the local 'info' was updated here, so /intro and
@@ -1835,6 +1913,21 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
                 print_cv_chart(quiz,
                                y_vowels=('y' in flags),
                                compact=('compact' in flags))
+
+            elif action == 'rain':
+                try:
+                    print("Launching Hangul Rain... (Ctrl+C to quit)")
+                    launch_rain_mode(quiz)
+                except RuntimeError as e:
+                    print(str(e))
+                except KeyboardInterrupt:
+                    pass
+                # Redraw the outstanding question so the quiz resumes where it
+                # left off. print_question is the real function name (there is
+                # no reprint_question in this file); guard on current_question
+                # since a slash command can arrive before the first question.
+                if current_question:
+                    print_question(current_question, quiz)
 
             elif action == 'mode':
                 choice = cmd[1].lower() if len(cmd) > 1 else ""
@@ -2011,6 +2104,12 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
                 print(f"   {styled(f'❤️ Lives: {sudden_death_lives}', RED if sudden_death_lives == 1 else '')}")
             else:
                 print(f"   {styled(f'🔥 Streak: {quiz.session_streak}', GREEN if quiz.session_streak > 3 else '')}")
+
+                m = quiz.lesson_mastery()
+                if m["pool_size"] > 0 and not quiz.current_lesson["id"] in quiz.progress["completed_lessons"]:
+                    bar = "█" * m["mastered_count"] + "░" * (m["pool_size"] - m["mastered_count"])
+                    _mc, _ps, _need = m["mastered_count"], m["pool_size"], m["needed"]
+                    print(f"   {styled(f'📊 Mastery: {_mc}/{_ps} [{bar}] (need {_need})', CYAN)}")
 
             # Lesson progression (normal mode only). When the active
             # lesson's pool crosses the mastery bar, congratulate once and

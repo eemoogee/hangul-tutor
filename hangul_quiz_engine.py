@@ -2080,8 +2080,8 @@ class HangulQuiz:
     # 42 syllables (Lesson 5) and questions are randomly sampled, so
     # requiring 100% would be a grind and some items might never even be
     # shown. Both are plain constants so the bar is easy to tune.
-    MASTERY_CONFIDENCE = 3
-    MASTERY_FRACTION = 0.8
+    MASTERY_CONFIDENCE = 2
+    MASTERY_FRACTION = 0.65
 
     # Share of questions in a word-based lesson (one with mastery_words)
     # that are whole-word reading. Primary rather than occasional because
