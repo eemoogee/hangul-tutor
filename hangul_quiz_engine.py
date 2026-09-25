@@ -761,14 +761,19 @@ class HangulQuiz:
 
         # Restrict modes based on lesson content
         if lesson.get("practice_syllables") or lesson.get("example_syllables"):
-            available_modes += ["build_syllable", "missing_vowel"]
-            # decompose_syllable rides along with build_syllable (its inverse)
-            # rather than carrying its own independent rate gate — the two are
-            # one construction/deconstruction pair and share a pool + a gating
-            # condition. Whether they should ALSO share a rate is a curriculum
-            # question, tracked as the known-issue comment in
-            # _build_syllable_question.
-            available_modes.append("decompose_syllable")
+            available_modes.append("missing_vowel")
+            # build_syllable and decompose_syllable are inverses: build gives
+            # the jamo and asks for the block; decompose gives the block and
+            # asks for the jamo. Running both in the same lesson hands one
+            # question's answer to the next. They're now split by lesson:
+            # build belongs in the early lessons (≤5) where block assembly is
+            # the new skill; decompose takes over in the later lessons (≥6)
+            # where reading the block and working backwards is the challenge.
+            # Lesson 5 ("Syllable Blocks 1") is the natural handoff point.
+            if lesson["id"] <= 5:
+                available_modes.append("build_syllable")
+            else:
+                available_modes.append("decompose_syllable")
 
         # Whole-word reading (Lesson 12 and any other word-based lesson).
         # Deliberately NOT added to available_modes here: these modes get
