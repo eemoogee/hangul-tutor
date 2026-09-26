@@ -121,9 +121,11 @@ def render_game_header(state: ConveyorState) -> None:
 # Render: question card
 # ---------------------------------------------------------------------------
 
-def render_question(question: QuizQuestion) -> None:
+def render_question(question: QuizQuestion, time_limit_ms: Optional[float] = None) -> None:
     """
     Print the question card: icon, mode label, prompt, and choices if any.
+
+    time_limit_ms: when set, prints a time-limit reminder below the choices.
 
     Mirrors the structure of hangul_cli.print_question() but is kept
     local so game_io has no dependency on hangul_cli.py.
@@ -141,6 +143,10 @@ def render_question(question: QuizQuestion) -> None:
 
     if question.hint:
         _print(f"\n  {_styled('Hint: ' + question.hint, DIM)}")
+
+    if time_limit_ms is not None:
+        secs = time_limit_ms / 1000
+        _print(f"  {_styled(f'⏱  {secs:.0f}s to answer', DIM)}")
 
 
 # ---------------------------------------------------------------------------
@@ -193,6 +199,14 @@ def render_game_over(state: ConveyorState) -> None:
 # ---------------------------------------------------------------------------
 # Input
 # ---------------------------------------------------------------------------
+
+def render_timeout(elapsed_ms: float, limit_ms: float) -> None:
+    """Print the timeout penalty message after a too-slow answer."""
+    elapsed_s = elapsed_ms / 1000
+    limit_s   = limit_ms   / 1000
+    _print(f"\n   {_styled(f'⏰  Too slow!  ({elapsed_s:.1f}s — limit: {limit_s:.0f}s)', RED)}")
+    _print(f"   {_styled('Correct answer recorded for practice, but no points this turn.', DIM)}")
+
 
 def get_player_input() -> Optional[str]:
     """

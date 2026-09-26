@@ -1169,14 +1169,19 @@ class HangulQuiz:
         # decompose_syllable take over once assembly is established), which is
         # why this is a comment and not a code change here.
         cho, jung, jong = self._decompose_syllable(target)
+        roman = self._hangul_to_roman_hint(target)
+        # Prompt shows ONLY the romanization — the old version also printed
+        # 'Consonant: {cho} | Vowel: {jung}', which gave away the exact answer
+        # that decompose_syllable asks for. The jamo appear only in the hint,
+        # which the learner must explicitly request with /hint.
+        batchim_note = f"  (has a final consonant: {jong})" if jong else ""
         return QuizQuestion(
             mode="build_syllable",
-            prompt=f"Build the syllable for **{self._hangul_to_roman_hint(target)}**\n"
-                   f"Consonant: {cho}  |  Vowel: {jung}" +
-                   (f"  |  Batchim: {jong}" if jong else ""),
+            prompt=f"Which block spells **{roman}**?{batchim_note}",
             correct_answer=target,
             choices=self._make_choices(target, pool),
-            hint=self._layout_hint(jung, jong),
+            hint=(f"'{roman}' uses the consonant {cho} and the vowel {jung}. "
+                  + self._layout_hint(jung, jong)),
             lesson_id=lesson["id"],
             letter=target
         )

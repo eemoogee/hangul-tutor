@@ -47,10 +47,11 @@ from game_io import (
     render_question,
     render_result,
     render_game_over,
+    render_timeout,
     get_player_input,
     _print,
     _styled,
-    BOLD, DIM, CYAN, YELLOW,
+    BOLD, DIM, CYAN, YELLOW, RED,
 )
 
 
@@ -157,8 +158,6 @@ def run_conveyor(engine: HangulQuiz, state: ConveyorState) -> ConveyorState:
     state.score, state.turn, state.outcome, etc.
     """
     turn_limit: int = state.game_config.get("turn_limit", 20)
-    # TODO: enforce state.time_limit_ms per question (design decision needed:
-    #   auto-wrong on timeout? show countdown? penalty points?)
 
     current_question = None
     question_shown_at: Optional[float] = None
@@ -178,7 +177,7 @@ def run_conveyor(engine: HangulQuiz, state: ConveyorState) -> ConveyorState:
                 "letter": current_question.letter,
             }
             render_game_header(state)
-            render_question(current_question)
+            render_question(current_question, time_limit_ms=state.time_limit_ms)
             question_shown_at = time.time()
 
         # -- read input --
@@ -203,10 +202,24 @@ def run_conveyor(engine: HangulQuiz, state: ConveyorState) -> ConveyorState:
         elapsed_ms = (time.time() - question_shown_at) * 1000
         result = engine.answer(raw, current_question, response_ms=elapsed_ms)
 
+        # -- time-limit enforcement --
+        # The engine always records the answer as-is for SRS purposes (a
+        # correct answer is still correct knowledge even if slow), but the
+        # game scores it as wrong so the timer has teeth.
+        timed_out = (
+            result.correct
+            and state.time_limit_ms is not None
+            and elapsed_ms > state.time_limit_ms
+        )
+        if timed_out:
+            render_timeout(elapsed_ms, state.time_limit_ms)
+
         # -- update state --
-        earned = _apply_score(state, result.correct)
+        # Use game_correct = False on a timeout so the score is penalised.
+        game_correct = result.correct and not timed_out
+        earned = _apply_score(state, game_correct)
         state.last_result = {
-            "correct": result.correct,
+            "correct": game_correct,
             "user_answer": result.user_answer,
             "expected": result.expected,
             "feedback": result.feedback,
