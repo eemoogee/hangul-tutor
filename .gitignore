@@ -47,3 +47,7 @@ hangul_finetune_v*.jsonl
 # Claude Code working directory
 .claude/
 
+
+# Flash card game progress (personal runtime data)
+data/flash_progress.json
+data/flash_progress.json.bak
