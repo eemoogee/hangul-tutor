@@ -1374,7 +1374,19 @@ def run_beginner_intro(quiz: HangulQuiz, lesson: dict):
             response = input(f"   {styled('>', BOLD)} ").strip()
         except (EOFError, KeyboardInterrupt):
             print(f"\n{styled('Walkthrough ended early.', YELLOW)}")
-            return
+            return None
+        _disc_parts = response.split()
+        if (_disc_parts and _disc_parts[0].lstrip('/').lower() == 'lesson'
+                and len(_disc_parts) == 2 and _disc_parts[1].isdigit()):
+            _n = int(_disc_parts[1])
+            _total = len(quiz.curriculum['lessons'])
+            if 1 <= _n <= _total:
+                print(f"{styled('Walkthrough ended early.', YELLOW)}")
+                _ni = quiz.start_lesson(_n)
+                print_lesson_intro(_ni.get('introduction', ''), _ni.get('note', ''))
+                print_reference_table(quiz, _ni)
+                return _ni
+            print(f"{styled(f'Lesson {_n} not found — there are {_total} lessons.', YELLOW)}")
         # UNGRADED — accept any response (including blank), no validation
         # The reveal comes AFTER they respond (or press Enter with nothing)
         print(f"\n   {styled('The', GREEN)} {styled('ㅇ', BOLD, GREEN)} {styled('at the front is silent in all of them.', GREEN)}")
@@ -1408,7 +1420,19 @@ def run_beginner_intro(quiz: HangulQuiz, lesson: dict):
 
         if response.lower() in ('/skip', 'skip'):
             print(f"{styled('Walkthrough ended early.', YELLOW)}")
-            return
+            return None
+        _r_parts = response.split()
+        if (_r_parts and _r_parts[0].lstrip('/').lower() == 'lesson'
+                and len(_r_parts) == 2 and _r_parts[1].isdigit()):
+            _n = int(_r_parts[1])
+            _total = len(quiz.curriculum['lessons'])
+            if 1 <= _n <= _total:
+                print(f"{styled('Walkthrough ended early.', YELLOW)}")
+                _ni = quiz.start_lesson(_n)
+                print_lesson_intro(_ni.get('introduction', ''), _ni.get('note', ''))
+                print_reference_table(quiz, _ni)
+                return _ni
+            print(f"{styled(f'Lesson {_n} not found — there are {_total} lessons.', YELLOW)}")
         if response:
             # Same check as the alphabet walkthrough: "r" or "l" both count
             # for ㄹ (the old exact match demanded the literal text "r/l").
@@ -1767,9 +1791,36 @@ def _offer_advance(quiz: HangulQuiz, lesson_id: int):
         print(f"{styled('Keep drilling any lesson with /lesson N, or check /stats.', CYAN)}")
         return None
 
-    ans = _ask(f"\n{styled(f'Move on to Lesson {lesson_id + 1}? [Y/n] ', CYAN)}")
-    if ans is not None and ans.lower() in ("", "y", "yes"):
-        return _advance_and_show(quiz)
+    total_lessons = len(quiz.curriculum["lessons"])
+    while True:
+        ans = _ask(f"\n{styled(f'Move on to Lesson {lesson_id + 1}? [Y/n] ', CYAN)}")
+        if ans is None:
+            break
+        a = ans.strip().lower()
+        if a in ("", "y", "yes"):
+            return _advance_and_show(quiz)
+        if a in ("n", "no"):
+            break
+        # Allow a subset of slash commands while the advance prompt is open
+        # so the learner isn't trapped without navigation.
+        parts = ans.split()
+        cmd0 = parts[0].lstrip("/").lower() if parts else ""
+        if cmd0 == "lesson" and len(parts) == 2 and parts[1].isdigit():
+            n = int(parts[1])
+            if 1 <= n <= total_lessons:
+                new_info = quiz.start_lesson(n)
+                print_lesson_intro(new_info.get("introduction", ""), new_info.get("note", ""))
+                print_reference_table(quiz, new_info)
+                return new_info
+            print(f"{styled(f'Lesson {n} not found — there are {total_lessons} lessons.', YELLOW)}")
+        elif cmd0 == "lessons":
+            print(f"\n{styled('📚 Lessons:', BOLD)}")
+            for _l in quiz.list_lessons():
+                _mark = styled('✓', GREEN) if _l['completed'] else ''
+                _here = styled('  ← you are here', CYAN) if _l['id'] == quiz.current_lesson['id'] else ''
+                print(f"   {_l['id']:2}. {_l['title']} {_mark}{_here}")
+        else:
+            print(f"{styled('Type Y/n to decide, /lessons to browse, or /lesson N to jump.', YELLOW)}")
     print(f"{styled('No rush — staying here. Type /lessons to see all lessons, or /lesson N to jump to one whenever you want.', YELLOW)}")
     return None
 
@@ -2003,6 +2054,8 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
     # said "not yet" to — so a mastered-but-not-advanced lesson doesn't
     # re-prompt after every single subsequent correct answer.
     mastery_offered = set()
+    # Cache the last mastery bar value so we only reprint it when it changes.
+    _last_mastery_val = (-1, -1)
     # The streak value the reading reward last fired at. The reward used
     # to re-fire whenever a new question was drawn while the streak still
     # sat on a multiple of 5 — e.g. after /skip or /mode.
@@ -2106,7 +2159,10 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
                 current_question = None
 
             elif action == 'intro':
-                run_beginner_intro(quiz, lesson)
+                _intro_result = run_beginner_intro(quiz, lesson)
+                if _intro_result is not None:
+                    lesson = _intro_result
+                    current_question = None
 
             elif action == 'alphabet':
                 run_alphabet_intro(quiz)
@@ -2238,9 +2294,11 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
 
             m = quiz.lesson_mastery()
             if m["pool_size"] > 0 and quiz.current_lesson["id"] not in quiz.progress["completed_lessons"]:
-                bar = _mastery_bar(m["mastered_count"], m["pool_size"])
                 _mc, _ps = m["mastered_count"], m["pool_size"]
-                print(f"   {styled(f'📊 Mastery: {_mc}/{_ps} [{bar}]', CYAN)}")
+                if (_mc, _ps) != _last_mastery_val:
+                    _last_mastery_val = (_mc, _ps)
+                    bar = _mastery_bar(_mc, _ps)
+                    print(f"   {styled(f'📊 Mastery: {_mc}/{_ps} [{bar}]', CYAN)}")
 
         # Periodic encouragement — an optional Ollama flourish, so it only
         # runs with --use-llm (silent otherwise, no hang).

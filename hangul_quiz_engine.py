@@ -2023,6 +2023,22 @@ class HangulQuiz:
             self.session_best_streak = max(self.session_best_streak, self.session_streak)
             self._mark_mastered(question.letter, confidence=1)
             self._record_learner_item(question, correct=True, response_ms=response_ms)
+            # Credit each component syllable when a multi-syllable question
+            # (read_word, nonword_decode, sequence_decode) is answered correctly,
+            # so that answering whole-word/nonword questions advances the
+            # syllable-level mastery bar alongside the word-level one.
+            # Only .correct and .last_seen are bumped — no mode-seen, no
+            # confusion tracking, no EMA (response time belongs to the
+            # composite question, not to any individual component).
+            if question.mode in ('read_word', 'nonword_decode', 'sequence_decode') and len(question.letter) > 1:
+                _now = time.time()
+                for _ch in question.letter:
+                    if _looks_like_hangul_target(_ch):
+                        self._mark_mastered(_ch, confidence=1)
+                        _ci = self._get_item(_ch)
+                        _ci.correct += 1
+                        _ci.last_seen = _now
+                        self._save_item(_ci)
         else:
             self.session_streak = 0
             self._mark_mastered(question.letter, confidence=-1)
