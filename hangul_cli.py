@@ -39,6 +39,7 @@ from hangul_conversation import (
 )
 from hangul_models import get_model, set_default_model, summarize_models
 from hangul_rain import launch_rain_mode
+from conveyor_game import run_conveyor, make_conveyor_state
 
 # Whether optional Ollama enrichments are enabled. OFF by default — the app
 # is fully functional offline. Set once from --use-llm in main(). Every
@@ -1722,7 +1723,7 @@ KNOWN_ACTIONS = {
     'q', 'quit', 'exit', 'help', 'roman', 'romanize', 'romanization',
     'stats', 'lessons', 'lesson', 'mode', 'mnemonic', 'talk',
     'template', 'konglish', 'kspell', 'hint', 'h', 'skip', 'intro', 'table',
-    'alphabet', 'rain', 'chart',
+    'alphabet', 'rain', 'conveyor', 'chart',
 }
 
 # Sudden death: start with this many hearts, lose one per miss. A streak of
@@ -1972,6 +1973,7 @@ def _print_help():
 
 {styled('Games & extras:', BOLD)}
   {styled('/rain', CYAN)}       — Hangul Rain: type falling syllables before they land
+  {styled('/conveyor', CYAN)}   — Conveyor: build and decompose syllables against the clock
   {styled('/talk', CYAN)}       — Read a Korean sentence made from syllables you've mastered
   {styled('/template', CYAN)}   — Same, but instant (no LLM)
   {styled('/konglish', CYAN)}   — Sound out an English loanword written in Hangul
@@ -2185,6 +2187,23 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
                     pass
                 # Redraw the outstanding question so the quiz resumes where
                 # it left off.
+                if current_question:
+                    print_question(current_question, quiz)
+
+            elif action == 'conveyor':
+                try:
+                    _pool = quiz._get_lesson_syllable_pool(lesson)
+                    _state = make_conveyor_state(
+                        lesson_id=lesson.get('id', 0),
+                        active_cv=_pool,
+                    )
+                    print("Launching Conveyor... (/quit to exit)")
+                    run_conveyor(quiz, _state)
+                    quiz.save_progress()
+                except (RuntimeError, ValueError) as e:
+                    print(str(e))
+                except KeyboardInterrupt:
+                    pass
                 if current_question:
                     print_question(current_question, quiz)
 
