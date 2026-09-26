@@ -371,14 +371,11 @@ def generate_conversation_turn(
                     mastered.add(syl)
 
     if len(mastered) < 3:
-        return {
-            "korean": "아이가",
-            "english": "a child (need 3+ syllables mastered for full sentences)",
-            "answer": None,
-            "mode": "read_translate",
-            "syllables_used": list(mastered),
-            "note": "not enough syllables mastered yet — keep practicing!"
-        }
+        # Not enough to build anything honest yet. (This used to return
+        # "아이가" as a gradeable read_translate turn with a made-up
+        # "translation" the learner was then marked against.) Callers
+        # already treat None as "keep practicing".
+        return None
 
     allowed = sorted(mastered)
 
@@ -395,7 +392,10 @@ def generate_conversation_turn(
             translation = _translate_via_ollama(tatoeba_sentence, translate_model)
             return {
                 "korean": tatoeba_sentence,
-                "english": translation or "(translation unavailable — self-check!)",
+                # None (not a placeholder string) when the model couldn't
+                # translate, so the caller shows a self-check instead of
+                # grading the learner against the placeholder text.
+                "english": translation,
                 "answer": None,
                 "mode": "read_translate",
                 "syllables_used": extract_syllables(tatoeba_sentence),
@@ -453,7 +453,7 @@ def generate_conversation_turn(
 
             return {
                 "korean": korean_clean,
-                "english": english_line or "(no translation provided)",
+                "english": english_line or None,
                 "answer": answer_line,
                 "mode": mode,
                 "syllables_used": extract_syllables(korean_clean),
@@ -474,6 +474,17 @@ def generate_conversation_turn(
 
 # ── Answer checking for conversation modes ─────────────────────────────────
 
+_FILLER_WORDS = {
+    "a", "an", "the", "is", "am", "are", "was", "were", "be", "it", "its",
+    "this", "that", "to", "of", "and", "i", "you", "he", "she", "we", "they",
+    "my", "your", "do", "does", "did", "in", "on", "at",
+}
+
+
+def _content_words(text: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z']+", text.lower()) if w not in _FILLER_WORDS}
+
+
 def check_conversation_answer(
     user_input: str,
     turn: dict,
@@ -491,12 +502,14 @@ def check_conversation_answer(
 
     if mode == "read_translate":
         # User translates Korean → English. Fuzzy match on English.
-        expected = turn.get("english", "").lower()
+        expected = (turn.get("english") or "").lower()
         user_lower = user_clean.lower()
 
-        # Check for keyword overlap
-        expected_words = set(expected.split())
-        user_words = set(user_lower.split())
+        # Keyword overlap on CONTENT words only — punctuation stripped and
+        # filler words ignored, so "it is a dog" no longer scores 75% against
+        # "it is a cat" just by sharing 'it', 'is' and 'a'.
+        expected_words = _content_words(expected) or set(re.findall(r"[a-z']+", expected))
+        user_words = set(re.findall(r"[a-z']+", user_lower))
         overlap = expected_words & user_words
         score = len(overlap) / max(1, len(expected_words))
 
