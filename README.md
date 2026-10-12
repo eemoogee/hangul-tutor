@@ -173,6 +173,23 @@ Each line of output is a JSON object:
 
 ---
 
+## Checking the app
+
+Two scripts in `scripts/` check the tutor without you playing it by hand.
+Neither touches your real progress file.
+
+```
+python scripts/_verify_gameplay_fixes.py   # ~60 pass/fail checks for known bugs (a few seconds)
+python scripts/_playtest_learners.py       # simulated learners play all 12 lessons (~1 minute)
+```
+
+The playtest reports how many questions each lesson takes, how often each
+question type appears, whether drills target the learner's real mix-ups, and
+any question that gives its answer away. See
+`docs/notes/2026-10-12-playtest-report.md` for the first full report.
+
+---
+
 ## Notes
 
 - `hangul_quiz_engine.py` and `hangul_conversation.py` are internal libraries

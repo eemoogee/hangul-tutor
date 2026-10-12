@@ -66,6 +66,9 @@ class QuizQuestion:
     # list (e.g. both 'hangul' and 'hangeul'). Empty for every other mode,
     # which just grade against correct_answer as before.
     accepted: list[str] = field(default_factory=list)
+    # What a real word means ("tree" for 나무) — shown AFTER the learner
+    # reads it, as the payoff. Used by real_word.
+    meaning: str = ""
 
 
 @dataclass
@@ -398,6 +401,14 @@ def normalize_roman(s: str) -> str:
     'Han Geul' and 'hangeul' all compare equal."""
     return re.sub(r"[\s\-'’.]", "", s).lower()
 
+# Short, varied praise for a right answer — the same "✅ Perfect!" after
+# every question gets monotonous fast.
+PRAISE = ("Yes!", "Nice!", "Correct!", "That's it!", "Spot on!", "Great!")
+
+
+def _praise() -> str:
+    return random.choice(PRAISE)
+
 # ── Engine ─────────────────────────────────────────────────────────────────
 
 class HangulQuiz:
@@ -482,6 +493,16 @@ class HangulQuiz:
                                     items.add(entry["ko"])
         except (FileNotFoundError, json.JSONDecodeError, OSError):
             pass
+        # The lesson words and vocabulary are real words too — never serve
+        # one of them as a "this isn't a real word" decoding question.
+        try:
+            with open(CURRICULUM_PATH, encoding='utf-8') as f:
+                for lesson in json.load(f).get("lessons", []):
+                    items.update(w.get("word", "") for w in lesson.get("words", []))
+                    items.update(v.get("word", "") for v in lesson.get("vocabulary", []))
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            pass
+        items.discard("")
         return items
 
     def _load_corpus_seen_bigrams(self) -> set:
@@ -655,7 +676,11 @@ class HangulQuiz:
             "batchim_pronunciation_rules": self.current_lesson.get("batchim_pronunciation_rules", {}),
             "vocabulary": self.current_lesson.get("vocabulary", []),
             "block_rules": self.current_lesson.get("block_rules", {}),
-            "letter_romanization": {l: ROMANIZATION.get(l, "") for l in self.current_lesson.get("letters", [])}
+            "letter_romanization": {l: ROMANIZATION.get(l, "") for l in self.current_lesson.get("letters", [])},
+            # Real words readable with this lesson's letters, and how its
+            # compound vowels are built (ㅐ = ㅏ + ㅣ) — both shown by the CLI.
+            "words": self._lesson_words(self.current_lesson),
+            "formation": self.current_lesson.get("formation", {}),
         }
 
     def _get_lesson(self, lesson_id: int) -> dict:
@@ -721,7 +746,9 @@ class HangulQuiz:
             return self._get_lesson_syllable_pool(lesson)
         if mode == "read_word":
             return lesson.get("mastery_words", [])
-        if mode in ("build_syllable", "missing_vowel", "decompose_syllable"):
+        if mode in ("missing_vowel", "decompose_syllable"):
+            return self._cv_pool(lesson)
+        if mode == "build_syllable":
             return lesson.get("practice_syllables") or lesson.get("example_syllables") or []
         if mode == "batchim_challenge":
             return lesson.get("example_syllables", [])
@@ -768,7 +795,8 @@ class HangulQuiz:
         available_modes = ["spell", "read_aloud", "match_sound"]
 
         # Restrict modes based on lesson content
-        if lesson.get("practice_syllables") or lesson.get("example_syllables"):
+        has_cv = bool(self._cv_pool(lesson))
+        if has_cv:
             available_modes.append("missing_vowel")
             # build_syllable and decompose_syllable are inverses: build gives
             # the jamo and asks for the block; decompose gives the block and
@@ -796,45 +824,15 @@ class HangulQuiz:
         if "batchim_pronunciation_rules" in lesson or "batchim_pronunciation" in lesson:
             available_modes.append("batchim_challenge")
 
-        # If the user has real tracked confusions, occasionally trigger a drill.
-        # If not, but this lesson calls out known-tricky pairs (e.g. ㅓ vs ㅗ),
-        # drill those proactively at a lower rate — no need to wait for mistakes.
-        # Sourced from the same _pairs_from_learner_items() that
-        # _confusion_drill_question itself now reads, so this gate and
-        # the drill it's gating agree on what counts as "has confusions"
-        # — previously this checked the old flat confusion_counts dict
-        # while the drill (after this patch) reads learner_items, which
-        # could disagree in edge cases (e.g. this said yes, the drill
-        # found nothing usable, or vice versa).
-        has_confusions = any(v >= 2 for v in self._pairs_from_learner_items().values())
-        has_curriculum_pairs = bool(lesson.get("confusion_pairs"))
-        if has_confusions and random.random() < 0.3:
-            available_modes.append("confusion_drill")
-        elif has_curriculum_pairs and random.random() < 0.15:
-            available_modes.append("confusion_drill")
-
-        # Stage 3: meaningful word contrasts (see word_contrasts.json).
-        # Gated on _available_word_contrasts() actually returning
-        # something decodable for THIS lesson — an empty/missing content
-        # file or a lesson too early for any seeded pair both correctly
-        # result in this mode never being offered, rather than being
-        # offered and then silently degrading every time (see the
-        # degrade-to-spell fallback in _generate_question, which exists
-        # as a safety net, not as the expected path).
-        if self._available_word_contrasts() and random.random() < 0.15:
-            available_modes.append("word_contrast")
-
-        # Nonword decode: tests phoneme-by-phoneme decoding, not lexical
-        # recognition. Gated on pool having at least 2 distinct syllables
-        # (needed to form a 2-syllable nonword). 15% rate matches
-        # word_contrast's occasional-not-dominant pattern.
-        if len(self._get_lesson_syllable_pool(lesson)) >= 2 and random.random() < 0.15:
-            available_modes.append("nonword_decode")
-
-        # sequence_decode: 3-syllable nonword. Needs pool >= 3 distinct
-        # syllables. Same 15% occasional rate as nonword_decode.
-        if len(self._get_lesson_syllable_pool(lesson)) >= 3 and random.random() < 0.15:
-            available_modes.append("sequence_decode")
+        # confusion_drill, word_contrast, nonword_decode and sequence_decode
+        # are "special" modes, picked in their own slot below (see
+        # SPECIAL_MODE_RATE). They used to be appended to available_modes
+        # behind 15-30% gates, but then never won a pick: they have no item
+        # pool, so the due filter dropped them whenever anything else was
+        # due, and they sit in neither direction bucket, so the weighted
+        # bucket draw never chose them either. A simulated-learner playtest
+        # measured them at ~0% — even with a mix-up recorded six times.
+        specials = self._special_modes(lesson)
 
         if mode:
             chosen_mode = mode
@@ -853,6 +851,11 @@ class HangulQuiz:
             q = self._generate_question(chosen_mode)
             self._last_asked = (chosen_mode, q.letter)
             return q
+        elif specials and random.random() < self.SPECIAL_MODE_RATE:
+            # Not the same special twice in a row, when there's another.
+            options = [(m, w) for m, w in specials if m != self._last_asked[0]] or specials
+            modes, weights = zip(*options)
+            chosen_mode = random.choices(modes, weights=weights)[0]
         else:
             # Prefer modes whose current-lesson pool has at least one due
             # item — mirroring _select_from_pool's due-preference one level
@@ -948,6 +951,8 @@ class HangulQuiz:
             return self._sequence_decode_question(lesson)
         elif mode == "decompose_syllable":
             return self._decompose_syllable_question(lesson)
+        elif mode == "real_word":
+            return self._real_word_question(lesson)
         else:
             return self._spell_question(lesson)
 
@@ -1109,12 +1114,45 @@ class HangulQuiz:
 
         return QuizQuestion(
             mode="read_word",
-            prompt=f"Read this word aloud, then type its romanization:\n\n   **{target}**",
+            prompt=f"Read this word — how does it sound?\n\n   **{target}**",
             correct_answer=accepted[0],
             accepted=accepted,
             hint=breakdown,
             lesson_id=lesson["id"],
-            letter=target
+            letter=target,
+            meaning=vocab.get("meaning", "") if vocab else "",
+        )
+
+    def _lesson_words(self, lesson: dict) -> list:
+        """The lesson's real words ({word, meaning, also?}) that are
+        readable with what has been taught so far — checked, not trusted,
+        so a curriculum edit can't slip in a word with an untaught letter."""
+        return [w for w in lesson.get("words", [])
+                if (self.readable_from(w.get("word", "")) or 99) <= lesson["id"]]
+
+    def _real_word_question(self, lesson: dict) -> QuizQuestion:
+        """Read a real Korean word, then find out what it means. The
+        engagement payoff of a lesson: every lesson from 1 to 11 carries
+        words built only from letters taught so far (아이 'child' in
+        Lesson 1, 나무 'tree' in Lesson 2...). Graded like read_aloud; the
+        meaning is revealed in the feedback either way."""
+        words = self._lesson_words(lesson)
+        if not words:
+            return self._read_aloud_question(lesson)
+        by_word = {w["word"]: w for w in words}
+        target = self._select_from_pool(list(by_word))
+        entry = by_word[target]
+        accepted = sorted(self.roman_variants(target) | {normalize_roman(a) for a in entry.get("also", [])})
+        return QuizQuestion(
+            mode="real_word",
+            prompt=f"A real Korean word! How does it sound?\n\n   **{target}**",
+            correct_answer=self._word_romanization(target),
+            accepted=accepted,
+            hint="Block by block: " + ", ".join(
+                f"{ch} = {self._hangul_to_roman_hint(ch)}" for ch in target),
+            lesson_id=lesson["id"],
+            letter=target,
+            meaning=entry.get("meaning", ""),
         )
 
     def _word_romanization(self, word: str) -> str:
@@ -1137,7 +1175,7 @@ class HangulQuiz:
         target = self._select_from_pool(items)
         return QuizQuestion(
             mode="match_sound",
-            prompt=f"Which Hangul is pronounced **{self._hangul_to_roman_hint(target)}**?",
+            prompt=f"Which one sounds like **{self._hangul_to_roman_hint(target)}**?",
             correct_answer=target,
             choices=self._make_choices(target, items),
             lesson_id=lesson["id"],
@@ -1201,9 +1239,24 @@ class HangulQuiz:
             where += " The final consonant (batchim) sits at the very bottom."
         return where
 
+    def _cv_pool(self, lesson: dict) -> list[str]:
+        """The lesson's practice blocks that are plain consonant+vowel —
+        no final consonant, not a bare letter."""
+        pool = lesson.get("practice_syllables") or lesson.get("example_syllables") or []
+        out = []
+        for s in pool:
+            cho, jung, jong = self._decompose_syllable(s)
+            if cho and jung and not jong:
+                out.append(s)
+        return out
+
     def _missing_vowel_question(self, lesson: dict) -> QuizQuestion:
         """Show consonant + romanization, user picks the vowel."""
-        pool = lesson.get("practice_syllables") or lesson.get("example_syllables")
+        # Draw only from blocks with no final consonant — the guard below
+        # can't serve a batchim block, and picking one anyway used to turn
+        # the question into a spelling question (every time, in Lessons
+        # 10-11, whose blocks all have batchim).
+        pool = self._cv_pool(lesson)
         if pool:
             target = self._select_from_pool(pool)
         else:
@@ -1263,7 +1316,7 @@ class HangulQuiz:
         both components required. Graded via _normalize_jamo_pair so that
         input spacing/punctuation ('ㄷ+ㅗ', 'ㄷ ㅗ') is not what is being
         tested, while component ORDER still is ('ㅗㄷ' fails)."""
-        pool = lesson.get("practice_syllables") or lesson.get("example_syllables")
+        pool = self._cv_pool(lesson)   # no-batchim blocks only, as in missing_vowel
         if not pool:
             return self._spell_question(lesson)  # same fallback as siblings
 
@@ -1438,6 +1491,11 @@ class HangulQuiz:
         consonant lesson in disguise)."""
         if s in lesson.get("letters", []):
             return True
+        # Vowel lessons list bare jamo (ㅓ) but quiz the written blocks (어),
+        # which is also how mix-ups get recorded — so 어↔오 was never
+        # "relevant" to Lesson 1 and its drills fell back to preset pairs.
+        if s in (self._compose_bare_vowel(l) for l in lesson.get("letters", [])):
+            return True
         if s in lesson.get("practice_syllables", []):
             return True
         if s in lesson.get("example_syllables", []):
@@ -1490,6 +1548,44 @@ class HangulQuiz:
                 return lesson["id"]
         return None
 
+    def _lesson_teaching_final(self, jamo: str) -> Optional[int]:
+        """Which lesson first teaches `jamo` as a FINAL consonant (batchim)
+        — Lesson 10 for the basic seven, Lesson 11 for the rest. A letter
+        learned at the start of a block isn't yet readable at the bottom:
+        손 needs Lesson 10 even though ㅅ, ㅗ and ㄴ are all taught by 3."""
+        for lesson in self.curriculum.get("lessons", []):
+            if "batchim_pronunciation" in lesson and jamo in lesson.get("letters", []):
+                return lesson["id"]
+            if any(jamo in group for group in lesson.get("batchim_pronunciation_rules", {})):
+                return lesson["id"]
+        return None
+
+    def readable_from(self, text: str) -> Optional[int]:
+        """First lesson by which every letter of `text` has been taught in
+        the position it's used (starting consonant, vowel, final
+        consonant). The silent starting ㅇ counts from Lesson 1, where it
+        is introduced as the vowel placeholder. None if some letter is
+        never taught."""
+        need = 1
+        for ch in text:
+            if not _is_hangul_char(ch):
+                continue
+            cho, jung, jong = self._decompose_syllable(ch)
+            if not jung:                             # a bare letter
+                parts = [(ch, self._lesson_teaching_letter)]
+            else:
+                parts = [(jung, self._lesson_teaching_letter)]
+                if cho and cho != "ㅇ":
+                    parts.append((cho, self._lesson_teaching_letter))
+                if jong:
+                    parts.append((jong, self._lesson_teaching_final))
+            for jamo, finder in parts:
+                taught = finder(jamo)
+                if taught is None:
+                    return None
+                need = max(need, taught)
+        return need
+
     def _word_contrast_decodable(self, entry: dict) -> bool:
         """True only if EVERY jamo in EVERY item's form has been taught by
         (at or before) the current lesson — i.e. the learner could
@@ -1514,16 +1610,13 @@ class HangulQuiz:
         if self.current_lesson is None:
             return False
         current_id = self.current_lesson["id"]
+        # Position-aware (see readable_from): a final consonant only counts
+        # from the batchim lessons, so 손/선 no longer appears in Lesson 3,
+        # seven lessons before final consonants are taught.
         for item in entry.get("items", []):
-            form = item.get("form", "")
-            for ch in form:
-                cho, jung, jong = self._decompose_syllable(ch)
-                for jamo in (cho, jung, jong):
-                    if not jamo:
-                        continue
-                    taught_at = self._lesson_teaching_letter(jamo)
-                    if taught_at is None or taught_at > current_id:
-                        return False
+            taught_at = self.readable_from(item.get("form", ""))
+            if taught_at is None or taught_at > current_id:
+                return False
         return True
 
     def _entry_renderable(self, entry: dict) -> bool:
@@ -1754,6 +1847,55 @@ class HangulQuiz:
             letter=candidate,
         )
 
+    def _drill_askable(self, pa: str, pb: str) -> bool:
+        """The drill shows ONE romanization and asks which block it is,
+        so the two blocks must romanize differently. 박/밖, 곧/곳 and
+        ㅙ/ㅞ-style pairs that read the same would have no right answer."""
+        roman = self._hangul_to_roman_hint
+        return pa != pb and roman(pa) != roman(pb)
+
+    def _tracked_drill_pairs(self):
+        """Yields the learner's own recorded mix-ups as composed (a, b)
+        pairs, worst (highest count) first, skipping invalid/old keys,
+        pairs that collapse to one letter once composed, and pairs the
+        drill can't ask (same romanization). Bare letters are written as
+        blocks (ㅓ vs ㅗ becomes 어 vs 오, ㅈ vs ㅊ becomes 자 vs 차) so the
+        drill's prompt, pair and choices are all whole blocks."""
+        compose = self._letter_to_syllable
+        tracked = []
+        for k, v in self._pairs_from_learner_items().items():
+            parts = k.split("↔")
+            # Defensively re-validate even old/pre-existing entries.
+            if v >= 1 and len(parts) == 2 and all(_looks_like_hangul_target(p) for p in parts):
+                tracked.append((v, compose(parts[0]), compose(parts[1])))
+        for _v, pa, pb in sorted(tracked, key=lambda t: -t[0]):
+            if self._drill_askable(pa, pb):
+                yield pa, pb
+
+    def _relevant_tracked_pair(self):
+        """Worst recorded mix-up that involves this lesson's material, or
+        None."""
+        if self.current_lesson is None:
+            return None
+        for pa, pb in self._tracked_drill_pairs():
+            if (self._lesson_relevant(pa, self.current_lesson)
+                    or self._lesson_relevant(pb, self.current_lesson)):
+                return pa, pb
+        return None
+
+    def _curriculum_drill_pairs(self, groups) -> list:
+        """Every askable (a, b) pair from curriculum confusion groups (each
+        group lists 2+ letters that get mixed up), written as blocks."""
+        compose = self._letter_to_syllable
+        pairs = []
+        for g in groups:
+            for i in range(len(g)):
+                for j in range(i + 1, len(g)):
+                    pa, pb = compose(g[i]), compose(g[j])
+                    if self._drill_askable(pa, pb):
+                        pairs.append((pa, pb))
+        return pairs
+
     def _confusion_drill_question(self) -> QuizQuestion:
         """Target letters the user consistently confuses — scoped to the
         CURRENT lesson wherever possible. Confusion counts persist across
@@ -1767,85 +1909,33 @@ class HangulQuiz:
         confusion pair if the lesson has none of its own, (3) worst
         mistake overall as a last resort so the drill still has something
         to show."""
-        confusion_counts = self._pairs_from_learner_items()
-        tracked_pairs = []
-        for k, v in confusion_counts.items():
-            if v < 1 or "↔" not in k:
-                continue
-            parts = k.split("↔")
-            # Defensively re-validate even old/pre-existing entries — a
-            # bad pair saved before this check existed shouldn't come
-            # back to haunt future drills.
-            if len(parts) == 2 and all(_looks_like_hangul_target(p) for p in parts):
-                tracked_pairs.append((k, v))
-
-        # Bare vowel jamo are never valid standalone Korean writing —
-        # compose them with the silent ㅇ placeholder before ever showing
-        # or requiring one as an answer (e.g. ㅓ vs ㅗ becomes 어 vs 오).
-        # Consonants stay bare, since naming a consonant letter on its own
-        # is correct as-is. See _compose_bare_vowel for the shared rule.
-        compose = self._compose_bare_vowel
-
-        def is_lesson_relevant(pa: str, pb: str) -> bool:
-            return (self._lesson_relevant(pa, self.current_lesson)
-                    or self._lesson_relevant(pb, self.current_lesson))
-
-        roman = self._hangul_to_roman_hint
-
-        def askable(pa: str, pb: str) -> bool:
-            """The drill shows ONE romanization and asks which block it is,
-            so the two blocks must romanize differently. 박/밖, 곧/곳 and
-            ㅙ/ㅞ-style pairs that read the same would have no right answer."""
-            return pa != pb and roman(pa) != roman(pb)
-
-        def non_degenerate_pairs():
-            """Yields (pa, pb) composed pairs, worst (highest count) first,
-            skipping ones that collapse to the same letter once composed or
-            that can't be told apart by their romanization."""
-            for pair_key, _count in sorted(tracked_pairs, key=lambda kv: -kv[1]):
-                pa, pb = pair_key.split("↔")
-                pa, pb = compose(pa), compose(pb)
-                if askable(pa, pb):
-                    yield pa, pb
-
-        def pick_from_groups(groups):
-            """Random askable pair from curriculum confusion groups (each
-            group lists 2+ letters that get mixed up), or (None, None)."""
-            pairs = []
-            for g in groups:
-                for i in range(len(g)):
-                    for j in range(i + 1, len(g)):
-                        pa, pb = compose(g[i]), compose(g[j])
-                        if askable(pa, pb):
-                            pairs.append((pa, pb))
-            return random.choice(pairs) if pairs else (None, None)
-
         a = b = None
 
         # Preference 1: worst mistake that's actually relevant to the
         # lesson you're in right now.
-        for pa, pb in non_degenerate_pairs():
-            if is_lesson_relevant(pa, pb):
-                a, b = pa, pb
-                break
+        pair = self._relevant_tracked_pair()
+        if pair:
+            a, b = pair
 
         # Preference 2: no relevant tracked mistake yet — proactively
         # drill a pair this lesson calls out as commonly confused.
         if a is None:
-            a, b = pick_from_groups(self.current_lesson.get("confusion_pairs", []))
+            pairs = self._curriculum_drill_pairs(self.current_lesson.get("confusion_pairs", []))
+            if pairs:
+                a, b = random.choice(pairs)
 
-        # Preference 2b: lesson has no own confusion_pairs (or it was
-        # empty) — try the curriculum-wide global list instead. Same
-        # shape as a lesson's confusion_pairs, so the same selection
-        # pattern applies.
+        # Preference 2b: lesson has no usable confusion_pairs of its own —
+        # try the curriculum-wide global list instead.
         if a is None:
-            a, b = pick_from_groups(self.curriculum.get("confusion_pairs_global", []))
+            pairs = self._curriculum_drill_pairs(self.curriculum.get("confusion_pairs_global", []))
+            if pairs:
+                a, b = random.choice(pairs)
 
         # Preference 3 (last resort): no lesson-relevant data at all —
         # fall back to the single worst mistake overall, same as the old
         # behavior, rather than showing nothing.
         if a is None:
-            for pa, pb in non_degenerate_pairs():
+            for pa, pb in self._tracked_drill_pairs():
                 a, b = pa, pb
                 break
 
@@ -1933,7 +2023,7 @@ class HangulQuiz:
         # ('ㄷ + ㅗ'), not a composed block — _compose_bare_vowel would try
         # to read it as a single jamo and mangle it into a lone composed
         # syllable. The mode grades its own way (see the branch below).
-        if question.mode not in ("read_aloud", "read_word", "missing_vowel", "word_contrast", "nonword_decode", "sequence_decode", "decompose_syllable"):
+        if question.mode not in ("read_aloud", "read_word", "real_word", "missing_vowel", "word_contrast", "nonword_decode", "sequence_decode", "decompose_syllable"):
             user_clean = self._compose_bare_vowel(user_clean)
             expected = self._compose_bare_vowel(expected)
 
@@ -1947,9 +2037,9 @@ class HangulQuiz:
             accepted = question.accepted or [expected]
             is_correct = normalize_roman(user_clean) in {normalize_roman(a) for a in accepted}
             if is_correct:
-                feedback = f"✅ Correct! **{question.letter}** romanizes as **{expected}**."
+                feedback = f"✅ {_praise()} **{question.letter}** is read **{expected}**."
             else:
-                feedback = f"❌ **{question.letter}** romanizes as **{expected}**. You typed '{user_clean}'."
+                feedback = f"❌ Not quite — **{question.letter}** is read **{expected}** (you typed '{user_clean}')."
         elif question.mode == "read_word":
             # Whole-word reading: accept any of the word's
             # accepted_romanizations, compared with hyphens/spaces/case
@@ -1959,25 +2049,36 @@ class HangulQuiz:
             is_correct = self._normalize_roman(user_clean) in [
                 self._normalize_roman(a) for a in accepted
             ]
+            means = f" It means \"{question.meaning}\"." if question.meaning else ""
             if is_correct:
-                feedback = f"✅ Correct! **{question.letter}** reads as **{expected}**."
+                feedback = f"✅ {_praise()} **{question.letter}** is **{expected}**.{means}"
             else:
-                feedback = f"❌ **{question.letter}** reads as **{expected}**. You typed '{user_clean}'."
+                feedback = (f"❌ Not quite — **{question.letter}** is read **{expected}** "
+                            f"(you typed '{user_clean}').{means}")
+        elif question.mode == "real_word":
+            accepted = question.accepted or [question.correct_answer]
+            is_correct = normalize_roman(user_clean) in {normalize_roman(a) for a in accepted}
+            means = f" It means \"{question.meaning}\"." if question.meaning else ""
+            if is_correct:
+                feedback = f"✅ {_praise()} **{question.letter}** is **{expected}**.{means}"
+            else:
+                feedback = (f"❌ Not quite — **{question.letter}** is read **{expected}** "
+                            f"(you typed '{user_clean}').{means}")
         elif question.mode == "nonword_decode":
             # Graded as an exact romanization spelling match (case-insensitive),
             # same as read_aloud. The answer is a concatenated romanization
             # of two syllables (e.g. 'nudo' for 누도).
             is_correct = normalize_roman(user_clean) in self.roman_variants(question.letter)
             if is_correct:
-                feedback = f"✅ Correct! **{question.letter}** decodes as **{expected}**."
+                feedback = f"✅ {_praise()} **{question.letter}** is read **{expected}**."
             else:
-                feedback = f"❌ **{question.letter}** decodes as **{expected}**. You typed '{user_clean}'."
+                feedback = f"❌ Not quite — **{question.letter}** is read **{expected}** (you typed '{user_clean}')."
         elif question.mode == "sequence_decode":
             is_correct = normalize_roman(user_clean) in self.roman_variants(question.letter)
             if is_correct:
-                feedback = f"✅ Correct! **{question.letter}** reads as **{expected}**."
+                feedback = f"✅ {_praise()} **{question.letter}** is read **{expected}**."
             else:
-                feedback = f"❌ **{question.letter}** reads as **{expected}**. You typed '{user_clean}'."
+                feedback = f"❌ Not quite — **{question.letter}** is read **{expected}** (you typed '{user_clean}')."
         elif question.mode in ("match_sound", "missing_vowel", "batchim_challenge"):
             if question.mode == "missing_vowel":
                 # The answer is a bare vowel (ㅗ), but typing it the way it's
@@ -1992,9 +2093,9 @@ class HangulQuiz:
             else:
                 is_correct = user_clean == expected
             if is_correct:
-                feedback = f"✅ Correct! **{expected}** is right."
+                feedback = f"✅ {_praise()} **{expected}** is right."
             else:
-                feedback = f"❌ Not quite. The answer is **{expected}**."
+                feedback = f"❌ Not quite — it's **{expected}**."
         elif question.mode == "decompose_syllable":
             # Graded on the jamo PAIR, order-significant, both components
             # required. _normalize_jamo_pair strips spacing/punctuation so
@@ -2003,12 +2104,10 @@ class HangulQuiz:
             is_correct = (self._normalize_jamo_pair(user_clean)
                           == self._normalize_jamo_pair(expected))
             if is_correct:
-                feedback = (f"✅ Correct! **{question.letter}** is "
-                            f"**{expected}**.")
+                feedback = f"✅ {_praise()} **{question.letter}** = **{expected}**."
             else:
-                feedback = (f"❌ Not quite. **{question.letter}** is "
-                            f"**{expected}** (consonant first). "
-                            f"You typed '{user_clean}'.")
+                feedback = (f"❌ Not quite — **{question.letter}** = **{expected}** "
+                            f"(consonant first; you typed '{user_clean}').")
         else:
             # Check correct_answer first, then any accepted alternates
             # (e.g. spell mode accepts the romanization string that the
@@ -2016,9 +2115,9 @@ class HangulQuiz:
             is_correct = (user_clean == expected
                           or user_clean.lower() in [a.lower() for a in (question.accepted or [])])
             if is_correct:
-                feedback = f"✅ Perfect! **{expected}** is correct."
+                feedback = f"✅ {_praise()} **{expected}** is right."
             else:
-                feedback = f"❌ You typed **{user_clean}** but the answer is **{expected}**."
+                feedback = f"❌ Not quite — it's **{expected}** (you typed {user_clean})."
 
         # Track progress
         self.session_total += 1
@@ -2035,7 +2134,7 @@ class HangulQuiz:
             # Only .correct and .last_seen are bumped — no mode-seen, no
             # confusion tracking, no EMA (response time belongs to the
             # composite question, not to any individual component).
-            if question.mode in ('read_word', 'nonword_decode', 'sequence_decode') and len(question.letter) > 1:
+            if question.mode in ('read_word', 'real_word', 'nonword_decode', 'sequence_decode') and len(question.letter) > 1:
                 _now = time.time()
                 for _ch in question.letter:
                     if _looks_like_hangul_target(_ch):
@@ -2068,13 +2167,21 @@ class HangulQuiz:
                           and _looks_like_hangul_target(user_clean)
                           and _looks_like_hangul_target(expected)
                           and self._is_studied_form(user_clean, question))
+            confused_with = user_clean if valid_pair else None
+            pair_target = expected
+            if not valid_pair and question.mode == "read_aloud":
+                # Reading 어 as 'o' IS the ㅓ/ㅗ mix-up, even though the
+                # answer was typed in English letters. Read-aloud is ~30% of
+                # all questions and its mistakes used to be thrown away.
+                confused_with = self._block_read_as(user_clean, question.letter)
+                pair_target = self._compose_bare_vowel(question.letter)
             self._record_learner_item(
                 question, correct=False,
-                confused_with=user_clean if valid_pair else None,
+                confused_with=confused_with,
                 response_ms=response_ms,
             )
-            if valid_pair:
-                pair = f"{user_clean}↔{expected}"
+            if confused_with:
+                pair = f"{confused_with}↔{pair_target}"
                 self.progress.setdefault("confusion_counts", {})
                 self.progress["confusion_counts"][pair] = self.progress["confusion_counts"].get(pair, 0) + 1
 
@@ -2086,6 +2193,24 @@ class HangulQuiz:
             lesson_id=question.lesson_id,
             letter=question.letter
         )
+
+    def _block_read_as(self, typed: str, target: str) -> Optional[str]:
+        """Which studied block did the learner read `target` as? For a
+        read-aloud miss: 'o' typed for 어 -> 오. Only an unambiguous match
+        among this lesson's blocks and already-completed lessons' blocks
+        counts (and never the target itself); anything else returns None,
+        so a typo is not mistaken for a mix-up."""
+        if len(target) != 1 or not typed or self.current_lesson is None:
+            return None
+        heard = normalize_roman(typed)
+        if not heard:
+            return None
+        pool = set(self._get_lesson_syllable_pool(self.current_lesson))
+        pool |= set(self._get_known_syllables())
+        target = self._compose_bare_vowel(target)
+        matches = [b for b in pool
+                   if b != target and len(b) == 1 and heard in self.roman_variants(b)]
+        return matches[0] if len(matches) == 1 else None
 
     def _is_studied_form(self, s: str, question: QuizQuestion) -> bool:
         """True if s is one of the question's choices, or a letter/block
@@ -2297,6 +2422,31 @@ class HangulQuiz:
     # time to keep sharpening the single-syllable components.
     READ_WORD_RATE = 0.60
 
+    # Share of questions given to the special modes (real_word,
+    # confusion_drill, word_contrast, nonword_decode, sequence_decode),
+    # split among whichever are available by the weights in _special_modes.
+    # Real words weigh most (~1 question in 10); a drill on a mix-up the
+    # learner has REALLY made weighs double a preset one.
+    SPECIAL_MODE_RATE = 0.25
+
+    def _special_modes(self, lesson: dict) -> list:
+        """[(mode, weight), ...] for the special modes usable right now."""
+        out = []
+        if self._lesson_words(lesson):
+            out.append(("real_word", 2.5))       # the lesson's real words: the hook
+        if self._relevant_tracked_pair() is not None:
+            out.append(("confusion_drill", 2.0))
+        elif self._curriculum_drill_pairs(lesson.get("confusion_pairs", [])):
+            out.append(("confusion_drill", 1.0))
+        if self._available_word_contrasts():
+            out.append(("word_contrast", 1.0))
+        pool_size = len(self._get_lesson_syllable_pool(lesson))
+        if pool_size >= 2:
+            out.append(("nonword_decode", 1.0))
+        if pool_size >= 3:
+            out.append(("sequence_decode", 0.5))   # 3 blocks: harder, rarer
+        return out
+
     def lesson_mastery(self, lesson_id: int = None) -> dict:
         """Report mastery progress against the lesson's explicit mastery set.
 
@@ -2402,7 +2552,7 @@ class HangulQuiz:
                 return "Type the answer in Hangul, or pick a choice with its letter (A-D)."
             return "Type the answer in Hangul."
         if not expects_hangul and has_hangul and not has_latin and question.mode in (
-                "read_aloud", "read_word", "nonword_decode", "sequence_decode"):
+                "read_aloud", "read_word", "real_word", "nonword_decode", "sequence_decode"):
             return "Type how it SOUNDS using English letters (e.g. 'ga'). /roman shows the spelling key."
         return None
 

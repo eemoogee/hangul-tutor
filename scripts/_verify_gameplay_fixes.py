@@ -173,6 +173,135 @@ check("/talk with <3 mastered syllables returns None (no fake translation)",
 res = C.check_conversation_answer("it is a dog", {"mode": "read_translate", "english": "it is a cat"}, q)
 check("translation check ignores filler-word overlap", not res["correct"])
 
+print("Lesson content (2026-10 content pass)")
+q = fresh()
+bad, thin = [], []
+for lesson in q.curriculum["lessons"]:
+    for w in lesson.get("words", []):
+        r = q.readable_from(w["word"])
+        if r is None or r > lesson["id"]:
+            bad.append((lesson["id"], w["word"], r))
+    if lesson["id"] <= 11 and len(lesson.get("words", [])) < 4:
+        thin.append(lesson["id"])
+check("every lesson word uses only letters taught by its lesson", not bad, bad[:5])
+check("lessons 1-11 each have at least 4 real words", not thin, thin)
+
+q.start_lesson(3)
+check("손/선 (final consonants) not offered before batchim is taught",
+      all(e["items"][0]["form"] != "손" for e in q._available_word_contrasts()))
+q.start_lesson(10)
+check("손/선 offered once batchim is taught",
+      any(e["items"][0]["form"] == "손" for e in q._available_word_contrasts()))
+
+q.start_lesson(4)
+rw = q._real_word_question(q.current_lesson)
+res = q.answer(rw.correct_answer, rw)
+check("real word: reading it right is graded right", res.correct, rw)
+check("real word: the meaning is revealed", rw.meaning and rw.meaning in res.feedback, res.feedback)
+q.start_lesson(10)
+kimchi = E.QuizQuestion(mode="real_word", prompt="", correct_answer="gimchi",
+                        accepted=sorted(q.roman_variants("김치") | {"kimchi"}), letter="김치")
+check("real word: 'kimchi' accepted for 김치", q.answer("kimchi", kimchi).correct)
+
+lesson_words = {w["word"] for l in q.curriculum["lessons"] for w in l.get("words", [])}
+check("lesson words count as real words (never served as 'not a real word')",
+      lesson_words <= q.known_lexical_items, sorted(lesson_words - q.known_lexical_items)[:5])
+
+with contextlib.redirect_stdout(io.StringIO()):
+    import hangul_cli as CLI
+taught = [x for l in q.curriculum["lessons"] if l["id"] <= 9 for x in l.get("letters", [])]
+missing = [x for x in taught if x not in CLI.ALPHABET_MNEMONICS]
+check("every letter taught in lessons 1-9 has a mnemonic", not missing, missing)
+errors = []
+for lesson in q.curriculum["lessons"]:
+    info = q.start_lesson(lesson["id"])
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            import time as _t
+            _sleep, _t.sleep = _t.sleep, (lambda *_: None)
+            try:
+                CLI.print_lesson_intro_rich(info, q)
+                CLI.print_reference_table(q, info)
+            finally:
+                _t.sleep = _sleep
+    except Exception as e:
+        errors.append((lesson["id"], repr(e)))
+check("every lesson's intro and reference table render", not errors, errors)
+
+print("Question mix (found by scripts/_playtest_learners.py)")
+q = fresh()
+q.start_lesson(2)
+mix = Counter(q.next_question().mode for _ in range(2000))
+special = sum(mix[m] for m in ("confusion_drill", "word_contrast", "nonword_decode", "sequence_decode"))
+check("special modes get real airtime (were ~0%)", 0.12 <= special / 2000 <= 0.30, dict(mix))
+check("confusion drills appear without any recorded mistakes", mix["confusion_drill"] > 0, dict(mix))
+
+for lid in (10, 11):
+    q.start_lesson(lid)
+    asked = Counter()
+    inner = q._generate_question
+    q._generate_question = lambda m, inner=inner: (asked.update([m]), inner(m))[1]
+    for _ in range(500):
+        q.next_question()
+    q._generate_question = inner
+    check(f"lesson {lid}: no missing_vowel/decompose picked only to become spell",
+          asked["missing_vowel"] == 0 and asked["decompose_syllable"] == 0, dict(asked))
+
+q = fresh()
+q.start_lesson(1)
+for _ in range(3):
+    q.answer("오", E.QuizQuestion(mode="match_sound", prompt="", correct_answer="어",
+                                 choices=["어", "오", "아", "우"], letter="어"))
+check("lesson 1: a 어/오 mix-up counts as relevant to lesson 1", q._relevant_tracked_pair() is not None)
+pairs = Counter(frozenset((d.letter, d.other)) for d in (q._confusion_drill_question() for _ in range(100)))
+check("lesson 1: the drill targets the learner's own 어/오 mix-up",
+      pairs.most_common(1)[0][0] == frozenset(("어", "오")), pairs.most_common(3))
+
+q = fresh()
+q.start_lesson(1)
+q.answer("o", E.QuizQuestion(mode="read_aloud", prompt="", correct_answer="eo",
+                             accepted=["eo"], letter="어"))
+check("read-aloud: reading 어 as 'o' records a 어/오 mix-up",
+      "어↔오" in q._pairs_from_learner_items())
+q.answer("zzz", E.QuizQuestion(mode="read_aloud", prompt="", correct_answer="a",
+                               accepted=["a"], letter="아"))
+check("read-aloud: a typo is not recorded as a mix-up",
+      all("아" not in k for k in q._pairs_from_learner_items()))
+
+with contextlib.redirect_stdout(io.StringIO()):
+    import hangul_cli as CLI
+import re as _re
+_ansi = _re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+q = fresh()
+q.start_lesson(1)
+leaks = 0
+for _ in range(40):
+    d = q._confusion_drill_question()
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        CLI.print_question(d, q)
+    # Skip the A-D choice lines and the footer ("...if you want a hint"
+    # contains a standalone 'a', which isn't a leak).
+    screen = "\n".join(l for l in _ansi.sub("", buf.getvalue()).splitlines()
+                       if "/hint" not in l and "type the answer" not in l)
+    sound = q._hangul_to_roman_hint(d.correct_answer)
+    leaks += len(_re.findall(rf"(?<![a-z]){sound}(?![a-z])", screen)) > 1
+check("confusion drill doesn't print each block's sound next to it", leaks == 0, leaks)
+
+q.start_lesson(2)
+leaks = 0
+for _ in range(200):
+    wq = q._generate_question("word_contrast")
+    if wq.contrast_type != "lexical_vs_grammar_form" or wq.direction != "word_to_meaning":
+        continue
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        CLI.print_question(wq, q)
+    screen = _ansi.sub("", buf.getvalue()).lower()
+    screen = "\n".join(l for l in screen.splitlines() if not _re.match(r"\s+[a-d]\)", l))
+    leaks += any(_re.search(rf"\b{w}\b", screen) for w in _re.findall(r"[a-z]{3,}", wq.correct_answer.lower()))
+check("word contrast doesn't show a translation containing the answer", leaks == 0, leaks)
+
 print("Hangul Rain")
 q = fresh()
 for lid in (1, 10, 11, 12):

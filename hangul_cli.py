@@ -24,6 +24,7 @@ import re
 import argparse
 import json
 import subprocess
+import random
 import time
 from pathlib import Path
 from typing import Optional
@@ -421,15 +422,15 @@ ALPHABET_VOWELS       = ALPHABET_VOWELS_BASIC + ALPHABET_VOWELS_Y  # kept for an
 # model calls (and not risk failing if Ollama isn't running yet). These
 # are fixed but still genuinely fun/memorable on their own.
 ALPHABET_MNEMONICS = {
-    "ㄱ": "Looks like a golf club mid-swing! ⛳",
-    "ㄴ": "A knee, bent and ready to kneel. 🦵",
-    "ㄷ": "A door, propped open on its hinge. 🚪",
-    "ㄹ": "A wiggly river, bending back and forth. 🌊",
+    "ㄱ": "A golf club mid-swing — 'g' for golf! ⛳",
+    "ㄴ": "A bent knee — 'n' for knee. 🦵",
+    "ㄷ": "A door, propped open — 'd' for door. 🚪",
+    "ㄹ": "A wiggly river — 'r' for river. 🌊",
     "ㅁ": "A square mouth, lips pressed together, humming a low 'mmm'. 👄",
     "ㅂ": "A bucket with two handles sticking up — 'b' for bucket. 🪣",
-    "ㅅ": "A mountain summit. ⛰️",
+    "ㅅ": "A mountain summit — 's' for summit. ⛰️",
     "ㅇ": "A balloon — round and silent as it floats... until it lands with a boiNG! 🎈",
-    "ㅈ": "A person mid-jump, leg kicking out behind. 🤸",
+    "ㅈ": "A person mid-jump, leg kicking out — 'j' for jump. 🤸",
     "ㅊ": "ㅈ with a little hat — cheering 'ch!' Extra stroke = extra puff of air. 🎉",
     "ㅋ": "ㄱ with an extra line — a 'k' that kicks out a puff of air. 🔑",
     "ㅌ": "ㄷ with a lid on top — a 't' with a puff of air, like 'top'. 📦",
@@ -445,6 +446,24 @@ ALPHABET_MNEMONICS = {
     "ㅠ": "An umbrella with two spokes — extra rainy. 🌧️",
     "ㅡ": "A flat horizon line — no rounding, just a flat mouth. 〰️",
     "ㅣ": "A person standing tall and thin, saying 'ee'. 🧍",
+    # Beyond the basic 24 — built from letters you already know, so each
+    # mnemonic points back to its parts.
+    "ㅐ": "Looks like a ladder — climb it saying 'eh!' 🪜",
+    "ㅔ": "Same sound as ㅐ — even Koreans mix these two up! 🤷",
+    "ㅒ": "ㅐ with a second rung — add a 'y': 'yeah!' 👍",
+    "ㅖ": "ㅔ with a second rung — 'ye', as in 'yes!' ✅",
+    "ㅘ": "Say 오 and 아 fast and you get 와. 🚀",
+    "ㅙ": "One of the three 'we' twins (ㅙ ㅚ ㅞ) — same sound, different spelling. 👯",
+    "ㅚ": "One of the three 'we' twins (ㅙ ㅚ ㅞ) — same sound, different spelling. 👯",
+    "ㅝ": "Say 우 and 어 fast and you get 워. 🚀",
+    "ㅞ": "One of the three 'we' twins (ㅙ ㅚ ㅞ) — same sound, different spelling. 👯",
+    "ㅟ": "Say 우 and 이 fast and you get 위. 🚀",
+    "ㅢ": "A flat 'eu' sliding into 'ee' — a grimace turning into a smile. 😬😁",
+    "ㄲ": "Two ㄱs — a tight, sharp 'kk' with no puff of air, like the k in 'sky'. ✌️",
+    "ㄸ": "Two ㄷs — a tight 'tt', like the t in 'stop'. 🛑",
+    "ㅃ": "Two ㅂs — a tight 'pp', like the p in 'spin'. 🌀",
+    "ㅆ": "Two ㅅs — a sharp, hissing 'ss'. 🐍",
+    "ㅉ": "Two ㅈs — a tight 'jj' with no puff of air. ⚡",
 }
 
 # Letters whose pronunciation genuinely depends on WHERE they sit in a
@@ -997,21 +1016,23 @@ def print_lesson_intro_rich(lesson: dict, quiz):
     Falls back to print_lesson_intro for lessons without it."""
     print()
     print(styled(f"── Lesson {lesson['id']}: {lesson['title']} ──", BOLD, CYAN))
-    print(f"   {styled(lesson.get('description', ''), DIM)}")
+    print(f"   {lesson.get('description', '')}")
     time.sleep(0.5)
 
-    introduction = lesson.get("introduction", "")
-    if introduction:
-        print(introduction)
-        time.sleep(0.6)
+    # The hook: real words this lesson will let you read. Shown up front so
+    # every lesson promises something more than "learn some letters".
+    teaser = _word_teaser(lesson, n=3)
+    if teaser:
+        print(f"\n{styled('🎯 By the end you can read:', BOLD, GREEN)} {teaser}")
+        time.sleep(0.4)
 
     letters = lesson.get("letters") or []
-    # Every lesson's note is real teaching content (e.g. Lesson 11's
-    # "곧 and 곳 both sound like 'got'") — it used to be shown only for
-    # lessons that introduce new letters.
-    note = lesson.get("note", "")
-    if note:
-        print(f"\n{styled('📝 Note:', YELLOW)} {note}")
+    # One key idea per lesson, in plain words (introduction for the
+    # block-building lesson, note for the rest).
+    for idea in (lesson.get("introduction", ""), lesson.get("note", "")):
+        if idea:
+            print(f"\n{styled('💡', YELLOW)} {idea}")
+            time.sleep(0.4)
 
     # Block-building rules are shown only for lessons that are ABOUT blocks
     # (no new letters). Lesson 1 also carries block_rules, but its examples
@@ -1046,7 +1067,7 @@ def print_lesson_intro_rich(lesson: dict, quiz):
 
     confusion_pairs = lesson.get("confusion_pairs") or []
     if confusion_pairs:
-        print(styled("\nWatch for these look-alikes:", YELLOW))
+        print(styled("\n👀 Look-alikes to watch for:", YELLOW))
         # A group can hold more than two letters (ㅚ ㅟ ㅙ ㅞ); the old
         # `for a, b in ...` unpacking crashed on those.
         rendered = " · ".join(
@@ -1060,9 +1081,23 @@ def print_lesson_intro_rich(lesson: dict, quiz):
     # always runs right after this, shows the same table.)
 
     print()
-    print(styled("Let's practice →", GREEN))
+    print(styled("Let's go →", GREEN))
     time.sleep(0.3)
     print()
+
+
+def _lesson_words_for(lesson: dict) -> list:
+    """(word, meaning) pairs for a lesson: its real 'words', or for the
+    vocabulary lesson its vocabulary."""
+    words = [(w["word"], w.get("meaning", "")) for w in lesson.get("words") or []]
+    if not words:
+        words = [(v["word"], v.get("meaning", "")) for v in lesson.get("vocabulary") or []]
+    return words
+
+
+def _word_teaser(lesson: dict, n: int = 3) -> str:
+    """'나무 tree · 나라 country · 우리 we, us' — the first n words."""
+    return " · ".join(f"{styled(w, BOLD)} {m}" for w, m in _lesson_words_for(lesson)[:n])
 
 def print_reference_table(quiz: HangulQuiz, lesson: dict):
     """Print a full reference table for the lesson's letters/content before
@@ -1131,11 +1166,20 @@ def print_reference_table(quiz: HangulQuiz, lesson: dict):
             pron = pronunciation.get(letter, "")
             code = letter_romanization.get(letter, "")
             code_str = f" ({code})" if code else ""
-            line = f"   {styled(letter, BOLD)}{code_str}  —  {pron}"
-            print(line)
+            # How a compound vowel is built (ㅐ = ㅏ + ㅣ) — curriculum data
+            # that existed but was never shown.
+            built = (lesson.get("formation") or {})
+            built = built.get(letter, "") if isinstance(built, dict) else ""
+            built_str = f"  {styled('[' + built + ']', DIM)}" if built else ""
+            print(f"   {styled(letter, BOLD)}{code_str}  —  {pron}{built_str}")
             quirk = POSITIONAL_QUIRKS.get(letter, "")
             if quirk:
                 print(f"        {styled('⚡ ' + quirk, BOLD, YELLOW)}")
+            # Every letter's memory trick, not just the first letter's
+            # (the other 23 used to be hidden behind /mnemonic).
+            trick = ALPHABET_MNEMONICS.get(letter, "")
+            if trick:
+                print(f"        {styled(trick, GREEN)}")
 
         # Contrastive row(s) — only for lessons that actually introduce a
         # consonant with something to combine against (practice_syllables
@@ -1192,8 +1236,13 @@ def print_reference_table(quiz: HangulQuiz, lesson: dict):
                 print()
     elif batchim_pron:
         print(f"\n{styled('📋 Batchim Reference Table', BOLD, CYAN)}")
+        examples = {}
+        for w, meaning in _lesson_words_for(lesson):
+            jong = quiz._decompose_syllable(w[-1])[2] if w else ""
+            examples.setdefault(jong, f"{w} ({meaning})")
         for letter, pron in batchim_pron.items():
-            print(f"   {styled(letter, BOLD)}  —  {pron}")
+            eg = f"   {styled('e.g. ' + examples[letter], DIM)}" if letter in examples else ""
+            print(f"   {styled(letter, BOLD)}  —  {pron}{eg}")
     elif batchim_rules:
         print(f"\n{styled('📋 Batchim Merger Reference', BOLD, CYAN)}")
         for group, rule in batchim_rules.items():
@@ -1447,6 +1496,12 @@ def run_beginner_intro(quiz: HangulQuiz, lesson: dict):
     print(f"\n{styled('🐣 Walkthrough complete!', GREEN)} Type /table for a quick-reference recap anytime, or just answer the next question to start quizzing.")
 
 
+# How many questions show the "(type the answer or pick A–D · /hint ...)"
+# reminder at the start of a session.
+HELP_FOOTER_QUESTIONS = 4
+_questions_shown = 0
+
+
 def _print_prompt(text: str):
     """Print an engine prompt with **bold** rendered and EVERY line indented
     (multi-line prompts used to indent only their first line)."""
@@ -1487,9 +1542,18 @@ def print_question(q: QuizQuestion, quiz: HangulQuiz = None):
         "build_syllable": "🧩", "missing_vowel": "🔍",
         "decompose_syllable": "🔬",
         "batchim_challenge": "📦", "confusion_drill": "⚡",
-        "word_contrast": "📖", "sudden_death": "💀", "nonword_decode": "🔣"
+        "word_contrast": "📖", "sudden_death": "💀", "nonword_decode": "🔣",
+        "sequence_decode": "🔣", "read_word": "📚", "real_word": "🌟",
     }
-    mode_labels = {"read_aloud": "Sound It Out", "nonword_decode": "Decode"}
+    # Friendly names a casual learner can make sense of at a glance.
+    mode_labels = {
+        "spell": "Spell It", "read_aloud": "Sound It Out", "match_sound": "Find the Sound",
+        "build_syllable": "Build the Block", "missing_vowel": "Missing Vowel",
+        "decompose_syllable": "Take It Apart", "batchim_challenge": "Bottom Consonant",
+        "confusion_drill": "Look-alikes", "word_contrast": "Which Word?",
+        "nonword_decode": "Made-up Word", "sequence_decode": "Made-up Word",
+        "read_word": "Read a Word", "real_word": "Real Word!",
+    }
     icon = mode_icons.get(q.mode, "❓")
     label = mode_labels.get(q.mode, q.mode.replace('_', ' ').title())
     print(f"\n{icon} {styled(label, CYAN)}")
@@ -1549,19 +1613,14 @@ def print_question(q: QuizQuestion, quiz: HangulQuiz = None):
                 # the task is "which of these two is {roman}", not "guess
                 # the hidden piece", so showing both doesn't hand over the
                 # answer — the learner still has to match sound to shape.
+                # The blocks are shown WITHOUT their romanizations: printing
+                # 'a' under 아 and 'eo' under 어 right after asking "which
+                # one is a?" let the learner match labels instead of reading.
                 other_syl = quiz.syllable_breakdown(q.other)
-                pair_cells = [(syl.text, syl.romanization),
-                              (other_syl.text, other_syl.romanization)]
-                jamo_pieces, roman_line, indent = _composition_rows(
-                    pair_cells, connector="     ", final_connector="     "
-                )
-                print(f"   {styled('⚠️ Confusion drill', BOLD, YELLOW)} — "
-                      f"which one is {styled(syl.romanization, BOLD)}?")
-                sys.stdout.write(indent)
-                for piece in jamo_pieces:
-                    sys.stdout.write(piece)
-                print()
-                print(roman_line)
+                pair = [syl.text, other_syl.text]
+                random.shuffle(pair)   # don't always put the answer first
+                print(f"   These two get mixed up — which one is {styled(syl.romanization, BOLD)}?")
+                print("   " + "     ".join(styled(b, BOLD, CYAN) for b in pair))
                 rendered = True
             elif q.mode == "word_contrast" and q.contrast_type == "lexical_minimal_pair" and q.other:
                 # Rendering POLICY gated on contrast_type, not just mode —
@@ -1632,8 +1691,10 @@ def print_question(q: QuizQuestion, quiz: HangulQuiz = None):
                     # sentence here would be the same kind of unneeded
                     # noise flagged for the composed-block branch above;
                     # the choices list already carries both glosses.
+                    # The English translation is shown only AFTER answering
+                    # (see _show_contrast_examples): "Please give me water,
+                    # too." printed here contained the answer, 'too'.
                     print(f"   {target_line}")
-                    print(f"   {styled(q.example_en, CYAN)}")
                     print("   ...the highlighted word means?")
                 else:
                     # meaning_to_word: both example sentences, each with
@@ -1662,19 +1723,41 @@ def print_question(q: QuizQuestion, quiz: HangulQuiz = None):
     if not rendered:
         _print_prompt(q.prompt)
 
+    global _questions_shown
+    _questions_shown += 1
     if q.choices:
         labels = ['A', 'B', 'C', 'D']
-        for label, choice in zip(labels, q.choices):
-            print(f"     {styled(label + ')', CYAN)} {choice}")
-        # More modes now carry a choices list (not just the original MC
-        # ones), so it's worth spelling out that typing the real answer
-        # directly still works too — this isn't a forced multiple-choice.
-        print(f"   {styled('(type the answer directly, or answer with a letter)', CYAN)}")
-    # Hints used to print automatically here, which made the /hint command
-    # pointless — there was nothing left to reveal. Now we just point at
-    # /hint and let the learner ask for it if they want it.
-    if q.hint:
-        print(f"   {styled('💡 Type /hint if you want a hint.', YELLOW)}")
+        pairs = [(styled(label + ')', CYAN), choice) for label, choice in zip(labels, q.choices)]
+        one_line = "   ".join(f"{lab} {ch}" for lab, ch in pairs)
+        # Short choices go on one line — easier to scan, and it keeps the
+        # question on screen on a phone. Long ones stay one per line.
+        if sum(_vwidth(ch) + 6 for _, ch in pairs) <= 44:
+            print(f"     {one_line}")
+        else:
+            for lab, ch in pairs:
+                print(f"     {lab} {ch}")
+    # The how-to-answer reminders are for newcomers: shown for the first few
+    # questions of a session, then dropped so they stop crowding the screen
+    # (they used to print under every single question).
+    if _questions_shown <= HELP_FOOTER_QUESTIONS:
+        tips = []
+        if q.choices:
+            tips.append("type the answer or pick A–D")
+        if q.hint:
+            tips.append("/hint for a nudge")
+        if tips:
+            print(f"   {styled('(' + ' · '.join(tips) + ')', DIM)}")
+
+def _show_contrast_examples(q: QuizQuestion):
+    """After a word-contrast question, show its example sentences WITH
+    their translations — the payoff of the contrast, held back until now
+    because a translation shown with the question can contain the answer."""
+    if q.mode != "word_contrast":
+        return
+    for ko, en in ((q.example_ko, q.example_en), (q.other_example_ko, q.other_example_en)):
+        if ko and en:
+            print(f"   {styled(ko, BOLD)}  —  {styled(en, CYAN)}")
+
 
 def show_breakdown(quiz: HangulQuiz, q: QuizQuestion):
     """After a miss, show HOW the answer is built instead of only what it
@@ -1689,12 +1772,25 @@ def show_breakdown(quiz: HangulQuiz, q: QuizQuestion):
         blocks = [ch for ch in text if 0xAC00 <= ord(ch) <= 0xD7A3]
         if len(blocks) == 1 and len(text) == 1:
             syl = quiz.syllable_breakdown(text)
-            jamo_pieces, roman_line, indent = _composition_rows(syl.components)
             print(f"   {styled('How it works:', DIM)}")
-            print(indent + "".join(jamo_pieces))
-            print(roman_line)
+            if syl.is_bare_vowel:
+                # "ㅏ = 아 / a = a" explained nothing. Say what's going on.
+                print(f"   {styled('ㅇ', BOLD)} (silent) + {styled(syl.jung, BOLD, CYAN)}   =   "
+                      f"{styled(syl.text, BOLD, GREEN)}   — the ㅇ makes no sound, "
+                      f"so it's just '{syl.romanization}'")
+            else:
+                jamo_pieces, roman_line, indent = _composition_rows(syl.components)
+                print(indent + "".join(jamo_pieces))
+                print(roman_line)
             if syl.jong and q.mode == "batchim_challenge":
                 print(f"   {styled(f'At the bottom of a block, {syl.jong} sounds like {quiz._batchim_sound(syl.jong)!r}.', DIM)}")
+            # Remind them of the memory trick for the letter they're
+            # learning right now — the moment it's most useful.
+            letters = (quiz.current_lesson or {}).get("letters", [])
+            for jamo in (syl.cho, syl.jung):
+                if jamo in letters and jamo in ALPHABET_MNEMONICS:
+                    print(f"   {styled('💡 ' + jamo + ': ' + ALPHABET_MNEMONICS[jamo], GREEN)}")
+                    break
         elif len(blocks) > 1:
             parts = [f"{b} = {quiz.syllable_breakdown(b).romanization}" for b in blocks]
             print(f"   {styled('Block by block:', DIM)} " + "  ·  ".join(parts))
@@ -1713,11 +1809,12 @@ MODE_ALIASES = {
     "contrast": "word_contrast", "word_contrast": "word_contrast",
     "decompose": "decompose_syllable", "decompose_syllable": "decompose_syllable",
     "word": "read_word", "read_word": "read_word",
+    "words": "real_word", "real_word": "real_word",
     "decode": "nonword_decode", "nonword_decode": "nonword_decode",
     "sequence": "sequence_decode", "sequence_decode": "sequence_decode",
     "auto": None, "random": None,
 }
-MODE_USAGE = "spell, read, match, build, decompose, vowel, batchim, confusion, contrast, word, decode, sequence, or auto"
+MODE_USAGE = "spell, read, match, build, decompose, vowel, batchim, confusion, contrast, words, word, decode, sequence, or auto"
 
 KNOWN_ACTIONS = {
     'q', 'quit', 'exit', 'help', 'roman', 'romanize', 'romanization',
@@ -1784,6 +1881,19 @@ def _offer_advance(quiz: HangulQuiz, lesson_id: int):
     m = quiz.lesson_mastery(lesson_id)
     print(f"\n{styled('🎉 Lesson mastered!', BOLD, GREEN)} "
           f"You've got {m['mastered_count']} of {m['pool_size']} solid.")
+    # Celebrate with what they can now actually READ, not just a count.
+    try:
+        words = _lesson_words_for(quiz._get_lesson(lesson_id))
+    except ValueError:
+        words = []
+    if words:
+        print(f"   {styled('📖 Words you can read now:', BOLD)}")
+        shown = words[:8]
+        for i in range(0, len(shown), 2):
+            row = "   ".join(f"{styled(w, BOLD, CYAN)} {mean}" for w, mean in shown[i:i + 2])
+            print(f"      {row}")
+        if len(words) > len(shown):
+            print(f"      {styled(f'...and {len(words) - len(shown)} more.', DIM)}")
 
     if lesson_id >= total:
         # Final lesson — mark it done and celebrate the whole curriculum.
@@ -2032,17 +2142,8 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
     print_lesson_intro_rich(lesson, quiz)
     print_reference_table(quiz, lesson)
 
-    # Show a mnemonic for the first letter as a warm welcome. Offline this
-    # is instant (hardcoded table); only with --use-llm, and only for a
-    # letter without a stock mnemonic, does it make a blocking model call —
-    # in which case say so, since that can take a moment on a cold start.
-    if lesson.get("letters"):
-        first_letter = lesson["letters"][0]
-        if USE_LLM and first_letter not in ALPHABET_MNEMONICS:
-            print(f"\n{styled('🧠 Generating a mnemonic...', YELLOW)} (first response from a model can take a moment)")
-        mnemonic = mnemonic_for(first_letter)
-        print(f"\n{styled('🧠 Mnemonic for', YELLOW)} {styled(first_letter, BOLD)}:")
-        print(f"   {mnemonic}")
+    # (Each letter's mnemonic is now part of the reference table above, so
+    # the old one-letter "welcome mnemonic" here is gone.)
 
     sudden_death = args.sudden_death
     lives = SUDDEN_DEATH_LIVES
@@ -2248,7 +2349,10 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
 
             elif action == 'skip':
                 print(f"   Answer was: {styled(current_question.correct_answer, GREEN)}")
+                if current_question.meaning:
+                    print(f"   {styled(current_question.letter, BOLD)} means \"{current_question.meaning}\".")
                 show_breakdown(quiz, current_question)
+                _show_contrast_examples(current_question)
                 # Skipping ends the streak — otherwise a streak could be
                 # kept alive by skipping every hard question.
                 if quiz.session_streak:
@@ -2275,6 +2379,7 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
         print(f"   {md(result.feedback)}")
         if not result.correct:
             show_breakdown(quiz, current_question)
+        _show_contrast_examples(current_question)
 
         if sudden_death:
             run_answered += 1

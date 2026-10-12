@@ -145,5 +145,233 @@
       "scope": "Meaning and grammatical behavior supplied as new curriculum content; not confirmed from the existing curriculum.json arrays.",
       "notes": "더 (more) verified as a basic adverb usable standalone before a verb (e.g. 더 주세요). 도 (also/too) verified as a case-marking-position particle that attaches directly to a noun with no space and cannot occur as a free-standing word — this is why the pair is classified lexical_vs_grammar_form rather than lexical_minimal_pair, and why both items are marked requires_host: true. Decodable from lesson 2 onward (ㄷ+ㅓ and ㄷ+ㅗ), earlier than either existing seed pair."
     }
+  },
+  {
+    "id": "wc-vowel-u-o-001",
+    "confusion": {
+      "type": "vowel",
+      "left_jamo": "ㅜ",
+      "right_jamo": "ㅗ",
+      "display_label": "ㅜ / ㅗ"
+    },
+    "contrast_type": "lexical_minimal_pair",
+    "stage": 3,
+    "items": [
+      {
+        "form": "우리",
+        "romanization": "uri",
+        "meaning_en": "we",
+        "part_of_speech": "pronoun",
+        "requires_host": false,
+        "example_ko": "우리는 친구예요.",
+        "example_en": "We are friends."
+      },
+      {
+        "form": "오리",
+        "romanization": "ori",
+        "meaning_en": "duck",
+        "part_of_speech": "noun",
+        "requires_host": false,
+        "example_ko": "오리가 물에 있어요.",
+        "example_en": "There's a duck in the water."
+      }
+    ],
+    "teaching_note": {
+      "en": "우리 (we) and 오리 (duck) differ only in the first vowel: ㅜ vs ㅗ."
+    },
+    "verification": {
+      "status": "author_reviewed",
+      "notes": "Common beginner-level nouns; example sentences are simple present-tense 요-form."
+    }
+  },
+  {
+    "id": "wc-vowel-o-eo-001",
+    "confusion": {
+      "type": "vowel",
+      "left_jamo": "ㅗ",
+      "right_jamo": "ㅓ",
+      "display_label": "ㅗ / ㅓ"
+    },
+    "contrast_type": "lexical_minimal_pair",
+    "stage": 3,
+    "items": [
+      {
+        "form": "고기",
+        "romanization": "gogi",
+        "meaning_en": "meat",
+        "part_of_speech": "noun",
+        "requires_host": false,
+        "example_ko": "고기를 먹어요.",
+        "example_en": "I eat meat."
+      },
+      {
+        "form": "거기",
+        "romanization": "geogi",
+        "meaning_en": "there",
+        "part_of_speech": "pronoun",
+        "requires_host": false,
+        "example_ko": "거기 있어요.",
+        "example_en": "It's over there."
+      }
+    ],
+    "teaching_note": {
+      "en": "고기 (meat) and 거기 (there) differ only in the first vowel: ㅗ vs ㅓ."
+    },
+    "verification": {
+      "status": "author_reviewed",
+      "notes": "Common beginner-level nouns; example sentences are simple present-tense 요-form."
+    }
+  },
+  {
+    "id": "wc-cons-b-p-001",
+    "confusion": {
+      "type": "consonant",
+      "left_jamo": "ㅂ",
+      "right_jamo": "ㅍ",
+      "display_label": "ㅂ / ㅍ"
+    },
+    "contrast_type": "lexical_minimal_pair",
+    "stage": 3,
+    "items": [
+      {
+        "form": "비",
+        "romanization": "bi",
+        "meaning_en": "rain",
+        "part_of_speech": "noun",
+        "requires_host": false,
+        "example_ko": "비가 와요.",
+        "example_en": "It's raining."
+      },
+      {
+        "form": "피",
+        "romanization": "pi",
+        "meaning_en": "blood",
+        "part_of_speech": "noun",
+        "requires_host": false,
+        "example_ko": "피가 나요.",
+        "example_en": "I'm bleeding."
+      }
+    ],
+    "teaching_note": {
+      "en": "비 (rain) and 피 (blood): ㅍ is ㅂ with a puff of air."
+    },
+    "verification": {
+      "status": "author_reviewed",
+      "notes": "Common beginner-level nouns; example sentences are simple present-tense 요-form."
+    }
+  },
+  {
+    "id": "wc-cons-j-ch-001",
+    "confusion": {
+      "type": "consonant",
+      "left_jamo": "ㅈ",
+      "right_jamo": "ㅊ",
+      "display_label": "ㅈ / ㅊ"
+    },
+    "contrast_type": "lexical_minimal_pair",
+    "stage": 3,
+    "items": [
+      {
+        "form": "기자",
+        "romanization": "gija",
+        "meaning_en": "reporter",
+        "part_of_speech": "noun",
+        "requires_host": false,
+        "example_ko": "기자가 왔어요.",
+        "example_en": "A reporter came."
+      },
+      {
+        "form": "기차",
+        "romanization": "gicha",
+        "meaning_en": "train",
+        "part_of_speech": "noun",
+        "requires_host": false,
+        "example_ko": "기차를 타요.",
+        "example_en": "I take the train."
+      }
+    ],
+    "teaching_note": {
+      "en": "기자 (reporter) and 기차 (train): ㅊ is ㅈ with a puff of air."
+    },
+    "verification": {
+      "status": "author_reviewed",
+      "notes": "Common beginner-level nouns; example sentences are simple present-tense 요-form."
+    }
+  },
+  {
+    "id": "wc-cons-d-tt-001",
+    "confusion": {
+      "type": "consonant",
+      "left_jamo": "ㄷ",
+      "right_jamo": "ㄸ",
+      "display_label": "ㄷ / ㄸ"
+    },
+    "contrast_type": "lexical_minimal_pair",
+    "stage": 3,
+    "items": [
+      {
+        "form": "달",
+        "romanization": "dal",
+        "meaning_en": "moon",
+        "part_of_speech": "noun",
+        "requires_host": false,
+        "example_ko": "달이 밝아요.",
+        "example_en": "The moon is bright."
+      },
+      {
+        "form": "딸",
+        "romanization": "ttal",
+        "meaning_en": "daughter",
+        "part_of_speech": "noun",
+        "requires_host": false,
+        "example_ko": "딸이 있어요.",
+        "example_en": "I have a daughter."
+      }
+    ],
+    "teaching_note": {
+      "en": "달 (moon) and 딸 (daughter): ㄸ is the tight, doubled version of ㄷ."
+    },
+    "verification": {
+      "status": "author_reviewed",
+      "notes": "Common beginner-level nouns; example sentences are simple present-tense 요-form."
+    }
+  },
+  {
+    "id": "wc-cons-b-pp-001",
+    "confusion": {
+      "type": "consonant",
+      "left_jamo": "ㅂ",
+      "right_jamo": "ㅃ",
+      "display_label": "ㅂ / ㅃ"
+    },
+    "contrast_type": "lexical_minimal_pair",
+    "stage": 3,
+    "items": [
+      {
+        "form": "방",
+        "romanization": "bang",
+        "meaning_en": "room",
+        "part_of_speech": "noun",
+        "requires_host": false,
+        "example_ko": "방이 커요.",
+        "example_en": "The room is big."
+      },
+      {
+        "form": "빵",
+        "romanization": "ppang",
+        "meaning_en": "bread",
+        "part_of_speech": "noun",
+        "requires_host": false,
+        "example_ko": "빵을 먹어요.",
+        "example_en": "I eat bread."
+      }
+    ],
+    "teaching_note": {
+      "en": "방 (room) and 빵 (bread): ㅃ is the tight, doubled version of ㅂ."
+    },
+    "verification": {
+      "status": "author_reviewed",
+      "notes": "Common beginner-level nouns; example sentences are simple present-tense 요-form."
+    }
   }
 ]
