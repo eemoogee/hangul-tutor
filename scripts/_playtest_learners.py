@@ -87,7 +87,7 @@ ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 # Modes whose prompt is a SOUND and whose answer is a Hangul block.
 SOUND_TO_HANGUL = {"spell", "match_sound", "build_syllable", "confusion_drill"}
 # Modes whose answer is typed in English letters.
-ROMAN_ANSWER = {"read_aloud", "read_word", "nonword_decode", "sequence_decode"}
+ROMAN_ANSWER = {"read_aloud", "read_word", "real_word", "nonword_decode", "sequence_decode"}
 
 
 # ── Learner profiles ───────────────────────────────────────────────────────

@@ -173,6 +173,61 @@ check("/talk with <3 mastered syllables returns None (no fake translation)",
 res = C.check_conversation_answer("it is a dog", {"mode": "read_translate", "english": "it is a cat"}, q)
 check("translation check ignores filler-word overlap", not res["correct"])
 
+print("Lesson content (2026-10 content pass)")
+q = fresh()
+bad, thin = [], []
+for lesson in q.curriculum["lessons"]:
+    for w in lesson.get("words", []):
+        r = q.readable_from(w["word"])
+        if r is None or r > lesson["id"]:
+            bad.append((lesson["id"], w["word"], r))
+    if lesson["id"] <= 11 and len(lesson.get("words", [])) < 4:
+        thin.append(lesson["id"])
+check("every lesson word uses only letters taught by its lesson", not bad, bad[:5])
+check("lessons 1-11 each have at least 4 real words", not thin, thin)
+
+q.start_lesson(3)
+check("손/선 (final consonants) not offered before batchim is taught",
+      all(e["items"][0]["form"] != "손" for e in q._available_word_contrasts()))
+q.start_lesson(10)
+check("손/선 offered once batchim is taught",
+      any(e["items"][0]["form"] == "손" for e in q._available_word_contrasts()))
+
+q.start_lesson(4)
+rw = q._real_word_question(q.current_lesson)
+res = q.answer(rw.correct_answer, rw)
+check("real word: reading it right is graded right", res.correct, rw)
+check("real word: the meaning is revealed", rw.meaning and rw.meaning in res.feedback, res.feedback)
+q.start_lesson(10)
+kimchi = E.QuizQuestion(mode="real_word", prompt="", correct_answer="gimchi",
+                        accepted=sorted(q.roman_variants("김치") | {"kimchi"}), letter="김치")
+check("real word: 'kimchi' accepted for 김치", q.answer("kimchi", kimchi).correct)
+
+lesson_words = {w["word"] for l in q.curriculum["lessons"] for w in l.get("words", [])}
+check("lesson words count as real words (never served as 'not a real word')",
+      lesson_words <= q.known_lexical_items, sorted(lesson_words - q.known_lexical_items)[:5])
+
+with contextlib.redirect_stdout(io.StringIO()):
+    import hangul_cli as CLI
+taught = [x for l in q.curriculum["lessons"] if l["id"] <= 9 for x in l.get("letters", [])]
+missing = [x for x in taught if x not in CLI.ALPHABET_MNEMONICS]
+check("every letter taught in lessons 1-9 has a mnemonic", not missing, missing)
+errors = []
+for lesson in q.curriculum["lessons"]:
+    info = q.start_lesson(lesson["id"])
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            import time as _t
+            _sleep, _t.sleep = _t.sleep, (lambda *_: None)
+            try:
+                CLI.print_lesson_intro_rich(info, q)
+                CLI.print_reference_table(q, info)
+            finally:
+                _t.sleep = _sleep
+    except Exception as e:
+        errors.append((lesson["id"], repr(e)))
+check("every lesson's intro and reference table render", not errors, errors)
+
 print("Question mix (found by scripts/_playtest_learners.py)")
 q = fresh()
 q.start_lesson(2)
