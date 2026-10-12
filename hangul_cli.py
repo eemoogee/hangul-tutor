@@ -24,6 +24,7 @@ import re
 import argparse
 import json
 import subprocess
+import random
 import time
 from pathlib import Path
 from typing import Optional
@@ -1487,9 +1488,11 @@ def print_question(q: QuizQuestion, quiz: HangulQuiz = None):
         "build_syllable": "🧩", "missing_vowel": "🔍",
         "decompose_syllable": "🔬",
         "batchim_challenge": "📦", "confusion_drill": "⚡",
-        "word_contrast": "📖", "sudden_death": "💀", "nonword_decode": "🔣"
+        "word_contrast": "📖", "sudden_death": "💀", "nonword_decode": "🔣",
+        "sequence_decode": "🔣", "read_word": "📚",
     }
-    mode_labels = {"read_aloud": "Sound It Out", "nonword_decode": "Decode"}
+    mode_labels = {"read_aloud": "Sound It Out", "nonword_decode": "Decode",
+                   "sequence_decode": "Decode (3 blocks)"}
     icon = mode_icons.get(q.mode, "❓")
     label = mode_labels.get(q.mode, q.mode.replace('_', ' ').title())
     print(f"\n{icon} {styled(label, CYAN)}")
@@ -1549,19 +1552,15 @@ def print_question(q: QuizQuestion, quiz: HangulQuiz = None):
                 # the task is "which of these two is {roman}", not "guess
                 # the hidden piece", so showing both doesn't hand over the
                 # answer — the learner still has to match sound to shape.
+                # The blocks are shown WITHOUT their romanizations: printing
+                # 'a' under 아 and 'eo' under 어 right after asking "which
+                # one is a?" let the learner match labels instead of reading.
                 other_syl = quiz.syllable_breakdown(q.other)
-                pair_cells = [(syl.text, syl.romanization),
-                              (other_syl.text, other_syl.romanization)]
-                jamo_pieces, roman_line, indent = _composition_rows(
-                    pair_cells, connector="     ", final_connector="     "
-                )
+                pair = [syl.text, other_syl.text]
+                random.shuffle(pair)   # don't always put the answer first
                 print(f"   {styled('⚠️ Confusion drill', BOLD, YELLOW)} — "
                       f"which one is {styled(syl.romanization, BOLD)}?")
-                sys.stdout.write(indent)
-                for piece in jamo_pieces:
-                    sys.stdout.write(piece)
-                print()
-                print(roman_line)
+                print("   " + "     ".join(styled(b, BOLD, CYAN) for b in pair))
                 rendered = True
             elif q.mode == "word_contrast" and q.contrast_type == "lexical_minimal_pair" and q.other:
                 # Rendering POLICY gated on contrast_type, not just mode —
@@ -1632,8 +1631,10 @@ def print_question(q: QuizQuestion, quiz: HangulQuiz = None):
                     # sentence here would be the same kind of unneeded
                     # noise flagged for the composed-block branch above;
                     # the choices list already carries both glosses.
+                    # The English translation is shown only AFTER answering
+                    # (see _show_contrast_examples): "Please give me water,
+                    # too." printed here contained the answer, 'too'.
                     print(f"   {target_line}")
-                    print(f"   {styled(q.example_en, CYAN)}")
                     print("   ...the highlighted word means?")
                 else:
                     # meaning_to_word: both example sentences, each with
@@ -1675,6 +1676,17 @@ def print_question(q: QuizQuestion, quiz: HangulQuiz = None):
     # /hint and let the learner ask for it if they want it.
     if q.hint:
         print(f"   {styled('💡 Type /hint if you want a hint.', YELLOW)}")
+
+def _show_contrast_examples(q: QuizQuestion):
+    """After a word-contrast question, show its example sentences WITH
+    their translations — the payoff of the contrast, held back until now
+    because a translation shown with the question can contain the answer."""
+    if q.mode != "word_contrast":
+        return
+    for ko, en in ((q.example_ko, q.example_en), (q.other_example_ko, q.other_example_en)):
+        if ko and en:
+            print(f"   {styled(ko, BOLD)}  —  {styled(en, CYAN)}")
+
 
 def show_breakdown(quiz: HangulQuiz, q: QuizQuestion):
     """After a miss, show HOW the answer is built instead of only what it
@@ -2275,6 +2287,7 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
         print(f"   {md(result.feedback)}")
         if not result.correct:
             show_breakdown(quiz, current_question)
+        _show_contrast_examples(current_question)
 
         if sudden_death:
             run_answered += 1

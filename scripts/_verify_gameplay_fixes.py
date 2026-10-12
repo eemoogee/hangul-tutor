@@ -173,6 +173,80 @@ check("/talk with <3 mastered syllables returns None (no fake translation)",
 res = C.check_conversation_answer("it is a dog", {"mode": "read_translate", "english": "it is a cat"}, q)
 check("translation check ignores filler-word overlap", not res["correct"])
 
+print("Question mix (found by scripts/_playtest_learners.py)")
+q = fresh()
+q.start_lesson(2)
+mix = Counter(q.next_question().mode for _ in range(2000))
+special = sum(mix[m] for m in ("confusion_drill", "word_contrast", "nonword_decode", "sequence_decode"))
+check("special modes get real airtime (were ~0%)", 0.12 <= special / 2000 <= 0.30, dict(mix))
+check("confusion drills appear without any recorded mistakes", mix["confusion_drill"] > 0, dict(mix))
+
+for lid in (10, 11):
+    q.start_lesson(lid)
+    asked = Counter()
+    inner = q._generate_question
+    q._generate_question = lambda m, inner=inner: (asked.update([m]), inner(m))[1]
+    for _ in range(500):
+        q.next_question()
+    q._generate_question = inner
+    check(f"lesson {lid}: no missing_vowel/decompose picked only to become spell",
+          asked["missing_vowel"] == 0 and asked["decompose_syllable"] == 0, dict(asked))
+
+q = fresh()
+q.start_lesson(1)
+for _ in range(3):
+    q.answer("오", E.QuizQuestion(mode="match_sound", prompt="", correct_answer="어",
+                                 choices=["어", "오", "아", "우"], letter="어"))
+check("lesson 1: a 어/오 mix-up counts as relevant to lesson 1", q._relevant_tracked_pair() is not None)
+pairs = Counter(frozenset((d.letter, d.other)) for d in (q._confusion_drill_question() for _ in range(100)))
+check("lesson 1: the drill targets the learner's own 어/오 mix-up",
+      pairs.most_common(1)[0][0] == frozenset(("어", "오")), pairs.most_common(3))
+
+q = fresh()
+q.start_lesson(1)
+q.answer("o", E.QuizQuestion(mode="read_aloud", prompt="", correct_answer="eo",
+                             accepted=["eo"], letter="어"))
+check("read-aloud: reading 어 as 'o' records a 어/오 mix-up",
+      "어↔오" in q._pairs_from_learner_items())
+q.answer("zzz", E.QuizQuestion(mode="read_aloud", prompt="", correct_answer="a",
+                               accepted=["a"], letter="아"))
+check("read-aloud: a typo is not recorded as a mix-up",
+      all("아" not in k for k in q._pairs_from_learner_items()))
+
+with contextlib.redirect_stdout(io.StringIO()):
+    import hangul_cli as CLI
+import re as _re
+_ansi = _re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+q = fresh()
+q.start_lesson(1)
+leaks = 0
+for _ in range(40):
+    d = q._confusion_drill_question()
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        CLI.print_question(d, q)
+    # Skip the A-D choice lines and the footer ("...if you want a hint"
+    # contains a standalone 'a', which isn't a leak).
+    screen = "\n".join(l for l in _ansi.sub("", buf.getvalue()).splitlines()
+                       if "/hint" not in l and "type the answer" not in l)
+    sound = q._hangul_to_roman_hint(d.correct_answer)
+    leaks += len(_re.findall(rf"(?<![a-z]){sound}(?![a-z])", screen)) > 1
+check("confusion drill doesn't print each block's sound next to it", leaks == 0, leaks)
+
+q.start_lesson(2)
+leaks = 0
+for _ in range(200):
+    wq = q._generate_question("word_contrast")
+    if wq.contrast_type != "lexical_vs_grammar_form" or wq.direction != "word_to_meaning":
+        continue
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        CLI.print_question(wq, q)
+    screen = _ansi.sub("", buf.getvalue()).lower()
+    screen = "\n".join(l for l in screen.splitlines() if not _re.match(r"\s+[a-d]\)", l))
+    leaks += any(_re.search(rf"\b{w}\b", screen) for w in _re.findall(r"[a-z]{3,}", wq.correct_answer.lower()))
+check("word contrast doesn't show a translation containing the answer", leaks == 0, leaks)
+
 print("Hangul Rain")
 q = fresh()
 for lid in (1, 10, 11, 12):
