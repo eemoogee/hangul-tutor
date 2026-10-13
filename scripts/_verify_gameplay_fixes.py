@@ -228,6 +228,38 @@ for lesson in q.curriculum["lessons"]:
         errors.append((lesson["id"], repr(e)))
 check("every lesson's intro and reference table render", not errors, errors)
 
+print("Phone-width screens (Termux is ~49 columns)")
+import os as _os
+import term_wrap as TW
+_os.environ["HANGUL_WRAP"] = "49"
+too_wide = []
+buf = io.StringIO()
+wrapped = TW.WrappingStdout(buf, width=49)
+with contextlib.redirect_stdout(wrapped):
+    import time as _t
+    _sleep, _t.sleep = _t.sleep, (lambda *_: None)
+    try:
+        CLI._print_syllable_block_intro()
+        for lesson in q.curriculum["lessons"]:
+            info = q.start_lesson(lesson["id"])
+            CLI.print_lesson_intro_rich(info, q)
+            CLI.print_reference_table(q, info)
+        CLI._print_help()
+        CLI.print_romanization_key(q)
+        CLI.print_cv_chart(q, y_vowels=True)
+    finally:
+        _t.sleep = _sleep
+for line in buf.getvalue().split("\n"):
+    if TW.display_width(line) > 49:
+        too_wide.append(TW._ANSI.sub("", line)[:60])
+_os.environ.pop("HANGUL_WRAP", None)
+check("intros, tables, help, key and charts all fit 49 columns", not too_wide, too_wide[:3])
+plain = TW._ANSI.sub("", buf.getvalue())
+# The words a phone used to split ("com / pact", "ea / ch") must survive whole.
+check("long lines break between words, not inside them",
+      all(w in plain for w in ("compact", "syllable", "reshape", "depending", "consonant")),
+      [w for w in ("compact", "syllable", "reshape", "depending", "consonant") if w not in plain])
+
 print("Question mix (found by scripts/_playtest_learners.py)")
 q = fresh()
 q.start_lesson(2)

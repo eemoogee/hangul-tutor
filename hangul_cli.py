@@ -41,6 +41,7 @@ from hangul_conversation import (
 from hangul_models import get_model, set_default_model, summarize_models
 from hangul_rain import launch_rain_mode
 from conveyor_game import run_conveyor, make_conveyor_state
+import term_wrap
 
 # Whether optional Ollama enrichments are enabled. OFF by default — the app
 # is fully functional offline. Set once from --use-llm in main(). Every
@@ -514,28 +515,53 @@ def _print_syllable_block_intro():
         bot = "└" + "─" * inner + "┘"
         return [top, line, bot]
 
+    examples = [
+        ("가", [("ㄱ", "g"), ("ㅏ", "a"), ("가", "ga")], "consonant left, vowel right"),
+        ("고", [("ㄱ", "g"), ("ㅗ", "o"), ("고", "go")], "consonant on top, vowel below"),
+    ]
+
     print()
     print(f"   {styled('In Korean, each syllable is written as one compact square — like this:', CYAN)}")
     print()
+    if _screen_width() >= 70:
+        # Wide screen: the two examples side by side.
+        boxes = [compact_box(block) for block, _, _ in examples]
+        for l, r in zip(*boxes):
+            print("   " + l + " " * 23 + r)
+        print()
+        rows = [_composition_rows(cells, indent="") for _, cells, _ in examples]
+        jamo = ["".join(r[0]) for r in rows]
+        roman = [r[1] for r in rows]
+        col = 32
+        print("   " + jamo[0] + " " * (col - _vwidth(roman[0])) + jamo[1])
+        print("   " + roman[0] + " " * (col - _vwidth(roman[0])) + roman[1])
+        print()
+        print("   " + examples[0][2].ljust(col) + examples[1][2])
+    else:
+        # Narrow screen (a phone): one example at a time, stacked.
+        for block, cells, label in examples:
+            for line in compact_box(block):
+                print("   " + line)
+            jamo_pieces, roman_line, indent = _composition_rows(cells)
+            print(indent + "".join(jamo_pieces))
+            print(roman_line)
+            print(f"   {styled(label, DIM)}")
+            print()
+    print()
+    print(f"   {styled('💡 Notice how ㄱ takes a different shape in each block — letters reshape to fit the square depending on where the vowel sits.', CYAN)}")
+    print()
+    print(f"   {styled('💡 Vowels never appear alone in Korean: ㅏ is written 아, ㅓ is written 어. The ㅇ in front is silent — it just holds the place until a real consonant arrives.', CYAN)}")
+    print()
 
-    left_box  = compact_box("가")
-    right_box = compact_box("고")
-    gap = "      "
-    for l, r in zip(left_box, right_box):
-        print("   " + l + gap + r)
 
-    print()
-    print("   " + styled(" ㄱ +  ㅏ  =  가", BOLD) + "     " + styled(" ㄱ +  ㅗ  =  고", BOLD))
-    print("    g  +  a   =  ga           g  +  o   =  go")
-    print()
-    print("   consonant left, vowel right     consonant on top, vowel below")
-    print()
-    print(f"   {styled('💡 Notice how ㄱ takes a different shape in each block — letters', CYAN)}")
-    print(f"   {styled('   reshape to fit the square depending on where the vowel sits.', CYAN)}")
-    print()
-    print("   " + styled("💡 Vowels don't appear alone in Korean. ㅏ is written 아, ㅓ is written 어 —", CYAN))
-    print(f"   {styled('   the ㅇ in front is silent, just filling in until a real consonant arrives.', CYAN)}")
-    print()
+def _screen_width() -> int:
+    """Columns available for layouts that can't wrap (side-by-side
+    examples). Honours HANGUL_WRAP for testing, like term_wrap does."""
+    forced = os.environ.get("HANGUL_WRAP", "").strip()
+    if forced.isdigit() and forced != "0":
+        return int(forced)
+    import shutil
+    return shutil.get_terminal_size((80, 24)).columns
 
 
 def run_alphabet_intro(quiz: HangulQuiz):
@@ -558,7 +584,7 @@ def run_alphabet_intro(quiz: HangulQuiz):
     print(f"\n{styled('🇰🇷✨ The Hangul Alphabet ✨🇰🇷', BOLD, GREEN)}")
     intro_line = f"{total} letters — 14 consonants, 10 vowels. Let's meet them all!"
     print(f"{styled(intro_line, CYAN)}")
-    print(f"{styled('Press Enter for the next letter, or type its romanization to try it. /skip to jump to lesson picking anytime.', CYAN)}")
+    print(f"{styled('Press Enter for the next letter, or type how it sounds (in English letters) to try it. /skip jumps to the lessons anytime.', CYAN)}")
 
     seen = 0
     for section_name, letters, icon in ordered:
@@ -574,7 +600,8 @@ def run_alphabet_intro(quiz: HangulQuiz):
             print(f"\n   {divider}")
             print(f"   {rule}")
             try:
-                input(f"\n   {styled('[↵  All 14 consonants done — now see what they can do]', CYAN)}")
+                print(f"\n   {styled('All 14 consonants done — now see what they can do!', CYAN)}")
+                input(f"   {styled('[↵ continue]', CYAN)} ")
             except (EOFError, KeyboardInterrupt):
                 return
             # Syllable block intro — bridge between C and V
@@ -606,7 +633,7 @@ def run_alphabet_intro(quiz: HangulQuiz):
             print(f"\n{styled(f'[{seen}/{total}]', BOLD)}\n")
             reveal_letter(letter)
             if roman:
-                print(f"      romanizes as: {styled(roman, BOLD)}")
+                print(f"      in English letters: {styled(roman, BOLD)}")
             if quirk:
                 print(f"      {styled('⚡ ' + quirk, BOLD, YELLOW)}")
             if pron:
@@ -615,7 +642,7 @@ def run_alphabet_intro(quiz: HangulQuiz):
                 print(f"      {styled('💡 ' + mnemonic, GREEN)}")
 
             try:
-                response = input(f"\n{styled('[Enter=next, or type romanization]', CYAN)} {styled('>', BOLD)} ").strip()
+                response = input(f"\n{styled('[Enter = next, or type its sound]', CYAN)} {styled('>', BOLD)} ").strip()
             except (EOFError, KeyboardInterrupt):
                 print(f"\n{styled('Alphabet walkthrough ended early — no worries, come back anytime with /alphabet.', YELLOW)}")
                 return
@@ -1171,7 +1198,14 @@ def print_reference_table(quiz: HangulQuiz, lesson: dict):
             built = (lesson.get("formation") or {})
             built = built.get(letter, "") if isinstance(built, dict) else ""
             built_str = f"  {styled('[' + built + ']', DIM)}" if built else ""
-            print(f"   {styled(letter, BOLD)}{code_str}  —  {pron}{built_str}")
+            if _screen_width() >= 70:
+                print(f"   {styled(letter, BOLD)}{code_str}  —  {pron}{built_str}")
+            else:
+                # Narrow screen: the description gets its own line, so a
+                # long one wraps under itself instead of under the letter.
+                print(f"   {styled(letter, BOLD)}{code_str}{built_str}")
+                if pron:
+                    print(f"        {pron}")
             quirk = POSITIONAL_QUIRKS.get(letter, "")
             if quirk:
                 print(f"        {styled('⚡ ' + quirk, BOLD, YELLOW)}")
@@ -1285,7 +1319,8 @@ _CHART_VOWELS_BASIC = list("ㅏㅓㅗㅜㅡㅣ")
 _CHART_VOWELS_Y     = list("ㅑㅕㅛㅠ")
 
 
-def print_cv_chart(quiz: HangulQuiz, y_vowels: bool = False, compact: bool = False):
+def print_cv_chart(quiz: HangulQuiz, y_vowels: bool = False, compact: bool = False,
+                   _only_y: bool = False):
     """Print a consonant × vowel syllable chart.
 
     y_vowels=True adds the four iotized vowels (ㅑㅕㅛㅠ) as extra columns.
@@ -1302,7 +1337,18 @@ def print_cv_chart(quiz: HangulQuiz, y_vowels: bool = False, compact: bool = Fal
     (┼─│) — the double outer reads as "this is a reference poster",
     inner lines stay subordinate."""
 
-    vowels = _CHART_VOWELS_BASIC + (_CHART_VOWELS_Y if y_vowels else [])
+    # Each column is 5 terminal columns wide (4-wide cell + divider), plus
+    # the consonant column and the frame. With the y-vowels that's 56 —
+    # too wide for a phone — so on a narrow screen print two charts that
+    # each fit: the basic vowels, then the y-vowels on their own.
+    if y_vowels and not _only_y and 1 + 5 * (1 + 10) > _screen_width():
+        print_cv_chart(quiz, y_vowels=False, compact=compact)
+        print_cv_chart(quiz, y_vowels=True, compact=compact, _only_y=True)
+        return
+    if _only_y:
+        vowels = list(_CHART_VOWELS_Y)
+    else:
+        vowels = _CHART_VOWELS_BASIC + (_CHART_VOWELS_Y if y_vowels else [])
     roman  = quiz.get_romanization_table()
 
     # Cell width: 1 space + double-width Hangul glyph (2 cols) + 1 space = 4
@@ -1325,7 +1371,7 @@ def print_cv_chart(quiz: HangulQuiz, y_vowels: bool = False, compact: bool = Fal
     def inner_hline():
         return hline("╟", "┼", "╢", "─")
 
-    variant = "y-vowels" if y_vowels else "basic"
+    variant = "y-vowels only" if _only_y else ("y-vowels" if y_vowels else "basic")
     layout  = "compact" if compact else "full"
     title   = f"CV Syllable Chart — {variant}, {layout}"
     print(f"\n{styled(title, BOLD, CYAN)}")
@@ -1363,7 +1409,7 @@ def run_beginner_intro(quiz: HangulQuiz, lesson: dict):
     """Walk through the current lesson's letters one at a time — letter,
     romanization, pronunciation, stroke order — at the learner's own pace.
     After each letter, a single prompt covers both use cases: press Enter
-    to just move on (pure browsing), or type the romanization to try it
+    to just move on (pure browsing), or type how it sounds to try it
     right there (untimed, not scored, no streak/progress impact — this is
     a warm-up, not a quiz). Separate from print_reference_table, which
     stays as a quick all-at-once lookup; this is the slower, guided
@@ -1446,7 +1492,7 @@ def run_beginner_intro(quiz: HangulQuiz, lesson: dict):
         print(f"\n{styled('Now let' + chr(39) + 's meet the vowels themselves:', BOLD, GREEN)}")
 
     print(f"\n{styled('🐣 Beginner Walkthrough', BOLD, GREEN)} — {len(letters)} letter(s) in this lesson")
-    print(f"{styled('Press Enter to move on, or type the romanization to try it. Type /skip to end early.', CYAN)}")
+    print(f"{styled('Press Enter to move on, or type how it sounds (in English letters) to try it. /skip ends early.', CYAN)}")
 
     for i, letter in enumerate(letters, start=1):
         roman = letter_romanization.get(letter) or roman_table.get(letter, "")
@@ -1455,7 +1501,7 @@ def run_beginner_intro(quiz: HangulQuiz, lesson: dict):
         print(f"\n{styled(f'Letter {i} of {len(letters)}', BOLD)}\n")
         reveal_letter(letter)
         if roman:
-            print(f"      romanizes as: {styled(roman, BOLD)}")
+            print(f"      in English letters: {styled(roman, BOLD)}")
         quirk = POSITIONAL_QUIRKS.get(letter, "")
         if quirk:
             print(f"      {styled('⚡ ' + quirk, BOLD, YELLOW)}")
@@ -1463,7 +1509,7 @@ def run_beginner_intro(quiz: HangulQuiz, lesson: dict):
             print(f"      sounds like: {pron}")
 
         try:
-            response = input(f"\n{styled('[Enter=next, or type romanization]', CYAN)} {styled('>', BOLD)} ").strip()
+            response = input(f"\n{styled('[Enter = next, or type its sound]', CYAN)} {styled('>', BOLD)} ").strip()
         except (EOFError, KeyboardInterrupt):
             print(f"\n{styled('Walkthrough ended early.', YELLOW)}")
             return
@@ -2465,6 +2511,9 @@ def main():
                 stream.reconfigure(encoding="utf-8", errors="replace")
             except (AttributeError, ValueError, OSError):
                 pass
+    # Word-wrap long lines to the terminal's width instead of letting a
+    # narrow screen (a phone) chop words in half. See term_wrap.py.
+    term_wrap.install()
     parser = argparse.ArgumentParser(description="🇰🇷 Hangul Tutor CLI")
     parser.add_argument("--lesson", type=int, default=None, help="Start at lesson N")
     parser.add_argument("--mode", choices=sorted(k for k, v in MODE_ALIASES.items() if v),
