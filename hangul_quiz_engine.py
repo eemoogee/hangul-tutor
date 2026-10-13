@@ -2467,15 +2467,9 @@ class HangulQuiz:
         if lesson is None:
             return {"mastered_count": 0, "pool_size": 0, "needed": 0,
                     "fraction": 0.0, "is_mastered": False}
-        if lesson.get("mastery_words"):
-            pool = lesson["mastery_words"]
-        elif lesson.get("mastery_syllables"):
-            pool = lesson["mastery_syllables"]
-        else:
-            pool = self._get_lesson_syllable_pool(lesson)
+        pool = self._mastery_set(lesson)
         pool_size = len(pool)
-        mastered_count = sum(1 for s in pool
-                             if self._get_item(self._compose_bare_vowel(s)).confidence >= self.MASTERY_CONFIDENCE)
+        mastered_count = sum(1 for s in pool if self._is_solid(s))
         is_mastered = pool_size > 0 and mastered_count >= pool_size
         return {
             "mastered_count": mastered_count,
@@ -2484,6 +2478,26 @@ class HangulQuiz:
             "fraction": (mastered_count / pool_size) if pool_size else 0.0,
             "is_mastered": is_mastered,
         }
+
+    def _mastery_set(self, lesson: dict) -> list:
+        """The items a lesson's mastery is measured on (see lesson_mastery)."""
+        if lesson.get("mastery_words"):
+            return lesson["mastery_words"]
+        if lesson.get("mastery_syllables"):
+            return lesson["mastery_syllables"]
+        return self._get_lesson_syllable_pool(lesson)
+
+    def _is_solid(self, item: str) -> bool:
+        return self._get_item(self._compose_bare_vowel(item)).confidence >= self.MASTERY_CONFIDENCE
+
+    def unmastered_items(self, lesson_id: int = None) -> list:
+        """The lesson's mastery items that aren't solid yet, in lesson order
+        — what's left to do, for the CLI's progress card."""
+        lesson = self._get_lesson(lesson_id) if lesson_id is not None else self.current_lesson
+        if lesson is None:
+            return []
+        return [self._compose_bare_vowel(s) for s in self._mastery_set(lesson)
+                if not self._is_solid(s)]
 
     # ── Helpers ────────────────────────────────────────────────────────
 
