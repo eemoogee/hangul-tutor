@@ -260,6 +260,53 @@ check("long lines break between words, not inside them",
       all(w in plain for w in ("compact", "syllable", "reshape", "depending", "consonant")),
       [w for w in ("compact", "syllable", "reshape", "depending", "consonant") if w not in plain])
 
+print("A sense of progress (rounds, solid moments, next step)")
+import builtins as _b
+import re as _re
+import time as _t2
+
+
+def _play(lesson_id, completed, answers):
+    """Drive the real CLI loop with scripted answers; returns its output."""
+    qz = fresh()
+    qz.progress["completed_lessons"] = list(completed)
+    last = {}
+    orig = qz.next_question
+
+    def nq(*a, **k):
+        last["q"] = orig(*a, **k)
+        return last["q"]
+    qz.next_question = nq
+    script = iter(answers)
+
+    def fake_input(prompt=""):
+        v = next(script, None)
+        if v is None:
+            raise EOFError
+        return last["q"].correct_answer if v == "RIGHT" else v
+    real_input, _b.input = _b.input, fake_input
+    real_sleep, _t2.sleep = _t2.sleep, (lambda *_: None)
+    out = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(out):
+            CLI.interactive_loop(qz, type("A", (), {"mode": None, "sudden_death": False})(),
+                                 qz.start_lesson(lesson_id))
+    finally:
+        _b.input, _t2.sleep = real_input, real_sleep
+    return qz, _re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", out.getvalue())
+
+
+qz, out = _play(1, [1], ["RIGHT"] * CLI.ROUND_SIZE + ["n"])
+check("a finished lesson says so up front", "finished this lesson before" in out)
+check("every question shows where you are in the round", f"· 1/{CLI.ROUND_SIZE}" in out and f"· {CLI.ROUND_SIZE}/{CLI.ROUND_SIZE}" in out)
+check("a round ends with a progress card", "── Round 1 ·" in out)
+check("the card offers the next lesson when this one is done", "[n] Lesson 2" in out)
+check("pressing n on the card moves you to the next lesson", qz.current_lesson["id"] == 2, qz.current_lesson["id"])
+
+qz, out = _play(1, [], ["RIGHT"] * 30)
+check("blocks are celebrated the moment they become solid", "is solid now!" in out)
+check("an unfinished lesson's card lists what's still to go", "Still to go:" in out)
+
 print("Question mix (found by scripts/_playtest_learners.py)")
 q = fresh()
 q.start_lesson(2)

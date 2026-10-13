@@ -1107,6 +1107,19 @@ def print_lesson_intro_rich(lesson: dict, quiz):
     # (Batchim rules aren't listed here: print_reference_table, which
     # always runs right after this, shows the same table.)
 
+    # Where this lesson stands, so there's a goal from the first question.
+    try:
+        m = quiz.lesson_mastery(lesson["id"])
+    except (ValueError, KeyError, TypeError):
+        m = None
+    if m and m["pool_size"]:
+        if lesson["id"] in quiz.progress.get("completed_lessons", []):
+            print(f"\n{styled('✓ You finished this lesson before', GREEN)} — this is practice. "
+                  f"Type {styled('/next', CYAN)} to move on anytime.")
+        else:
+            print(f"\n{styled('🏁 Goal:', BOLD)} get all {m['pool_size']} solid "
+                  f"({m['mastered_count']} so far). Rounds are {ROUND_SIZE} questions.")
+
     print()
     print(styled("Let's go →", GREEN))
     time.sleep(0.3)
@@ -1555,7 +1568,7 @@ def _print_prompt(text: str):
         print(line if line.startswith(" ") else "   " + line)
 
 
-def print_question(q: QuizQuestion, quiz: HangulQuiz = None):
+def print_question(q: QuizQuestion, quiz: HangulQuiz = None, progress: str = ""):
     """Display a question with styling.
 
     build_syllable and missing_vowel already carry a composition inside
@@ -1602,7 +1615,8 @@ def print_question(q: QuizQuestion, quiz: HangulQuiz = None):
     }
     icon = mode_icons.get(q.mode, "❓")
     label = mode_labels.get(q.mode, q.mode.replace('_', ' ').title())
-    print(f"\n{icon} {styled(label, CYAN)}")
+    counter = f"  {styled('· ' + progress, DIM)}" if progress else ""
+    print(f"\n{icon} {styled(label, CYAN)}{counter}")
 
     rendered = False
     if quiz is not None and q.mode in ("build_syllable", "missing_vowel", "decompose_syllable", "confusion_drill", "word_contrast") and q.letter:
@@ -1866,7 +1880,7 @@ KNOWN_ACTIONS = {
     'q', 'quit', 'exit', 'help', 'roman', 'romanize', 'romanization',
     'stats', 'lessons', 'lesson', 'mode', 'mnemonic', 'talk',
     'template', 'konglish', 'kspell', 'hint', 'h', 'skip', 'intro', 'table',
-    'alphabet', 'rain', 'conveyor', 'chart',
+    'alphabet', 'rain', 'conveyor', 'chart', 'next',
 }
 
 # Sudden death: start with this many hearts, lose one per miss. A streak of
@@ -1884,6 +1898,11 @@ STREAK_MILESTONES = {
 
 # Longest the mastery bar is drawn; bigger pools are scaled down to fit.
 MASTERY_BAR_WIDTH = 20
+
+# Questions per round. Practice is split into short rounds, each ending in
+# a progress card with a clear next step — without them a lesson was one
+# endless stream of questions, and once it was finished nothing ever said so.
+ROUND_SIZE = 10
 
 
 def _ask(prompt: str) -> Optional[str]:
@@ -2111,6 +2130,7 @@ def _print_help():
   {styled('/stats', CYAN)}      — Show your progress
   {styled('/lessons', CYAN)}    — List all lessons (or just type a lesson number)
   {styled('/lesson N', CYAN)}   — Jump to lesson N
+  {styled('/next', CYAN)}       — Go on to the next lesson
   {styled('/mode NAME', CYAN)}  — Practice one question type: {MODE_USAGE}
   {styled('/alphabet', CYAN)}   — Walk through all 24 basic letters, consonants then vowels
   {styled('/intro', CYAN)}      — Walk through this lesson's letters one at a time
@@ -2136,6 +2156,61 @@ def _print_help():
   {styled('/kspell', CYAN)}     — Spell an English loanword in Hangul
   {styled('/quit', CYAN)}       — Save and exit
 """)
+
+
+def _go_to_next_lesson(quiz: HangulQuiz):
+    """Move on to the next lesson (marking this one complete if it's
+    mastered). Returns the new lesson_info, or None if there is no next
+    lesson."""
+    lid = quiz.current_lesson["id"]
+    if lid >= len(quiz.curriculum["lessons"]):
+        print(f"   {styled('This is the last lesson — there is no next one. 🏆', YELLOW)}")
+        return None
+    if lid not in quiz.progress["completed_lessons"] and quiz.lesson_mastery(lid)["is_mastered"]:
+        return _advance_and_show(quiz)
+    info = quiz.start_lesson(lid + 1)
+    print_lesson_intro_rich(info, quiz)
+    print_reference_table(quiz, info)
+    return info
+
+
+def _round_card(quiz: HangulQuiz, round_no: int, right: int, asked: int) -> str:
+    """End-of-round progress card. Returns 'continue', 'next' or 'quit'."""
+    lesson = quiz.current_lesson
+    lid = lesson["id"]
+    m = quiz.lesson_mastery()
+    left = quiz.unmastered_items()
+    done = lid in quiz.progress["completed_lessons"] or m["is_mastered"]
+    last = lid >= len(quiz.curriculum["lessons"])
+
+    print(f"\n{styled(f'── Round {round_no} · {right} of {asked} right ──', BOLD, CYAN)}")
+    if done:
+        solid = (f"all {m['pool_size']} solid!" if m["is_mastered"]
+                 else f"{m['mastered_count']} of {m['pool_size']} still solid.")
+        print(f"{styled('🏁', GREEN)} {styled(f'Lesson {lid} is done', BOLD, GREEN)} — {solid}")
+    elif m["pool_size"]:
+        bar = _mastery_bar(m["mastered_count"], m["pool_size"])
+        print(f"📊 Lesson {lid}: {styled(bar, CYAN)} {m['mastered_count']} of {m['pool_size']} solid")
+        shown = left[:6]
+        more = f" +{len(left) - len(shown)} more" if len(left) > len(shown) else ""
+        print(f"   Still to go: {' · '.join(styled(x, BOLD) for x in shown)}{more}")
+
+    options = []
+    if done and not last:
+        nxt = quiz._get_lesson(lid + 1)
+        options.append(f"{styled('[n]', CYAN)} Lesson {lid + 1}: {nxt['title']}")
+    elif done and last:
+        print(f"   {styled('🏆 That was the last lesson — you can read Hangul!', BOLD, YELLOW)}")
+    options.append(f"{styled('[Enter]', CYAN)} keep {'practising' if done else 'going'} · "
+                   f"{styled('[q]', CYAN)} stop for now")
+    for line in options:
+        print(f"   {line}")
+    ans = _ask(f"{styled('>', BOLD)} ")
+    if ans is None or ans.lower() in ("q", "/q", "quit", "/quit"):
+        return "quit"
+    if ans.lower() in ("n", "/next", "next") and done and not last:
+        return "next"
+    return "continue"
 
 
 def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
@@ -2203,8 +2278,8 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
     # said "not yet" to — so a mastered-but-not-advanced lesson doesn't
     # re-prompt after every single subsequent correct answer.
     mastery_offered = set()
-    # Cache the last mastery bar value so we only reprint it when it changes.
-    _last_mastery_val = (-1, -1)
+    # Round bookkeeping (see ROUND_SIZE).
+    round_no, round_asked, round_right = 1, 0, 0
     # The streak value the reading reward last fired at. The reward used
     # to re-fire whenever a new question was drawn while the streak still
     # sat on a multiple of 5 — e.g. after /skip or /mode.
@@ -2225,7 +2300,8 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
             current_question = quiz.next_question(mode=locked_mode)
             # Only draw the question card when it's actually new — /hint and
             # other commands don't redraw it (it's still visible above).
-            print_question(current_question, quiz)
+            print_question(current_question, quiz,
+                           progress="" if sudden_death else f"{round_asked + 1}/{ROUND_SIZE}")
             question_shown_at = time.time()
 
         try:
@@ -2306,6 +2382,14 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
                 # and drop the leftover question from the old lesson.
                 lesson = info
                 current_question = None
+                round_no, round_asked, round_right = 1, 0, 0
+
+            elif action == 'next':
+                info = _go_to_next_lesson(quiz)
+                if info is not None:
+                    lesson = info
+                    current_question = None
+                    round_no, round_asked, round_right = 1, 0, 0
 
             elif action == 'intro':
                 _intro_result = run_beginner_intro(quiz, lesson)
@@ -2421,6 +2505,7 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
             continue
 
         elapsed_ms = (time.time() - question_shown_at) * 1000 if question_shown_at else None
+        left_before = quiz.unmastered_items()
         result = quiz.answer(user_input, current_question, response_ms=elapsed_ms)
         print(f"   {md(result.feedback)}")
         if not result.correct:
@@ -2462,13 +2547,15 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
             if result.correct and streak in STREAK_MILESTONES:
                 print(f"   {styled(STREAK_MILESTONES[streak], BOLD, YELLOW)}")
 
-            m = quiz.lesson_mastery()
-            if m["pool_size"] > 0 and quiz.current_lesson["id"] not in quiz.progress["completed_lessons"]:
-                _mc, _ps = m["mastered_count"], m["pool_size"]
-                if (_mc, _ps) != _last_mastery_val:
-                    _last_mastery_val = (_mc, _ps)
-                    bar = _mastery_bar(_mc, _ps)
-                    print(f"   {styled(f'📊 Mastery: {_mc}/{_ps} [{bar}]', CYAN)}")
+            # Celebrate each item the moment it becomes solid — progress
+            # you can see, instead of a bar that silently changed (and was
+            # hidden altogether once a lesson was finished).
+            newly = [x for x in left_before if x not in quiz.unmastered_items()]
+            if newly:
+                m = quiz.lesson_mastery()
+                bar = _mastery_bar(m["mastered_count"], m["pool_size"])
+                print(f"   {styled('⭐ ' + ' · '.join(newly) + ' is solid now!', BOLD, YELLOW)}  "
+                      f"{styled(bar, CYAN)} {m['mastered_count']}/{m['pool_size']}")
 
         # Periodic encouragement — an optional Ollama flourish, so it only
         # runs with --use-llm (silent otherwise, no hang).
@@ -2483,6 +2570,7 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
         # Lesson progression (normal mode only). When the active lesson's
         # pool crosses the mastery bar, congratulate once and offer to
         # advance; mastery_offered stops it re-asking after a "not yet".
+        moved_on = False
         if result.correct and not sudden_death:
             _lid = quiz.current_lesson["id"]
             if (_lid not in quiz.progress["completed_lessons"]
@@ -2492,10 +2580,29 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
                 _advanced = _offer_advance(quiz, _lid)
                 if _advanced is not None:
                     lesson = _advanced
+                    moved_on = True
 
         # Save after every answer, so nothing is lost if the window closes.
         quiz.save_progress()
         current_question = None
+
+        # End of round: a progress card and a clear next step.
+        if moved_on:
+            round_no, round_asked, round_right = 1, 0, 0     # new lesson, new rounds
+        elif not sudden_death:
+            round_asked += 1
+            round_right += result.correct
+            if round_asked >= ROUND_SIZE:
+                choice = _round_card(quiz, round_no, round_right, round_asked)
+                if choice == "quit":
+                    print(f"\n{styled('👋 안녕히 가세요! (Goodbye!)', GREEN)}")
+                    return
+                round_no, round_asked, round_right = round_no + 1, 0, 0
+                if choice == "next":
+                    info = _go_to_next_lesson(quiz)
+                    if info is not None:
+                        lesson = info
+                        round_no = 1
 
 
 # ── Entry point ────────────────────────────────────────────────────────────
