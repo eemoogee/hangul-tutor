@@ -1903,6 +1903,13 @@ MASTERY_BAR_WIDTH = 20
 # a progress card with a clear next step — without them a lesson was one
 # endless stream of questions, and once it was finished nothing ever said so.
 ROUND_SIZE = 10
+# After this many rounds, a round in which nothing new became solid makes
+# the card offer the next lesson even though this one isn't finished.
+# Mistakes now count against an item, so a learner who keeps missing one
+# letter could otherwise be held in a lesson indefinitely (the playtest's
+# batchim-weak learner was); /next always allowed leaving, but nothing
+# said so.
+STUCK_AFTER_ROUNDS = 3
 
 
 def _ask(prompt: str) -> Optional[str]:
@@ -2136,8 +2143,8 @@ def _print_help():
   {styled('/intro', CYAN)}      — Walk through this lesson's letters one at a time
 
 {styled('While answering:', BOLD)}
-  {styled('/hint', CYAN)}       — A nudge for the current question (also {styled('/h', CYAN)})
-  {styled('/skip', CYAN)}       — Reveal the answer and move on (resets your streak)
+  {styled('/hint', CYAN)}       — A nudge for the current question (also {styled('/h', CYAN)}) — a right answer after a hint doesn't count toward "solid"
+  {styled('/skip', CYAN)}       — Reveal the answer and move on (counts as a miss and resets your streak)
 
 {styled('Reference:', BOLD)}
   {styled('/table', CYAN)}      — This lesson's reference table
@@ -2174,14 +2181,17 @@ def _go_to_next_lesson(quiz: HangulQuiz):
     return info
 
 
-def _round_card(quiz: HangulQuiz, round_no: int, right: int, asked: int) -> str:
-    """End-of-round progress card. Returns 'continue', 'next' or 'quit'."""
+def _round_card(quiz: HangulQuiz, round_no: int, right: int, asked: int,
+                no_progress: bool = False) -> str:
+    """End-of-round progress card. Returns 'continue', 'next' or 'quit'.
+    no_progress: nothing became solid during this round."""
     lesson = quiz.current_lesson
     lid = lesson["id"]
     m = quiz.lesson_mastery()
     left = quiz.unmastered_items()
     done = lid in quiz.progress["completed_lessons"] or m["is_mastered"]
     last = lid >= len(quiz.curriculum["lessons"])
+    stuck = not done and no_progress and round_no >= STUCK_AFTER_ROUNDS
 
     print(f"\n{styled(f'── Round {round_no} · {right} of {asked} right ──', BOLD, CYAN)}")
     if done:
@@ -2199,6 +2209,13 @@ def _round_card(quiz: HangulQuiz, round_no: int, right: int, asked: int) -> str:
     if done and not last:
         nxt = quiz._get_lesson(lid + 1)
         options.append(f"{styled('[n]', CYAN)} Lesson {lid + 1}: {nxt['title']}")
+    elif stuck and not last:
+        nxt = quiz._get_lesson(lid + 1)
+        print(f"   {styled('💭 A tough one — fine to move on and come back later.', YELLOW)}")
+        options.append(f"{styled('[n]', CYAN)} Lesson {lid + 1}: {nxt['title']} "
+                       f"{styled(f'(back here anytime: /lesson {lid})', DIM)}")
+    elif stuck and last:
+        print(f"   {styled('💭 A tough one — going back over an earlier lesson can help (/lessons).', YELLOW)}")
     elif done and last:
         print(f"   {styled('🏆 That was the last lesson — you can read Hangul!', BOLD, YELLOW)}")
     options.append(f"{styled('[Enter]', CYAN)} keep {'practising' if done else 'going'} · "
@@ -2208,7 +2225,7 @@ def _round_card(quiz: HangulQuiz, round_no: int, right: int, asked: int) -> str:
     ans = _ask(f"{styled('>', BOLD)} ")
     if ans is None or ans.lower() in ("q", "/q", "quit", "/quit"):
         return "quit"
-    if ans.lower() in ("n", "/next", "next") and done and not last:
+    if ans.lower() in ("n", "/next", "next") and (done or stuck) and not last:
         return "next"
     return "continue"
 
@@ -2278,8 +2295,10 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
     # said "not yet" to — so a mastered-but-not-advanced lesson doesn't
     # re-prompt after every single subsequent correct answer.
     mastery_offered = set()
-    # Round bookkeeping (see ROUND_SIZE).
+    # Round bookkeeping (see ROUND_SIZE). round_left: how many items were
+    # still to go when the round began, to spot a round with no progress.
     round_no, round_asked, round_right = 1, 0, 0
+    round_left = None
     # The streak value the reading reward last fired at. The reward used
     # to re-fire whenever a new question was drawn while the streak still
     # sat on a multiple of 5 — e.g. after /skip or /mode.
@@ -2289,6 +2308,9 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
     # used to compute response_time_ms for the per-item EMA. Persists
     # through /hint passes without being reset.
     question_shown_at = None
+    # Whether /hint was shown for the current question: a right answer
+    # after a hint still counts, but not toward making the item solid.
+    hint_used = False
 
     while True:
         if current_question is None:
@@ -2297,12 +2319,15 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
                     and streak != last_reward_streak):
                 last_reward_streak = streak
                 _show_reading_reward(quiz)
+            if round_asked == 0:
+                round_left = len(quiz.unmastered_items())
             current_question = quiz.next_question(mode=locked_mode)
             # Only draw the question card when it's actually new — /hint and
             # other commands don't redraw it (it's still visible above).
             print_question(current_question, quiz,
                            progress="" if sudden_death else f"{round_asked + 1}/{ROUND_SIZE}")
             question_shown_at = time.time()
+            hint_used = False
 
         try:
             user_input = input(f"\n{styled('>', BOLD)} ").strip()
@@ -2474,6 +2499,7 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
             elif action in ('hint', 'h'):
                 if current_question.hint:
                     print(f"   {styled('💡', YELLOW)} {md(current_question.hint)}")
+                    hint_used = True
                 else:
                     print(f"   {styled('No hint for this one — you can /skip to see the answer.', YELLOW)}")
 
@@ -2484,10 +2510,13 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
                 show_breakdown(quiz, current_question)
                 _show_contrast_examples(current_question)
                 # Skipping ends the streak — otherwise a streak could be
-                # kept alive by skipping every hard question.
+                # kept alive by skipping every hard question — and counts
+                # as a miss on the item, so skipping the hard ones can't
+                # leave a lesson looking finished.
                 if quiz.session_streak:
                     print(f"   {styled('Streak reset.', DIM)}")
-                quiz.session_streak = 0
+                quiz.record_skip(current_question)
+                quiz.save_progress()
                 run_streak = 0
                 current_question = None
 
@@ -2506,8 +2535,11 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
 
         elapsed_ms = (time.time() - question_shown_at) * 1000 if question_shown_at else None
         left_before = quiz.unmastered_items()
-        result = quiz.answer(user_input, current_question, response_ms=elapsed_ms)
+        result = quiz.answer(user_input, current_question, response_ms=elapsed_ms,
+                             assisted=hint_used)
         print(f"   {md(result.feedback)}")
+        if result.correct and hint_used:
+            print(f"   {styled('💡 With a hint — get it on your own to make it count toward solid.', DIM)}")
         if not result.correct:
             show_breakdown(quiz, current_question)
         _show_contrast_examples(current_question)
@@ -2593,7 +2625,8 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
             round_asked += 1
             round_right += result.correct
             if round_asked >= ROUND_SIZE:
-                choice = _round_card(quiz, round_no, round_right, round_asked)
+                choice = _round_card(quiz, round_no, round_right, round_asked,
+                                     no_progress=len(quiz.unmastered_items()) >= (round_left or 0))
                 if choice == "quit":
                     print(f"\n{styled('👋 안녕히 가세요! (Goodbye!)', GREEN)}")
                     return

@@ -28,10 +28,13 @@ Slash-commands recognised inside the game loop
 -----------------------------------------------
   /quit   — exit immediately, outcome = "complete" (partial session counts).
   /score  — print current score and streak without consuming the question.
+  /hint   — show the current question's hint. A right answer after a hint
+            still scores, but doesn't count toward mastery (see
+            HangulQuiz.answer's `assisted`).
   /help   — print available commands.
 
 All other slash-commands are silently ignored with a brief note.
-The existing engine slash-commands (/hint, /skip, etc.) do not apply here —
+The other engine slash-commands (/skip, etc.) do not apply here —
 the Conveyor loop manages its own prompt/answer cycle directly.
 """
 
@@ -51,6 +54,7 @@ from game_io import (
     get_player_input,
     _print,
     _styled,
+    _md,
     BOLD, DIM, CYAN, YELLOW, RED,
 )
 
@@ -119,6 +123,7 @@ def _handle_command(cmd: str, state: ConveyorState) -> bool:
     if cmd == "/help":
         _print(f"\n  {_styled('Commands:', BOLD)}")
         _print(f"    {_styled('/score', CYAN)}  — show current score and streak")
+        _print(f"    {_styled('/hint',  CYAN)}  — a nudge for this question")
         _print(f"    {_styled('/quit',  CYAN)}  — end the session now")
         return False
 
@@ -161,6 +166,7 @@ def run_conveyor(engine: HangulQuiz, state: ConveyorState) -> ConveyorState:
 
     current_question = None
     question_shown_at: Optional[float] = None
+    hint_used = False
 
     while not state.done:
         # -- fetch a new question if needed --
@@ -179,6 +185,7 @@ def run_conveyor(engine: HangulQuiz, state: ConveyorState) -> ConveyorState:
             render_game_header(state)
             render_question(current_question, time_limit_ms=state.time_limit_ms)
             question_shown_at = time.time()
+            hint_used = False
 
         # -- read input --
         raw = get_player_input()
@@ -192,6 +199,14 @@ def run_conveyor(engine: HangulQuiz, state: ConveyorState) -> ConveyorState:
             # Blank Enter — re-prompt without consuming the question
             continue
 
+        if raw.strip().lower() in ("/hint", "/h"):
+            if current_question.hint:
+                _print(f"  {_styled('💡 ' + _md(current_question.hint, DIM), DIM)}")
+                hint_used = True
+            else:
+                _print(f"  {_styled('No hint for this one.', DIM)}")
+            continue
+
         if raw.startswith("/"):
             should_quit = _handle_command(raw, state)
             if should_quit:
@@ -200,7 +215,8 @@ def run_conveyor(engine: HangulQuiz, state: ConveyorState) -> ConveyorState:
 
         # -- grade --
         elapsed_ms = (time.time() - question_shown_at) * 1000
-        result = engine.answer(raw, current_question, response_ms=elapsed_ms)
+        result = engine.answer(raw, current_question, response_ms=elapsed_ms,
+                               assisted=hint_used)
 
         # -- time-limit enforcement --
         # The engine always records the answer as-is for SRS purposes (a

@@ -218,14 +218,23 @@ class LearnerItem:
     # precise version that separates hint-tainted answers was considered
     # and explicitly deferred.
     avg_response_ms: float = 0.0
+    # The most recent answers, oldest first, at most CONFIDENCE_RAMP long:
+    #   '1' right on your own   '0' wrong
+    #   'h' right after /hint   's' skipped
+    # Confidence is read from this window (see the confidence property),
+    # so a mistake counts against an item — until four newer answers have
+    # come in after it.
+    history: str = ""
 
     # How many answers (at perfect accuracy) it takes to reach full
-    # confidence — the pacing knob for the formula below. Chosen
-    # deliberately (not derived): roughly matches "a solid, repeated
-    # streak" rather than either a single lucky guess or an unrealistic
-    # 25-answer grind. See the confidence property for the formula
-    # this feeds and why the earlier sqrt-based version was replaced.
+    # confidence — the pacing knob for the formula below, and the length
+    # of `history`. Chosen deliberately (not derived): roughly matches "a
+    # solid, repeated streak" rather than either a single lucky guess or
+    # an unrealistic 25-answer grind.
     CONFIDENCE_RAMP = 8
+    # How many of the latest answers a mistake is held against. See the
+    # confidence property for why it's 4 and not the whole window.
+    MISTAKE_WINDOW = 4
 
     @property
     def confidence(self) -> int:
@@ -233,23 +242,35 @@ class LearnerItem:
         so min_confidence=N checks elsewhere in this file don't need to
         change.
 
-        round(5 * ratio * min(1, total/CONFIDENCE_RAMP)): ratio is
-        accuracy (correct/total), and the min(1, total/RAMP) term ramps
-        linearly from 0 up to full weight over the first RAMP answers,
-        then plateaus — so a single lucky guess (1/1) still reads low
-        (confidence 1, not 5), but a sustained streak reaches full
-        confidence over roughly RAMP answers, not RAMP**2 like the
-        earlier sqrt-based version.
+        Read from `history`:
+            net = (right on your own, in the last CONFIDENCE_RAMP answers)
+                - (wrong or skipped, in the last MISTAKE_WINDOW answers)
+            confidence = round(5 * net / CONFIDENCE_RAMP), kept in 0-5
+        A right answer after /hint counts as neither (it's right, but it
+        wasn't you alone).
 
-        That earlier version was replaced after testing showed it
-        didn't do what its own docstring claimed: round(ratio *
-        total**0.5) needed 25 correct answers at perfect accuracy to
-        reach confidence 5, not "a strong track record (8/10)" as
-        documented — 8/10 actually produced confidence 3 under that
-        formula, verified directly. This version's ramp is a
-        deliberate pacing choice (how many answers "mastered" should
-        take), decided explicitly rather than left as an accidental
-        side effect of the dampening curve's shape.
+        What that means in practice:
+          - 3 right in a row -> 2 (solid), just as fast as before;
+          - a recent mistake cancels a right answer, so 3 right mixed
+            with 5 wrong is 0, not solid;
+          - a mistake stops counting after four more answers, so an early
+            slip while learning doesn't hold an item back for long;
+          - 8 right in a row -> 5.
+
+        The previous formula, round(5 * accuracy * min(1, total/8)),
+        reduces to round(5 * correct / 8) for the first 8 answers — it
+        never looked at wrong answers at all, so 3 right + 5 wrong read
+        as solid.
+
+        Why mistakes count for 4 answers and not all 8: measured with
+        scripts/_playtest_learners.py (20 runs per simulated learner).
+        Holding each mistake against all 8 answers made the course 38%
+        longer for an average learner (83% for a struggling one) and
+        left the batchim-weak learner unable to finish it at all; with 4
+        the course is 20% longer, and the share of lessons the struggling
+        learner "finishes" while still reading some item under 70% of the
+        time drops from 41% to 22% (8 answers: 12%). Half-weight mistakes
+        over all 8 cost only 8% but only got it to 31%.
 
         Migrated items carry a _migrated_confidence FLOOR (see the
         field's docstring for why it's a floor and not an override —
@@ -259,18 +280,34 @@ class LearnerItem:
         migration and never blocks a correct answer from raising
         confidence past it.
         """
-        total = self.correct + self.wrong
-        if total == 0:
-            computed = 0
-        else:
-            ratio = self.correct / total
-            weight = min(1, total / self.CONFIDENCE_RAMP)
-            computed = max(0, min(5, round(5 * ratio * weight)))
+        recent = self.history[-self.CONFIDENCE_RAMP:]
+        latest = self.history[-self.MISTAKE_WINDOW:]
+        net = recent.count("1") - latest.count("0") - latest.count("s")
+        computed = max(0, min(5, round(5 * net / self.CONFIDENCE_RAMP)))
 
         if self._migrated_confidence is None:
             return computed
         floor = max(0, self._migrated_confidence - self._wrong_since_migration)
         return max(computed, floor)
+
+    def record(self, outcome: str) -> None:
+        """Add one result to the history window: '1' right, '0' wrong,
+        'h' right after a hint, 's' skipped. Leaves correct/wrong alone —
+        the caller bumps those."""
+        self.history = (self.history + outcome)[-self.CONFIDENCE_RAMP:]
+
+    @staticmethod
+    def _history_from_counts(correct: int, wrong: int) -> str:
+        """Progress saved before `history` existed only has totals. Spread
+        them over a window of the same size (at most CONFIDENCE_RAMP),
+        oldest-first wrong, so the item keeps roughly its accuracy and
+        newer right answers push the old misses out first."""
+        total = correct + wrong
+        if total <= 0:
+            return ""
+        n = min(total, LearnerItem.CONFIDENCE_RAMP)
+        rights = round(n * correct / total)
+        return "0" * (n - rights) + "1" * rights
 
     @property
     def due(self) -> bool:
@@ -293,6 +330,7 @@ class LearnerItem:
             "_migrated_confidence": self._migrated_confidence,
             "_wrong_since_migration": self._wrong_since_migration,
             "avg_response_ms": self.avg_response_ms,
+            "history": self.history,
         }
 
     @classmethod
@@ -307,6 +345,9 @@ class LearnerItem:
             _migrated_confidence=data.get("_migrated_confidence"),
             _wrong_since_migration=data.get("_wrong_since_migration", 0),
             avg_response_ms=data.get("avg_response_ms", 0.0),
+            history=(data["history"] if "history" in data
+                     else cls._history_from_counts(data.get("correct", 0),
+                                                   data.get("wrong", 0))),
         )
 
 # ── Confusion-pair validity ───────────────────────────────────────────────
@@ -987,6 +1028,13 @@ class HangulQuiz:
         if len(letter_only) == 1 and letter_only in "ABCD":
             idx = ord(letter_only) - ord('A')
             if idx < len(choices):
+                return choices[idx]
+        # The mini-games number their choices 1-4, so a digit picks too.
+        # (The main quiz never gets here with a bare digit — the CLI reads
+        # that as "/lesson N" first.)
+        if len(letter_only) == 1 and letter_only in "1234":
+            idx = int(letter_only) - 1
+            if idx < len(choices) and letter_only not in choices:
                 return choices[idx]
         return user_input
 
@@ -1973,7 +2021,8 @@ class HangulQuiz:
 
     # ── Answer checking ────────────────────────────────────────────────
 
-    def answer(self, user_input: str, question: QuizQuestion = None, response_ms: Optional[float] = None) -> QuizResult:
+    def answer(self, user_input: str, question: QuizQuestion = None, response_ms: Optional[float] = None,
+               assisted: bool = False) -> QuizResult:
         """Check the user's answer against the expected.
 
         response_ms: wall-clock milliseconds between the question
@@ -1981,7 +2030,13 @@ class HangulQuiz:
         _record_learner_item to update the per-item EMA. None means
         "not measured" (e.g. programmatic callers that don't time,
         or external callers that don't pass it) — the timing update
-        is skipped entirely, no crash, no made-up default."""
+        is skipped entirely, no crash, no made-up default.
+
+        assisted: the learner asked for a /hint on this question. A right
+        answer still counts as right (score, streak) but doesn't move the
+        item toward mastery — it's recorded as 'h' in the item's history,
+        and the parts of a multi-syllable word get no credit either. A
+        wrong answer counts as wrong either way."""
         if question is None:
             question = getattr(self, '_last_question', None)
         self._last_question = question
@@ -2125,22 +2180,27 @@ class HangulQuiz:
             self.session_correct += 1
             self.session_streak += 1
             self.session_best_streak = max(self.session_best_streak, self.session_streak)
-            self._mark_mastered(question.letter, confidence=1)
-            self._record_learner_item(question, correct=True, response_ms=response_ms)
+            if not assisted:
+                self._mark_mastered(question.letter, confidence=1)
+            self._record_learner_item(question, correct=True, response_ms=response_ms,
+                                      assisted=assisted)
             # Credit each component syllable when a multi-syllable question
             # (read_word, nonword_decode, sequence_decode) is answered correctly,
             # so that answering whole-word/nonword questions advances the
             # syllable-level mastery bar alongside the word-level one.
-            # Only .correct and .last_seen are bumped — no mode-seen, no
-            # confusion tracking, no EMA (response time belongs to the
-            # composite question, not to any individual component).
-            if question.mode in ('read_word', 'real_word', 'nonword_decode', 'sequence_decode') and len(question.letter) > 1:
+            # Only .correct, .history and .last_seen are bumped — no
+            # mode-seen, no confusion tracking, no EMA (response time
+            # belongs to the composite question, not to any individual
+            # component). Not after a hint: the help was on the whole word.
+            if (not assisted and len(question.letter) > 1
+                    and question.mode in ('read_word', 'real_word', 'nonword_decode', 'sequence_decode')):
                 _now = time.time()
                 for _ch in question.letter:
                     if _looks_like_hangul_target(_ch):
                         self._mark_mastered(_ch, confidence=1)
                         _ci = self._get_item(_ch)
                         _ci.correct += 1
+                        _ci.record("1")
                         _ci.last_seen = _now
                         self._save_item(_ci)
         else:
@@ -2243,7 +2303,8 @@ class HangulQuiz:
         current = self.progress["mastered_letters"].get(item, 0)
         self.progress["mastered_letters"][item] = max(0, min(5, current + confidence))
 
-    def _record_learner_item(self, question: QuizQuestion, correct: bool, confused_with: Optional[str] = None, response_ms: Optional[float] = None):
+    def _record_learner_item(self, question: QuizQuestion, correct: bool, confused_with: Optional[str] = None,
+                             response_ms: Optional[float] = None, assisted: bool = False):
         """Update the richer LearnerItem record for this question's
         letter, in PARALLEL with _mark_mastered's flat int and the
         confusion_counts dict above — neither of those is touched or
@@ -2283,8 +2344,10 @@ class HangulQuiz:
 
         if correct:
             item.correct += 1
+            item.record("h" if assisted else "1")
         else:
             item.wrong += 1
+            item.record("0")
             # No hard clear of _migrated_confidence here (a prior version
             # did that on any first new answer — see LearnerItem's
             # docstring for why that caused a "migration cliff": old
@@ -2324,6 +2387,26 @@ class HangulQuiz:
             else:
                 item.avg_response_ms = item.avg_response_ms * 0.8 + response_ms * 0.2
 
+        self._save_item(item)
+
+    def record_skip(self, question: QuizQuestion = None) -> None:
+        """The learner gave up on this question (/skip). It counts as a
+        miss on the item — same as a wrong answer for mastery and for the
+        streak — but it isn't a graded answer, so session accuracy and no
+        confusion pair are touched (they didn't type anything to mix up).
+        """
+        if question is None:
+            question = getattr(self, '_last_question', None)
+        self.session_streak = 0
+        if question is None or not question.letter:
+            return
+        self._mark_mastered(question.letter, confidence=-1)
+        item = self._get_item(self._compose_bare_vowel(question.letter))
+        item.wrong += 1
+        item._wrong_since_migration += 1
+        item.record("s")
+        item.last_seen = time.time()
+        item.seen[question.mode] = item.seen.get(question.mode, 0) + 1
         self._save_item(item)
 
 

@@ -84,10 +84,11 @@ CV pairs as playable cards. Highest long-term replay potential. More state manag
 |---|---|
 | `next_question(mode=...)` | Generate the next prompt |
 | `_generate_question(mode=...)` | Direct question generation |
-| `answer(user_input, question, response_ms=...)` → `QuizResult` | Grade a response |
+| `answer(user_input, question, response_ms=..., assisted=...)` → `QuizResult` | Grade a response (`assisted=True` after a hint: right, but no mastery credit) |
+| `record_skip(question)` | The learner gave up — counts as a miss on the item |
 | `lesson_mastery()` | Completion gate |
 | `LearnerItem.confidence` | Adaptive signal — which pairs need more work |
-| `MASTERY_CONFIDENCE` / `MASTERY_FRACTION` | Mastery thresholds |
+| `MASTERY_CONFIDENCE` | Mastery threshold: every item in the lesson's mastery set must reach it |
 
 ### Most relevant existing question types for CV games
 
