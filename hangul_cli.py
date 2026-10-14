@@ -2313,6 +2313,21 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
     hint_used = False
 
     while True:
+        # End of round (an answer or a /skip filled it): a progress card
+        # and a clear next step, before the next question.
+        if current_question is None and not sudden_death and round_asked >= ROUND_SIZE:
+            choice = _round_card(quiz, round_no, round_right, round_asked,
+                                 no_progress=len(quiz.unmastered_items()) >= (round_left or 0))
+            if choice == "quit":
+                print(f"\n{styled('👋 안녕히 가세요! (Goodbye!)', GREEN)}")
+                return
+            round_no, round_asked, round_right = round_no + 1, 0, 0
+            if choice == "next":
+                info = _go_to_next_lesson(quiz)
+                if info is not None:
+                    lesson = info
+                    round_no = 1
+
         if current_question is None:
             streak = quiz.session_streak
             if (not sudden_death and streak >= 5 and streak % 5 == 0
@@ -2519,6 +2534,8 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
                 quiz.save_progress()
                 run_streak = 0
                 current_question = None
+                if not sudden_death:
+                    round_asked += 1      # a skipped question still used a turn
 
             elif action not in KNOWN_ACTIONS:
                 print(f"{styled(f'Unknown command: /{action}', RED)} — type /help to see what's available.")
@@ -2618,24 +2635,12 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
         quiz.save_progress()
         current_question = None
 
-        # End of round: a progress card and a clear next step.
+        # Round bookkeeping; the card itself shows at the top of the loop.
         if moved_on:
             round_no, round_asked, round_right = 1, 0, 0     # new lesson, new rounds
         elif not sudden_death:
             round_asked += 1
             round_right += result.correct
-            if round_asked >= ROUND_SIZE:
-                choice = _round_card(quiz, round_no, round_right, round_asked,
-                                     no_progress=len(quiz.unmastered_items()) >= (round_left or 0))
-                if choice == "quit":
-                    print(f"\n{styled('👋 안녕히 가세요! (Goodbye!)', GREEN)}")
-                    return
-                round_no, round_asked, round_right = round_no + 1, 0, 0
-                if choice == "next":
-                    info = _go_to_next_lesson(quiz)
-                    if info is not None:
-                        lesson = info
-                        round_no = 1
 
 
 # ── Entry point ────────────────────────────────────────────────────────────

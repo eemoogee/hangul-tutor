@@ -399,6 +399,10 @@ def _looks_like_hangul_target(s: str) -> bool:
         return True
     return s in _JAMO_CHARS
 
+def _is_consonant_jamo(s: str) -> bool:
+    """True for a single bare consonant letter (ㄱ ... ㅎ)."""
+    return len(s) == 1 and 0x3131 <= ord(s) <= 0x314E
+
 # ── Romanization ───────────────────────────────────────────────────────────
 # The exact spelling system read_aloud grades typed answers against. Pulled
 # out to module level (rather than buried in _hangul_to_roman_hint) so it
@@ -1581,9 +1585,12 @@ class HangulQuiz:
             for other, count in item.confusions.items():
                 if not count:
                     continue
+                clean = self._clean_pair(key, other)
+                if clean is None:
+                    continue
                 # Order-independent pair key so X↔Y and Y↔X merge into
                 # one entry instead of appearing as two separate pairs.
-                pair_key = "↔".join(sorted((key, other)))
+                pair_key = "↔".join(sorted(clean))
                 pairs[pair_key] = pairs.get(pair_key, 0) + count
         return pairs
 
@@ -2142,6 +2149,13 @@ class HangulQuiz:
                 u_cho, u_jung, u_jong = self._decompose_syllable(user_clean) if len(user_clean) == 1 else ("", "", "")
                 if u_cho == "ㅇ" and not u_jong:
                     user_clean = u_jung
+                # Typing the whole block (미 for "ㅁ + ? = mi") — what a phone
+                # keyboard produces when you type ㅁ then ㅣ — shows the
+                # vowel just as well. So does the pair typed apart (ㅁㅣ).
+                t_cho, t_jung, _ = self._decompose_syllable(question.letter)
+                if (user_clean == question.letter
+                        or self._normalize_jamo_pair(user_clean) == t_cho + t_jung):
+                    user_clean = expected
             if question.direction == "letter_to_sound":
                 # Answer is a sound like 't' — case and stray spaces don't matter.
                 is_correct = normalize_roman(user_clean) == normalize_roman(expected)
@@ -2223,13 +2237,22 @@ class HangulQuiz:
             # plausibly have mixed up — one of the offered choices or a
             # block from the lessons. A random typo like 뷁 used to be saved
             # as a "confusion" and then suggested under "Practice these".
+            # A consonant and a vowel are never a mix-up of one letter for
+            # another (typing the ㄷ shown in "ㄷ + ? = deo" used to be saved
+            # as a ㄷ/ㅓ confusion and listed under "Practice these").
             valid_pair = (question.letter and user_clean
                           and _looks_like_hangul_target(user_clean)
                           and _looks_like_hangul_target(expected)
+                          and _is_consonant_jamo(user_clean) == _is_consonant_jamo(expected)
                           and self._is_studied_form(user_clean, question))
             confused_with = user_clean if valid_pair else None
             pair_target = expected
-            if not valid_pair and question.mode == "read_aloud":
+            if question.mode == "missing_vowel":
+                # Save the mix-up as the two blocks (모 typed for 미), not as
+                # bare vowel vs block — that drilled 오 against 미.
+                confused_with = self._missing_vowel_built(user_clean, question)
+                pair_target = question.letter
+            elif not valid_pair and question.mode == "read_aloud":
                 # Reading 어 as 'o' IS the ㅓ/ㅗ mix-up, even though the
                 # answer was typed in English letters. Read-aloud is ~30% of
                 # all questions and its mistakes used to be thrown away.
@@ -2253,6 +2276,45 @@ class HangulQuiz:
             lesson_id=question.lesson_id,
             letter=question.letter
         )
+
+    def _missing_vowel_built(self, typed: str, question: QuizQuestion) -> Optional[str]:
+        """For a missed "ㅁ + ? = mi": the block the learner built instead —
+        모 if they typed ㅗ (or 오, or 모). None if they didn't name a
+        different vowel (a typo, or just the consonant), so nothing is
+        saved as a mix-up."""
+        cho, jung, _ = self._decompose_syllable(question.letter)
+        vowel = typed if len(typed) == 1 and typed in _VOWEL_JAMO else ""
+        if not vowel and len(typed) == 1 and 0xAC00 <= ord(typed) <= 0xD7A3:
+            t_cho, t_jung, t_jong = self._decompose_syllable(typed)
+            if t_cho == cho and not t_jong:
+                vowel = t_jung
+        if not vowel or vowel == jung:
+            return None
+        built = self._compose_syllable(cho, vowel)
+        return built if _looks_like_hangul_target(built) and len(built) == 1 else None
+
+    def _clean_pair(self, a: str, b: str) -> Optional[tuple]:
+        """Tidy one saved confusion pair for display or drilling, or None
+        to drop it. Older versions saved two kinds of nonsense pair from
+        the missing-vowel question, and they stay in a learner's progress
+        file, so they're cleaned up whenever they're read:
+          - a consonant with a vowel (ㄷ↔ㅓ, from typing the ㄷ shown);
+          - a bare vowel with a block (ㅗ↔미): rebuilt as the two blocks
+            (모↔미), or dropped if they're the same block (typing 미 for
+            ㅁ + ㅣ, which was right).
+        Bare vowels are written with their silent ㅇ (ㅓ -> 어)."""
+        if not (_looks_like_hangul_target(a) and _looks_like_hangul_target(b)):
+            return None
+        if _is_consonant_jamo(a) != _is_consonant_jamo(b):
+            return None
+        for vowel, block in ((a, b), (b, a)):
+            if vowel in _VOWEL_JAMO and 0xAC00 <= ord(block) <= 0xD7A3:
+                cho, _, jong = self._decompose_syllable(block)
+                if cho != "ㅇ" and not jong:
+                    a, b = block, self._compose_syllable(cho, vowel)
+                break
+        a, b = self._compose_bare_vowel(a), self._compose_bare_vowel(b)
+        return None if a == b else (a, b)
 
     def _block_read_as(self, typed: str, target: str) -> Optional[str]:
         """Which studied block did the learner read `target` as? For a
@@ -2455,7 +2517,8 @@ class HangulQuiz:
         # placeholder-composed form (ㅏ vs 아) are the same vowel, and
         # without this, pairs like 'ㅏ↔아' showed up in "Practice these"
         # as fake confusions.
-        compose = self._compose_bare_vowel
+        # (Done in _clean_pair, which also drops consonant-vs-vowel pairs
+        # left in progress files by older versions.)
 
         # Merge by unordered pair so 'a↔b' and 'b↔a' (or two raw keys that
         # normalize to the same pair once composed) count as one entry
@@ -2463,11 +2526,10 @@ class HangulQuiz:
         merged = {}
         for k, v in counts.items():
             parts = k.split("↔")
-            if len(parts) != 2 or not all(_looks_like_hangul_target(p) for p in parts):
+            clean = self._clean_pair(*parts) if len(parts) == 2 else None
+            if clean is None:
                 continue
-            pa, pb = compose(parts[0]), compose(parts[1])
-            if pa == pb:
-                continue  # degenerate — same vowel, different written form
+            pa, pb = clean
             key = frozenset((pa, pb))
             if key not in merged:
                 merged[key] = [pa, pb, 0]
@@ -2640,6 +2702,10 @@ class HangulQuiz:
             return None
         if question.choices and self.resolve_choice(ans, question.choices) != ans:
             return None  # answered with a choice letter
+        if question.mode == "missing_vowel" and _is_consonant_jamo(ans):
+            cho = self._decompose_syllable(question.letter)[0]
+            return (f"Just the vowel — {cho} is already there. "
+                    f"Which vowel goes with it? (or pick A-D)")
         has_hangul = any(_is_hangul_char(c) for c in ans)
         has_latin = any("a" <= c.lower() <= "z" for c in ans)
         expected = question.correct_answer

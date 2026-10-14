@@ -500,6 +500,63 @@ check("stuck in the last lesson: suggests reviewing an earlier one",
 qz, out = _play(2, [1], (["RIGHT"] * CLI.ROUND_SIZE + [""]) * 3)
 check("a learner who is making progress isn't told to move on", "move on" not in out)
 
+print("Missing vowel answers and the mix-ups they save (phone screenshot, 2026-10-14)")
+
+
+def _mv():
+    return E.QuizQuestion(mode="missing_vowel", prompt="**ㅁ** + ? = **mi**", correct_answer="ㅣ",
+                          choices=["ㅡ", "ㅜ", "ㅗ", "ㅣ"], letter="미")
+
+
+q = fresh()
+q.start_lesson(2)
+check("missing vowel: typing the whole block (미) is right", q.answer("미", _mv()).correct)
+check("missing vowel: typing the two letters apart (ㅁㅣ) is right", q.answer("ㅁㅣ", _mv()).correct)
+check("missing vowel: typing the consonant shown gets a nudge, not a grade",
+      q.script_mismatch("ㅁ", _mv()) is not None and q.script_mismatch("ㅣ", _mv()) is None)
+q.answer("ㅁ", _mv())
+check("missing vowel: typing the consonant saves no mix-up",
+      not q.progress["confusion_counts"] and not q._pairs_from_learner_items(),
+      (q.progress["confusion_counts"], q._pairs_from_learner_items()))
+q.answer("ㅗ", _mv())
+check("missing vowel: a wrong vowel is saved as the two blocks (모 for 미)",
+      [c["pair"] for c in q._top_confusions()] == ["모↔미"]
+      and set(q._pairs_from_learner_items()) == {"모↔미"},
+      (q._top_confusions(), q._pairs_from_learner_items()))
+
+q = fresh()
+q.start_lesson(2)
+q.progress["confusion_counts"] = {"ㄷ↔ㅓ": 4, "ㅈ↔ㅏ": 3, "ㅗ↔ㅣ": 2, "미↔ㅣ": 2, "다↔타": 1}
+q._save_item(E.LearnerItem.from_dict("미", {"confusions": {"ㅗ": 2, "ㅁ": 1, "ㅣ": 1}}))
+q._save_item(E.LearnerItem.from_dict("ㄷ", {"confusions": {"더": 3}}))
+shown = [c["pair"] for c in q._top_confusions()]
+check("old saved pairs: consonant-vs-vowel ones aren't listed under 'Practice these'",
+      shown == ["오↔이", "다↔타"], shown)
+check("old saved pairs: the drill gets 모↔미, not 오↔미 or ㄷ↔더",
+      set(q._pairs_from_learner_items()) == {"모↔미"}, q._pairs_from_learner_items())
+
+q = fresh()
+mixed = []
+for lid in (2, 3, 5, 6):
+    q.start_lesson(lid)
+    for _ in range(120):
+        qq = q.next_question()
+        for t in set(qq.choices or []) | {ch for ch in qq.prompt if E._looks_like_hangul_target(ch)}:
+            if t != qq.correct_answer:
+                q.answer(t, qq)
+for k in list(q.progress["confusion_counts"]) + list(q._pairs_from_learner_items()):
+    a, b = k.split("↔")
+    if E._is_consonant_jamo(a) != E._is_consonant_jamo(b):
+        mixed.append(k)
+check("no question type saves a consonant-vs-vowel mix-up", not mixed, sorted(set(mixed))[:5])
+
+qz, out = _play(2, [1], ["/skip", "RIGHT"])
+check("/skip uses up a turn in the round (the next question is 2/10)",
+      f"· 1/{CLI.ROUND_SIZE}" in out and f"· 2/{CLI.ROUND_SIZE}" in out
+      and out.count(f"· 1/{CLI.ROUND_SIZE}") == 1)
+qz, out = _play(2, [1], ["/skip"] * CLI.ROUND_SIZE + ["q"])
+check("a round of skips still ends with its card", f"── Round 1 · 0 of {CLI.ROUND_SIZE} right" in out)
+
 print("Conveyor game")
 import game_io as GIO
 import conveyor_game as CONV
