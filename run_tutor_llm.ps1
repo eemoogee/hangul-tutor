@@ -1,4 +1,6 @@
-# run_tutor.ps1 — Launch Hangul Tutor with a curated multi-model setup.
+# run_tutor_llm.ps1 — Launch Hangul Tutor WITH the optional Ollama features
+# (--model implies --use-llm), using a curated multi-model setup.
+# For the normal offline app, use run_tutor.bat or `python hangul_cli.py`.
 #
 # Rationale (see `ollama list` for what's available locally):
 #   - Base default: qwen2.5:1.5b — fast and reliable, used for anything not
@@ -16,7 +18,7 @@
 # one-line mnemonic. If you want to experiment with Qwen3-level quality
 # without that slowdown, try qwen3.5:9b-nothink instead.
 #
-# Usage: .\run_tutor.ps1 [any extra args, e.g. --lesson 3]
+# Usage: .\run_tutor_llm.ps1 [any extra args, e.g. --lesson 3]
 
 $env:HANGUL_MODEL_MNEMONIC = "bllossom:8b"
 $env:HANGUL_MODEL_SENTENCE = "bllossom:8b"
