@@ -97,6 +97,22 @@ si = E.QuizQuestion(mode="read_aloud", prompt="", correct_answer="si",
 check("read_aloud: 'shi' accepted for 시", q.answer("shi", si).correct)
 check("bare ㄹ accepts 'r' and 'l'", {"r", "l"} <= q.roman_variants("ㄹ"))
 
+# 'ee' for the vowel ㅣ, in every block that has it (decided 2026-10-14).
+ee = E.QuizQuestion(mode="read_aloud", prompt="", correct_answer="i",
+                    accepted=sorted(q.roman_variants("이")), letter="이")
+check("read_aloud: 'ee' accepted for 이", q.answer("ee", ee).correct)
+check("'ee' accepted in any ㅣ block (기, 미, 인, bare ㅣ)",
+      {"gee"} <= q.roman_variants("기") and {"mee"} <= q.roman_variants("미")
+      and {"een"} <= q.roman_variants("인") and {"ee"} <= q.roman_variants("ㅣ"))
+check("'ee' combines with 'sh' and 'l' (시 -> shee/see, 리 -> lee/ree)",
+      {"si", "shi", "see", "shee"} <= q.roman_variants("시")
+      and {"ri", "li", "ree", "lee"} <= q.roman_variants("리"))
+check("'ee' works inside longer readings (아이 -> aee, 김치 -> geemchee)",
+      {"aee"} <= q.roman_variants("아이") and "geemchee" in q.roman_variants("김치"))
+check("'ee' is not accepted where there is no ㅣ (어, 의, 애)",
+      not ({"ee", "eee", "uee", "aee"} & (q.roman_variants("어") | q.roman_variants("의")
+                                          | q.roman_variants("애"))))
+
 mv = E.QuizQuestion(mode="missing_vowel", prompt="", correct_answer="ㅗ",
                     choices=["ㅗ", "ㅏ", "ㅜ", "ㅣ"], letter="노")
 check("missing_vowel: 오 accepted for ㅗ", q.answer("오", mv).correct)

@@ -2657,19 +2657,29 @@ class HangulQuiz:
             'r/l', so either letter is a correct reading;
           - 'sh' for ㅅ before ㅣ/y-vowels ('shi' for 시), as Lesson 3 teaches;
           - each side of a slashed bare-letter spelling ('r' or 'l' for ㄹ,
-            'ng' for ㅇ) instead of demanding the literal 'r/l'."""
+            'ng' for ㅇ) instead of demanding the literal 'r/l';
+          - 'ee' for the vowel ㅣ ('ee' for 이, 'gee' for 기, 'shee' for 시,
+            'een' for 인) — the natural English spelling of that sound."""
         official = self._hangul_to_roman_hint(ch)
         if "/" in official:                       # bare letter like ㄹ -> 'r/l'
             return [p for p in official.split("/") if p]
         variants = [official]
+        if ch == "ㅣ":                             # the bare vowel letter
+            return variants + ["ee"]
         cho, jung, jong = self._decompose_syllable(ch)
         if not cho:
             return variants
-        tail = ROMANIZATION.get(jung, "") + (self._batchim_sound(jong) if jong else "")
+        batchim = self._batchim_sound(jong) if jong else ""
+        tail = ROMANIZATION.get(jung, "") + batchim
         if cho == "ㄹ":
             variants.append("l" + tail)
         if cho == "ㅅ" and jung in _SH_VOWELS:
-            variants.append("sh" + _SH_VOWELS[jung] + (self._batchim_sound(jong) if jong else ""))
+            variants.append("sh" + _SH_VOWELS[jung] + batchim)
+        if jung == "ㅣ":
+            # Every spelling so far ends in 'i' + batchim; swap that 'i'.
+            variants += [v[:len(v) - len(batchim) - 1] + "ee" + batchim
+                         for v in variants
+                         if v.endswith("i" + batchim)]
         return variants
 
     def roman_variants(self, text: str) -> set[str]:
