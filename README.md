@@ -74,7 +74,7 @@ uses Ollama for mnemonics and short constrained Korean sentences.
 python hangul_cli.py                  # Interactive mode, resumes last lesson
 python hangul_cli.py --lesson 1       # Start at a specific lesson
 python hangul_cli.py --mode spell     # Lock to one quiz mode for the whole session
-python hangul_cli.py --sudden-death   # One wrong answer = game over, tracks streak
+python hangul_cli.py --sudden-death   # 3 hearts, lose one per miss; 10 in a row wins one back
 python hangul_cli.py --mnemonic ㄱ    # One-off: generate a mnemonic for a letter
 python hangul_cli.py --model llama3.2:1b-instruct-q4_K_M   # Use a different Ollama model
 ```

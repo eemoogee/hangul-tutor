@@ -13,7 +13,7 @@ Usage:
     python hangul_cli.py                  # Interactive mode (offline)
     python hangul_cli.py --lesson 1       # Start at specific lesson
     python hangul_cli.py --mode spell     # Practice only spelling
-    python hangul_cli.py --sudden-death   # One-life mode, count streak
+    python hangul_cli.py --sudden-death   # 3 hearts, lose one per miss; 10 in a row wins one back
     python hangul_cli.py --mnemonic ㄱ    # Print a mnemonic for a letter
     python hangul_cli.py --use-llm        # Enable optional Ollama enrichments
 """
