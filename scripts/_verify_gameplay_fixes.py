@@ -647,6 +647,16 @@ check("typing finishes the targeted invader", b.disabled)
 lvl.move("x")
 check("wrong key counts as a miss", lvl.misses == 1)
 
+# Status line fits a phone (~49 columns): lives and score never cut off.
+lvl = R.RainLevel(12, [("가", "ga")], previous_points=99999)
+hud = lvl.hud_text()
+check("rain status: lives come first", hud.startswith("<3 <3 <3"), hud)
+check("rain status: fits 48 columns with a big score", len(hud) <= 48, (len(hud), hud))
+check("rain status: shows the quit hint", "Esc=quit" in hud, hud)
+lvl.last_miss, lvl.miss_flash = "x", 3
+check("rain status: a miss replaces the quit hint while it flashes",
+      "miss: 'x'" in lvl.hud_text() and "Esc" not in lvl.hud_text(), lvl.hud_text())
+
 print()
 if failures:
     print(f"RESULT: {len(failures)} FAILED — {failures}")

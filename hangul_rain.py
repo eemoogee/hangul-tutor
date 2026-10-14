@@ -392,15 +392,21 @@ class RainLevel:
                 pass
 
         scr.hline(height - 2, 0, '-', width)
-        hud = 'Level %d   Score: %d   Left: %d   Lives: %s   (Esc = quit)' % (
-            self.n, self.points, self.invaders_left + len(self.invaders),
-            '<3 ' * self.lives)
-        if self.miss_flash:
-            hud += '   miss: %r' % self.last_miss
         try:
-            scr.addstr(height - 1, 0, hud[:width - 1])
+            scr.addstr(height - 1, 0, self.hud_text()[:width - 1])
         except curses.error:
             pass
+
+    def hud_text(self) -> str:
+        """The status line, most important first, so a narrow screen (a
+        phone is ~49 columns) cuts the least useful part: lives, score,
+        what's left, level, then the quit hint (or the last miss, while
+        it's flashing). Fits in 48 columns for any realistic score."""
+        hearts = ' '.join(['<3'] * self.lives) or 'no lives'
+        tail = 'miss: %r' % self.last_miss if self.miss_flash else 'Esc=quit'
+        return '%s  Score %d  Left %d  Lv %d  %s' % (
+            hearts, self.points, self.invaders_left + len(self.invaders),
+            self.n, tail)
 
     @property
     def complete(self):
