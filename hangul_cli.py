@@ -42,6 +42,15 @@ from hangul_models import get_model, set_default_model, summarize_models
 from hangul_rain import launch_rain_mode
 from conveyor_game import run_conveyor, make_conveyor_state
 import term_wrap
+from term_wrap import strip_key_codes
+
+
+def input(prompt: str = "") -> str:  # noqa: A001 — deliberately wraps the builtin
+    """The builtin input(), minus stray key codes (see
+    term_wrap.strip_key_codes). Every prompt in this file goes through it."""
+    import builtins
+    return strip_key_codes(builtins.input(prompt))
+
 
 # Whether optional Ollama enrichments are enabled. OFF by default — the app
 # is fully functional offline. Set once from --use-llm in main(). Every

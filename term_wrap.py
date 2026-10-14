@@ -149,3 +149,23 @@ def install():
         sys.stdout = WrappingStdout(sys.stdout, width=int(forced))
     elif sys.stdout.isatty():
         sys.stdout = WrappingStdout(sys.stdout)
+
+
+# ── Stray key codes in typed input ───────────────────────────────────
+# Without line editing (Termux, plain consoles), keys like End, Home or
+# the arrows arrive inside input() as raw escape sequences: End is
+# "\x1b[F", shown on screen as ^[[F. Left in, they'd be graded as an
+# answer ("you typed '\x1b[F'") and break the streak.
+_KEY_CODE = re.compile(
+    r"\x1b\[[0-?]*[ -/]*[@-~]"   # CSI: arrows, Home/End, Delete, F5+ ...
+    r"|\x1bO[@-~]"                # SS3: F1-F4, Home/End on some terminals
+    r"|\x1b[@-_]?"                # any other escape, or a lone Esc
+    r"|[\x00-\x08\x0b-\x1f\x7f]"   # other control characters (keeps tab)
+)
+
+
+def strip_key_codes(text: str) -> str:
+    """Remove terminal key codes and control characters from typed text,
+    so a stray End or arrow press counts as nothing at all."""
+    return _KEY_CODE.sub("", text)
+

@@ -624,6 +624,22 @@ check("conveyor: answering 3 after /hint scores, without mastery credit",
       "Final score : 1" in text and q._get_item("가").history == "h",
       (q._get_item("가").history, text[-300:]))
 
+print("Stray key codes")
+import term_wrap as _tw
+check("End key code alone counts as blank", _tw.strip_key_codes("\x1b[F") == "")
+check("key codes around an answer are dropped",
+      _tw.strip_key_codes("\x1b[Fbanana\x1b[D") == "banana")
+check("arrow/Home/F1 codes and a lone Esc are dropped",
+      _tw.strip_key_codes("\x1b[A\x1bOH\x1bOP\x1b") == "")
+check("Hangul, spaces and slashes are untouched",
+      _tw.strip_key_codes("바나나 /hint") == "바나나 /hint")
+import hangul_cli as _cli_k
+_real, _b.input = _b.input, (lambda prompt="": "\x1b[Fga")
+try:
+    check("the CLI's input() strips key codes", _cli_k.input("> ") == "ga")
+finally:
+    _b.input = _real
+
 print("Hangul Rain")
 q = fresh()
 for lid in (1, 10, 11, 12):

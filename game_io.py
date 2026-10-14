@@ -34,6 +34,15 @@ from typing import Optional
 # or the relevant fields as arguments so this layer stays thin.
 from hangul_quiz_engine import QuizQuestion, QuizResult
 from game_state import ConveyorState
+from term_wrap import strip_key_codes
+
+
+def input(prompt: str = "") -> str:  # noqa: A001 — deliberately wraps the builtin
+    """The builtin input(), minus stray key codes (see
+    term_wrap.strip_key_codes). Every prompt in this file goes through it."""
+    import builtins
+    return strip_key_codes(builtins.input(prompt))
+
 
 
 # ---------------------------------------------------------------------------
