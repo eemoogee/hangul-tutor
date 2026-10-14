@@ -278,6 +278,7 @@ check("long lines break between words, not inside them",
 
 print("A sense of progress (rounds, solid moments, next step)")
 import builtins as _b
+import re
 import re as _re
 import time as _t2
 
@@ -335,7 +336,38 @@ q.start_lesson(2)
 mix = Counter(q.next_question().mode for _ in range(2000))
 special = sum(mix[m] for m in ("confusion_drill", "word_contrast", "nonword_decode", "sequence_decode"))
 check("special modes get real airtime (were ~0%)", 0.12 <= special / 2000 <= 0.30, dict(mix))
-check("confusion drills appear without any recorded mistakes", mix["confusion_drill"] > 0, dict(mix))
+check("look-alike drills no longer appear on their own (decided 2026-10-14)",
+      mix["confusion_drill"] == 0, dict(mix))
+
+print("Mix-ups: shown side by side, then asked again")
+q = fresh()
+q.start_lesson(2)
+miss = q.answer("라", E.QuizQuestion(mode="match_sound", prompt="", correct_answer="가",
+                                     choices=["가", "라", "나", "다"], letter="가", lesson_id=2))
+check("a mix-up is reported on the result",
+      (miss.confused_target, miss.confused_with) == ("가", "라"), (miss.confused_target, miss.confused_with))
+first_two = [q.next_question() for _ in range(2)]
+check("the missed block isn't asked again straight away", len(q._comeback) == 1, q._comeback)
+back = q.next_question()
+check("the 3rd question asks the missed block again",
+      back.mode == "match_sound" and back.letter == "가" and not q._comeback, (back.mode, back.letter))
+check("...with the block it was mixed up with among the choices",
+      "라" in back.choices and len(back.choices) == 4 and len(set(back.choices)) == 4, back.choices)
+typo = q.answer("zz", E.QuizQuestion(mode="match_sound", prompt="", correct_answer="나",
+                                      choices=["가", "라", "나", "다"], letter="나", lesson_id=2))
+check("a typo is not a mix-up and queues nothing", typo.confused_with is None and not q._comeback)
+q.answer("라", E.QuizQuestion(mode="match_sound", prompt="", correct_answer="가",
+                              choices=["가", "라", "나", "다"], letter="가", lesson_id=2))
+q.start_lesson(3)
+asked = [q.next_question() for _ in range(4)]
+check("a queued mix-up is dropped when you change lesson", not q._comeback, q._comeback)
+import io as _io, contextlib as _cl
+import hangul_cli as _cli_m
+buf = _io.StringIO()
+with _cl.redirect_stdout(buf):
+    _cli_m.show_mixup(q, miss)
+shown = re.sub(r"\x1b\[[0-9;]*m", "", buf.getvalue())
+check("the miss shows both blocks with their sounds", "가 is ga" in shown and "라 is ra" in shown, shown)
 
 for lid in (10, 11):
     q.start_lesson(lid)

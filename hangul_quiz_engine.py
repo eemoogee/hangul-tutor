@@ -79,6 +79,10 @@ class QuizResult:
     feedback: str
     lesson_id: int
     letter: str
+    # Set on a miss that was a real mix-up of two blocks: what the learner
+    # gave (confused_with) instead of the right block (confused_target).
+    confused_with: Optional[str] = None
+    confused_target: Optional[str] = None
 
 
 @dataclass
@@ -471,6 +475,10 @@ class HangulQuiz:
         # Last (mode, letter) pair asked — used by _select_from_pool to avoid
         # asking the exact same question back-to-back.
         self._last_asked: tuple = ("", "")
+        # Blocks to ask again shortly after a real mix-up, as an ordinary
+        # "Find the Sound" question with the mixed-up block among the
+        # choices: [questions_to_wait, target, other, lesson_id]. Session-only.
+        self._comeback: list = []
         # Longest streak reached at any point this session. session_streak
         # resets to 0 on a miss, so reading it at quit time lost any streak
         # that ended before the last answer.
@@ -883,6 +891,11 @@ class HangulQuiz:
             chosen_mode = mode
             q = self._generate_question(chosen_mode)
             self._last_asked = (chosen_mode, q.letter)
+            return q
+        elif (q := self._comeback_question(lesson)) is not None:
+            # A block the learner just mixed up, asked again (see
+            # _queue_comeback). Auto mode only: /mode locks skip it.
+            self._last_asked = ("match_sound", q.letter)
             return q
         elif lesson.get("mastery_words") and random.random() < self.READ_WORD_RATE:
             # Word-based lesson: whole-word reading is the primary
@@ -2190,6 +2203,7 @@ class HangulQuiz:
 
         # Track progress
         self.session_total += 1
+        confused_with = pair_target = None
         if is_correct:
             self.session_correct += 1
             self.session_streak += 1
@@ -2267,14 +2281,67 @@ class HangulQuiz:
                 pair = f"{confused_with}↔{pair_target}"
                 self.progress.setdefault("confusion_counts", {})
                 self.progress["confusion_counts"][pair] = self.progress["confusion_counts"].get(pair, 0) + 1
+                self._queue_comeback(pair_target, confused_with)
 
+        is_mixup = bool(not is_correct and confused_with and pair_target
+                        and confused_with != pair_target)
         return QuizResult(
             correct=is_correct,
             user_answer=user_clean,
             expected=expected,
             feedback=feedback,
             lesson_id=question.lesson_id,
-            letter=question.letter
+            letter=question.letter,
+            confused_with=confused_with if is_mixup else None,
+            confused_target=pair_target if is_mixup else None,
+        )
+
+    # ── Mix-ups come back as ordinary questions ─────────────────────────
+    # Replaces the old standalone "Look-alikes" drill in the rotation
+    # (decided 2026-10-14): it drilled preset pairs the learner had never
+    # confused and read as forced. Now the contrast is shown in the miss
+    # feedback (CLI), and the missed block returns a few questions later.
+    COMEBACK_AFTER = 3   # the 3rd question after the miss
+
+    def _queue_comeback(self, target: str, other: str) -> None:
+        """Ask `target` again soon, with `other` (what the learner gave
+        instead) among the choices. Single blocks only; one entry per
+        target (a fresh miss restarts its wait)."""
+        def _block(s):
+            return isinstance(s, str) and len(s) == 1 and 0xAC00 <= ord(s) <= 0xD7A3
+        if not (_block(target) and _block(other)) or target == other:
+            return
+        lesson_id = (self.current_lesson or {}).get("id")
+        self._comeback = [c for c in self._comeback if c[1] != target]
+        self._comeback.append([self.COMEBACK_AFTER, target, other, lesson_id])
+
+    def _comeback_question(self, lesson: dict) -> Optional["QuizQuestion"]:
+        """Count every queued comeback down by one question; when one is
+        due, return a normal 'Find the Sound' question for its block, with
+        the mixed-up block as one of the choices. Entries from another
+        lesson are dropped."""
+        self._comeback = [c for c in self._comeback if c[3] == lesson.get("id")]
+        for c in self._comeback:
+            c[0] -= 1
+        due = next((c for c in self._comeback if c[0] <= 0), None)
+        if due is None:
+            return None
+        self._comeback.remove(due)
+        _, target, other, _ = due
+        pool = [s for s in self._get_lesson_syllable_pool(lesson) if s not in (target, other)]
+        pad = random.sample(pool, min(2, len(pool)))
+        if len(pad) < 2:
+            more = [s for s in self._get_known_syllables() if s not in (target, other) and s not in pad]
+            pad += random.sample(more, min(2 - len(pad), len(more)))
+        choices = [target, other] + pad
+        random.shuffle(choices)
+        return QuizQuestion(
+            mode="match_sound",
+            prompt=f"Which one sounds like **{self._hangul_to_roman_hint(target)}**?",
+            correct_answer=target,
+            choices=choices,
+            lesson_id=lesson["id"],
+            letter=target,
         )
 
     def _missing_vowel_built(self, typed: str, question: QuizQuestion) -> Optional[str]:
@@ -2568,7 +2635,7 @@ class HangulQuiz:
     READ_WORD_RATE = 0.60
 
     # Share of questions given to the special modes (real_word,
-    # confusion_drill, word_contrast, nonword_decode, sequence_decode),
+    # word_contrast, nonword_decode, sequence_decode),
     # split among whichever are available by the weights in _special_modes.
     # Real words weigh most (~1 question in 10); a drill on a mix-up the
     # learner has REALLY made weighs double a preset one.
@@ -2579,10 +2646,9 @@ class HangulQuiz:
         out = []
         if self._lesson_words(lesson):
             out.append(("real_word", 2.5))       # the lesson's real words: the hook
-        if self._relevant_tracked_pair() is not None:
-            out.append(("confusion_drill", 2.0))
-        elif self._curriculum_drill_pairs(lesson.get("confusion_pairs", [])):
-            out.append(("confusion_drill", 1.0))
+        # No confusion_drill here any more (2026-10-14): mix-ups are handled
+        # by the miss feedback plus _queue_comeback. The drill is still
+        # reachable on purpose with /mode confusion.
         if self._available_word_contrasts():
             out.append(("word_contrast", 1.0))
         pool_size = len(self._get_lesson_syllable_pool(lesson))

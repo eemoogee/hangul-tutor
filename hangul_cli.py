@@ -1867,6 +1867,21 @@ def show_breakdown(quiz: HangulQuiz, q: QuizQuestion):
         pass
 
 
+def show_mixup(quiz: HangulQuiz, result) -> None:
+    """After a real mix-up (가 given for 라, say), put the two side by side
+    with their sounds, and say the block will come back. This replaced the
+    standalone Look-alikes question (2026-10-14)."""
+    target, other = result.confused_target, result.confused_with
+    if not (target and other):
+        return
+    try:
+        rt, ro = quiz._hangul_to_roman_hint(target), quiz._hangul_to_roman_hint(other)
+    except Exception:
+        return
+    print(f"   👀 {styled(target, BOLD, CYAN)} is {rt} · {styled(other, BOLD)} is {ro} — "
+          f"easy to mix up. {target} will come back in a moment.")
+
+
 MODE_ALIASES = {
     "spell": "spell",
     "read": "read_aloud", "read_aloud": "read_aloud",
@@ -2568,6 +2583,7 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
             print(f"   {styled('💡 With a hint — get it on your own to make it count toward solid.', DIM)}")
         if not result.correct:
             show_breakdown(quiz, current_question)
+            show_mixup(quiz, result)
         _show_contrast_examples(current_question)
 
         if sudden_death:
