@@ -25,6 +25,7 @@ themselves do not need to change.
 
 from __future__ import annotations
 
+import re
 import sys
 from typing import Optional
 
@@ -56,6 +57,17 @@ RESET  = "\033[0m"
 def _styled(text: str, *styles: str) -> str:
     """Wrap text in ANSI style codes."""
     return "".join(styles) + text + RESET
+
+
+_MD_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+
+
+def _md(text: str, *outer: str) -> str:
+    """Turn the engine's Markdown-style **bold** into terminal bold (it used
+    to reach the screen as literal asterisks). `outer` is the style the
+    text sits in, re-applied after each bold part so a green line stays
+    green."""
+    return _MD_BOLD_RE.sub(lambda m: BOLD + m.group(1) + RESET + "".join(outer), text)
 
 
 def _print(*args, **kwargs) -> None:
@@ -134,15 +146,15 @@ def render_question(question: QuizQuestion, time_limit_ms: Optional[float] = Non
 
     _print()
     _print(f"  {icon}  {_styled(label, BOLD, CYAN)}")
-    _print(f"  {question.prompt}")
+    _print(f"  {_md(question.prompt)}")
 
     if question.choices:
         _print()
         for i, choice in enumerate(question.choices, 1):
-            _print(f"    {_styled(str(i) + '.', DIM)} {choice}")
+            _print(f"    {_styled(str(i) + '.', DIM)} {_md(choice)}")
 
-    if question.hint:
-        _print(f"\n  {_styled('Hint: ' + question.hint, DIM)}")
+    # The hint is NOT printed here: shown up front it often gave the answer
+    # away (a spell hint names the letters to type). /hint asks for it.
 
     if time_limit_ms is not None:
         secs = time_limit_ms / 1000
@@ -159,10 +171,13 @@ def render_result(result: QuizResult) -> None:
 
     Correct answers are green; wrong answers are red with the expected answer.
     """
+    # The engine's feedback already starts with ✅ / ❌; drop it so the
+    # line doesn't carry two marks ("✗ ❌ Not quite…").
+    feedback = result.feedback.removeprefix("✅ ").removeprefix("❌ ")
     if result.correct:
-        _print(f"\n   {_styled('✓ ' + result.feedback, GREEN)}")
+        _print(f"\n   {_styled('✓ ' + _md(feedback, GREEN), GREEN)}")
     else:
-        _print(f"\n   {_styled('✗ ' + result.feedback, RED)}")
+        _print(f"\n   {_styled('✗ ' + _md(feedback, RED), RED)}")
         _print(f"   {_styled('Expected: ' + result.expected, DIM)}")
 
 

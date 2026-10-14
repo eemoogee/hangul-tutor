@@ -266,15 +266,17 @@ import re as _re
 import time as _t2
 
 
-def _play(lesson_id, completed, answers):
-    """Drive the real CLI loop with scripted answers; returns its output."""
+def _play(lesson_id, completed, answers, questions=()):
+    """Drive the real CLI loop with scripted answers; returns its output.
+    `questions`, if given, are served first instead of random ones."""
     qz = fresh()
     qz.progress["completed_lessons"] = list(completed)
     last = {}
     orig = qz.next_question
+    forced = list(questions)
 
     def nq(*a, **k):
-        last["q"] = orig(*a, **k)
+        last["q"] = forced.pop(0) if forced else orig(*a, **k)
         return last["q"]
     qz.next_question = nq
     script = iter(answers)
@@ -283,6 +285,10 @@ def _play(lesson_id, completed, answers):
         v = next(script, None)
         if v is None:
             raise EOFError
+        if v == "WRONG":
+            qq = last["q"]
+            wrong = [c for c in qq.choices if c != qq.correct_answer]
+            return wrong[0] if wrong else ("zz" if qq.correct_answer.isascii() else "뷁")
         return last["q"].correct_answer if v == "RIGHT" else v
     real_input, _b.input = _b.input, fake_input
     real_sleep, _t2.sleep = _t2.sleep, (lambda *_: None)
@@ -380,6 +386,170 @@ for _ in range(200):
     screen = "\n".join(l for l in screen.splitlines() if not _re.match(r"\s+[a-d]\)", l))
     leaks += any(_re.search(rf"\b{w}\b", screen) for w in _re.findall(r"[a-z]{3,}", wq.correct_answer.lower()))
 check("word contrast doesn't show a translation containing the answer", leaks == 0, leaks)
+
+print("Mistakes, hints and skips count toward mastery")
+
+
+def _q(letter, mode="match_sound", answer=None):
+    return E.QuizQuestion(mode=mode, prompt="", correct_answer=answer or letter,
+                          choices=[], letter=letter)
+
+
+def _answers(quiz, letter, seq, mode="match_sound"):
+    """seq: '1' right, '0' wrong, 'h' right after a hint, 's' skip."""
+    for c in seq:
+        qq = _q(letter, mode)
+        if c == "s":
+            quiz.record_skip(qq)
+        else:
+            quiz.answer(letter if c in "1h" else "zz", qq, assisted=(c == "h"))
+
+
+q = fresh()
+q.start_lesson(2)
+_answers(q, "가", "111")
+check("3 right in a row makes an item solid (same pace as before)", q._is_solid("가"),
+      q._get_item("가").confidence)
+_answers(q, "나", "10101000")
+check("3 right + 5 wrong is NOT solid (the old formula said it was)", not q._is_solid("나"),
+      q._get_item("나").confidence)
+_answers(q, "다", "000")
+n = 0
+while not q._is_solid("다") and n < 20:
+    _answers(q, "다", "1")
+    n += 1
+check("an early slip is forgiven: 4 right answers after 3 misses make it solid",
+      q._is_solid("다") and n <= 4, n)
+_answers(q, "라", "11111111")
+_answers(q, "라", "000")
+check("a solid item that keeps getting missed stops being solid", not q._is_solid("라"),
+      q._get_item("라").confidence)
+
+legacy = {"correct": 3, "wrong": 5, "last_seen": 0.0}
+it = E.LearnerItem.from_dict("마", legacy)
+check("progress saved before this change: 3 right / 5 wrong reads as not solid",
+      it.confidence < q.MASTERY_CONFIDENCE, (it.history, it.confidence))
+it = E.LearnerItem.from_dict("마", {"correct": 12, "wrong": 0})
+check("progress saved before this change: a clean record stays solid",
+      it.confidence >= q.MASTERY_CONFIDENCE, (it.history, it.confidence))
+it = E.LearnerItem.from_dict("마", E.LearnerItem.from_dict("마", legacy).to_dict())
+check("answer history survives save and load", it.history == "00000111", it.history)
+it = E.LearnerItem.from_dict("마", {"correct": 0, "wrong": 0, "_migrated_confidence": 4})
+check("the very old 0-5 score still carries over as a floor", it.confidence == 4, it.confidence)
+
+q = fresh()
+q.start_lesson(2)
+streak0 = q.session_streak
+r = q.answer("가", _q("가"), assisted=True)
+check("a right answer after /hint is still right and keeps the streak",
+      r.correct and q.session_streak == streak0 + 1)
+_answers(q, "가", "hhhh")
+check("right answers after /hint don't make an item solid", not q._is_solid("가"),
+      q._get_item("가").history)
+q.answer("나무", E.QuizQuestion(mode="real_word", prompt="", correct_answer="namu",
+                               accepted=["namu"], choices=[], letter="나무"), assisted=True)
+check("a hinted word gives its blocks no credit", q._get_item("나").history == "",
+      q._get_item("나").history)
+q.answer("namu", E.QuizQuestion(mode="real_word", prompt="", correct_answer="namu",
+                               accepted=["namu"], choices=[], letter="나무"))
+check("an unhinted word still credits its blocks", q._get_item("나").history == "1",
+      q._get_item("나").history)
+
+q = fresh()
+q.start_lesson(2)
+_answers(q, "다", "111")
+total0, streak = q.session_total, q.session_streak
+q.record_skip(_q("다"))
+it = q._get_item("다")
+check("/skip counts as a miss on the item", it.history.endswith("s") and it.wrong == 1, it.history)
+check("/skip ends the streak but isn't graded as an answer",
+      q.session_streak == 0 and q.session_total == total0 and streak == 3)
+_answers(q, "다", "s")
+check("skipping the hard ones can't leave an item solid", not q._is_solid("다"),
+      q._get_item("다").confidence)
+check("/skip records no mix-up", not q._get_item("다").confusions)
+
+# The real CLI loop: /hint then a right answer; /skip.
+qz, out = _play(2, [1], ["/hint", "RIGHT", "/skip"], questions=[
+    E.QuizQuestion(mode="spell", prompt="Type the Hangul for: na", correct_answer="나",
+                   choices=["나", "다", "라", "가"], letter="나", hint="ㄴ + ㅏ"),
+    E.QuizQuestion(mode="spell", prompt="Type the Hangul for: da", correct_answer="다",
+                   choices=["나", "다", "라", "가"], letter="다", hint="ㄷ + ㅏ")])
+hinted = [k for k, v in qz.progress["learner_items"].items() if v.get("history") == "h"]
+check("CLI: /hint then a right answer is recorded as helped", hinted == ["나"],
+      {k: v.get("history") for k, v in qz.progress["learner_items"].items()})
+check("CLI: says a hinted answer doesn't count toward solid", "With a hint" in out)
+skipped = [k for k, v in qz.progress["learner_items"].items() if v.get("history") == "s"]
+check("CLI: /skip is recorded as a miss and saved",
+      skipped == ["다"] and E.PROGRESS_PATH.exists()
+      and json.loads(E.PROGRESS_PATH.read_text(encoding="utf-8"))["learner_items"]
+          .get(skipped[0], {}).get("history") == "s", skipped)
+
+R10 = ["WRONG"] * CLI.ROUND_SIZE
+qz, out = _play(2, [1], R10 + [""] + R10 + [""] + R10 + ["n"])
+cards = out.split("── Round ")[1:]
+check("a stuck learner isn't offered to move on too early",
+      len(cards) >= 3 and all("move on" not in c for c in cards[:2]), len(cards))
+check(f"after {CLI.STUCK_AFTER_ROUNDS} rounds with no progress, the card offers the next lesson",
+      len(cards) >= 3 and "move on" in cards[2] and "[n] Lesson 3" in cards[2])
+check("...and n takes you there", qz.current_lesson["id"] == 3, qz.current_lesson["id"])
+check("...without marking the unfinished lesson done", 2 not in qz.progress["completed_lessons"])
+qz, out = _play(12, list(range(1, 12)), R10 + [""] + R10 + [""] + R10 + [""])
+check("stuck in the last lesson: suggests reviewing an earlier one",
+      "earlier lesson" in out.split("── Round 3")[-1])
+qz, out = _play(2, [1], (["RIGHT"] * CLI.ROUND_SIZE + [""]) * 3)
+check("a learner who is making progress isn't told to move on", "move on" not in out)
+
+print("Conveyor game")
+import game_io as GIO
+import conveyor_game as CONV
+ch = ["가", "나", "다", "라"]
+check("a choice's number picks it (choices are shown as 1-4)",
+      E.HangulQuiz.resolve_choice("3", ch) == "다" and E.HangulQuiz.resolve_choice("3.", ch) == "다")
+check("letters still pick too", E.HangulQuiz.resolve_choice("c", ch) == "다")
+check("a number past the last choice isn't a pick", E.HangulQuiz.resolve_choice("4", ch[:3]) == "4")
+q = fresh()
+q.start_lesson(5)
+qq = E.QuizQuestion(mode="build_syllable", prompt="Build: ㄱ + ㅏ", correct_answer="가",
+                    choices=["나", "다", "가", "라"], letter="가", hint="ㄱ + ㅏ = 가")
+check("typing the right choice's number is graded right", q.answer("3", qq).correct)
+stars = hint_shown = doubled = 0
+for lid in (2, 5, 10, 12):
+    q.start_lesson(lid)
+    for mode in ("build_syllable", "decompose_syllable", "missing_vowel", None):
+        for _ in range(15):
+            qq = q.next_question(mode=mode)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                GIO.render_question(qq)
+                GIO.render_result(q.answer("zz", qq))
+                GIO.render_result(q.answer(qq.correct_answer, qq))
+            text = _ansi.sub("", buf.getvalue())
+            stars += "**" in text
+            doubled += "✗ ❌" in text or "✓ ✅" in text
+            hint_shown += bool(qq.hint) and ("Hint:" in text or qq.hint in text.split("✗")[0])
+check("no literal ** in conveyor questions or feedback", stars == 0, stars)
+check("the hint isn't shown before you answer", hint_shown == 0, hint_shown)
+check("feedback has one ✓/✗ mark, not two", doubled == 0, doubled)
+
+conv_q = E.QuizQuestion(mode="build_syllable", prompt="Build: ㄱ + ㅏ", correct_answer="가",
+                        choices=["나", "다", "가", "라"], letter="가", hint="ㄱ + ㅏ = 가")
+q = fresh()
+q.start_lesson(5)
+q.next_question = lambda mode=None: conv_q
+script = iter(["/hint", "3"])
+real_input, _b.input = _b.input, (lambda prompt="": next(script, None) or (_ for _ in ()).throw(EOFError))
+buf = io.StringIO()
+try:
+    with contextlib.redirect_stdout(buf):
+        CONV.run_conveyor(q, CONV.make_conveyor_state(5, ["가"], turn_limit=1))
+finally:
+    _b.input = real_input
+text = _ansi.sub("", buf.getvalue())
+check("conveyor: /hint shows the hint on request", "ㄱ + ㅏ = 가" in text)
+check("conveyor: answering 3 after /hint scores, without mastery credit",
+      "Final score : 1" in text and q._get_item("가").history == "h",
+      (q._get_item("가").history, text[-300:]))
 
 print("Hangul Rain")
 q = fresh()

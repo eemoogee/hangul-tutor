@@ -92,8 +92,8 @@ python hangul_cli.py --model llama3.2:1b-instruct-q4_K_M   # Use a different Oll
 | `/template` | Same as `/talk` but instant, no LLM |
 | `/konglish` | Decode a Konglish word (sound it out, guess the English) |
 | `/kspell` | Spell an English word in Hangul |
-| `/hint` | Show a hint for the current question |
-| `/skip` | Reveal the answer and move on |
+| `/hint` | Show a hint for the current question (a right answer after a hint doesn't count toward mastery) |
+| `/skip` | Reveal the answer and move on (counts as a miss) |
 | `/quit` | Save and exit |
 
 **Quiz modes:** `spell`, `read_aloud`, `match_sound`, `build_syllable`,
