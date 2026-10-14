@@ -93,3 +93,31 @@ and cover:
 On the old code, the key cases fail: 3 right + 5 wrong is "solid", `3`
 doesn't pick choice 3, and the hint and `**` are both on screen. A full
 playtest found no question-quality problems and no grading bugs.
+
+## Follow-up: first play on a phone
+
+Two screenshots from the first session after this change showed two
+problems.
+
+**"Practice these: ㄷ↔어, ㄷ↔오, ㅈ↔아, ㄴ↔어, ㄴ↔우".** Each of these
+pairs a consonant with a vowel. They all came from the Missing Vowel
+question ("ㄷ + ? = deo"):
+
+| Typed | Was | Now |
+|---|---|---|
+| ㄷ (the consonant already shown) | wrong, saved as a ㄷ/ㅓ mix-up | a nudge: "Just the vowel — ㄷ is already there", not graded |
+| 더, the whole block (what a phone keyboard gives for ㄷ then ㅓ) | wrong, saved as a 더/ㅓ mix-up | right |
+| ㄷㅓ, the two letters apart | wrong | right |
+| ㅗ, a wrong vowel | wrong, saved as ㅗ/ㅓ, which the drill then turned into "오 vs 더" | wrong, saved as 도/더: the drill now practises the real contrast |
+
+No question type can save a consonant-vs-vowel pair any more. Pairs that
+older versions already saved are tidied up whenever they're read, so they
+no longer appear under "Practice these" or in drills. No migration is
+needed.
+
+**After `/skip`, the next question said 1/10 again.** A skipped question
+now uses up a turn in the round. A round of skips still ends with its
+card ("0 of 10 right").
+
+The verifier has 126 checks now (10 new). All 10 fail on the code before
+this follow-up.
