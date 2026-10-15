@@ -94,6 +94,86 @@ check("failing migration keeps an exact backup and says so",
       and q.progress["current_lesson"] == 1)
 
 q = fresh()
+q.progress["current_lesson"] = 7
+q.save_progress()
+pending = E.PROGRESS_PATH.with_suffix(".json.tmp")
+bad_pending = json.dumps({"current_lesson": 9})
+pending.write_text(bad_pending, encoding="utf-8")
+saved_mtime = E.PROGRESS_PATH.stat().st_mtime_ns
+E.os.utime(pending, ns=(saved_mtime + 1_000_000_000,) * 2)
+backups_before = set(TMP.glob("user_progress.backup-*.json"))
+with patch.dict(E.HangulQuiz.MIGRATIONS, {1: fail_after_edit}), \
+        contextlib.redirect_stdout(io.StringIO()) as temp_notice:
+    q = E.HangulQuiz()
+temp_backups = set(TMP.glob("user_progress.backup-*.json")) - backups_before
+q.save_progress()
+check("failing temp migration backs up temp and saves the usable main",
+      q.progress["current_lesson"] == 7 and not q._progress_read_only
+      and json.loads(E.PROGRESS_PATH.read_text(encoding="utf-8"))["current_lesson"] == 7
+      and len(temp_backups) == 1
+      and next(iter(temp_backups)).read_text(encoding="utf-8") == bad_pending
+      and "trying the last saved progress" in temp_notice.getvalue())
+
+main_bytes = E.PROGRESS_PATH.read_bytes()
+future_pending = json.dumps({"schema_version": 99, "current_lesson": 9}).encode()
+pending.write_bytes(future_pending)
+saved_mtime = E.PROGRESS_PATH.stat().st_mtime_ns
+E.os.utime(pending, ns=(saved_mtime + 1_000_000_000,) * 2)
+backups_before = set(TMP.glob("user_progress.backup-*.json"))
+with contextlib.redirect_stdout(io.StringIO()) as future_temp_notice:
+    q = E.HangulQuiz()
+q.start_lesson(7)
+question = q.next_question()
+q.answer(question.correct_answer, question)
+q.save_progress()
+check("future temp leaves lesson 7 visible and both files unchanged after play",
+      q.progress["current_lesson"] == 7 and q._progress_read_only
+      and E.PROGRESS_PATH.read_bytes() == main_bytes
+      and pending.read_bytes() == future_pending
+      and set(TMP.glob("user_progress.backup-*.json")) == backups_before
+      and "Update Hangul Tutor" in future_temp_notice.getvalue())
+
+saved_mtime = E.PROGRESS_PATH.stat().st_mtime_ns
+E.os.utime(pending, ns=(saved_mtime - 1_000_000_000,) * 2)
+with contextlib.redirect_stdout(io.StringIO()):
+    q = E.HangulQuiz()
+q.save_progress()
+check("even an older future temp is protected from the next save",
+      q.progress["current_lesson"] == 7 and q._progress_read_only
+      and E.PROGRESS_PATH.read_bytes() == main_bytes
+      and pending.read_bytes() == future_pending)
+
+pending.unlink()
+future_main = json.dumps({"schema_version": 99, "current_lesson": 11}).encode()
+E.PROGRESS_PATH.write_bytes(future_main)
+backups_before = set(TMP.glob("user_progress.backup-*.json"))
+with contextlib.redirect_stdout(io.StringIO()) as future_main_notice:
+    q = E.HangulQuiz()
+q.start_lesson(1)
+question = q.next_question()
+q.answer(question.correct_answer, question)
+q.save_progress()
+check("future main is never loaded, backed up or overwritten after play",
+      q.progress["current_lesson"] == 1 and q._progress_read_only
+      and E.PROGRESS_PATH.read_bytes() == future_main and not pending.exists()
+      and set(TMP.glob("user_progress.backup-*.json")) == backups_before
+      and "Update Hangul Tutor" in future_main_notice.getvalue())
+
+q = fresh()
+q.progress["current_lesson"] = 6
+q.save_progress()
+pending.write_bytes(E.PROGRESS_PATH.read_bytes())
+E.PROGRESS_PATH.write_text("{not json", encoding="utf-8")
+saved_mtime = E.PROGRESS_PATH.stat().st_mtime_ns
+E.os.utime(pending, ns=(saved_mtime - 1_000_000_000,) * 2)
+with contextlib.redirect_stdout(io.StringIO()):
+    q = E.HangulQuiz()
+q.save_progress()
+check("older usable temp recovers progress when main is damaged",
+      q.progress["current_lesson"] == 6
+      and json.loads(E.PROGRESS_PATH.read_text(encoding="utf-8"))["current_lesson"] == 6)
+
+q = fresh()
 q.start_lesson(2)
 for _ in range(3):
     qq = q.next_question()
