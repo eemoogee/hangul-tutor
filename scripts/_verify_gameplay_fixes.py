@@ -1140,6 +1140,64 @@ check("batchim hint: ㄴ ㄹ ㅁ ㅇ are not told to 'stop short'", not _bad and
 check("batchim hint: ㄱ ㄷ ㅂ still are", any("stops short" in x for j in "ㄱㄷㅂ" for x in _hints.get(j, ())),
       sorted(_hints))
 
+print("Natural spellings: 'oo' for ㅜ, 'yoo' for ㅠ (2026-10-15)")
+_qv = fresh()
+check("'oo' accepted in ㅜ blocks (구 goo, 누 noo, bare ㅜ)",
+      "goo" in _qv.roman_variants("구") and "noo" in _qv.roman_variants("누") and "oo" in _qv.roman_variants("ㅜ"))
+check("...inside words too (디구 deegoo, 우리 ooree)",
+      "deegoo" in _qv.roman_variants("디구") and "ooree" in _qv.roman_variants("우리"))
+check("'yoo' accepted for ㅠ (유 yoo, 슈 shoo/syoo)",
+      "yoo" in _qv.roman_variants("유") and {"shoo", "syoo"} <= _qv.roman_variants("슈"))
+check("'oo' not accepted where there's no ㅜ/ㅠ (오, 으, 어)",
+      not ({"oo", "goo"} & (_qv.roman_variants("오") | _qv.roman_variants("으")
+                             | _qv.roman_variants("어") | _qv.roman_variants("고"))))
+
+print("Which Word?: a first-time pair is a guess that can't count against you")
+_qd = fresh()
+_qd.start_lesson(2)
+_entry = _qd._available_word_contrasts()[0]
+_q1 = _qd._word_contrast_question(_entry)
+check("first meeting with a pair is marked as discovery", _q1.discovery and _q1.contrast_id == _entry["id"])
+_qd.session_streak, _tot = 3, _qd.session_total
+_wrong = next(c for c in _q1.choices if c != _q1.correct_answer)
+_r1 = _qd.answer(_wrong, _q1)
+check("a wrong first guess is ungraded: streak, accuracy and item history untouched",
+      _r1.ungraded and not _r1.correct and _qd.session_streak == 3 and _qd.session_total == _tot
+      and not _qd._get_item(_q1.letter).history, (_r1.ungraded, _qd.session_streak, _qd.session_total))
+_q2 = _qd._word_contrast_question(_entry)
+check("the same pair is graded from then on", not _q2.discovery)
+_r2 = _qd.answer(next(c for c in _q2.choices if c != _q2.correct_answer), _q2)
+check("...so a later wrong answer counts", not _r2.ungraded and _qd.session_streak == 0)
+_qd2 = fresh(); _qd2.start_lesson(2)
+_q3 = _qd2._word_contrast_question(_entry)
+_qd2.session_streak = 4
+_r3 = _qd2.answer(_q3.correct_answer, _q3)
+check("a right first guess counts normally", _r3.correct and _qd2.session_streak == 5)
+_qd3 = fresh(); _qd3.start_lesson(2)
+_q4 = _qd3._word_contrast_question(_entry)
+_qd3.session_streak = 2
+_qd3.record_skip(_q4)
+check("skipping a first-time pair doesn't break the streak or count as a miss",
+      _qd3.session_streak == 2 and not _qd3._get_item(_q4.letter).history and _entry["id"] in _qd3.progress["seen_contrasts"])
+_qx = fresh(); _qx.start_lesson(2)
+_dq = _qx._word_contrast_question(_entry)
+_qc, _outc = _play(2, [1], ["WRONG"], questions=[_dq])
+check("CLI: the guess is announced, and the miss is labelled as not counting",
+      "New words! Take a guess" in _outc and "that guess didn't count" in _outc, _outc[-400:])
+
+print("Reading reward: curated lesson words, no repeats, every 10 in a row")
+_qr = fresh(); _qr.start_lesson(2)
+_pool = {w["word"] for l in _qr.curriculum["lessons"] if l["id"] <= 2 for w in _qr._lesson_words(l)}
+_drawn = [_qr.reward_word()["word"] for _ in range(len(_pool))]
+check("every eligible word shows once before any repeats", sorted(_drawn) == sorted(_pool), (_drawn, sorted(_pool)))
+check("only words from this lesson or earlier", set(_drawn) <= _pool and "커피" not in _drawn)
+check("keeps going after the pool is used up", _qr.reward_word()["word"] in _pool)
+_q5, _out5 = _play(2, [1], ["RIGHT"] * 9)
+_q10, _out10 = _play(2, [1], ["RIGHT"] * 10 + [""])
+check("no reward after 5 or 9 in a row; one after 10",
+      "A real Korean word you can read now" not in _out5
+      and _out10.count("A real Korean word you can read now") == 1, _out10.count("A real Korean word you can read now"))
+
 print("Hangul Rain")
 q = fresh()
 for lid in (1, 10, 11, 12):

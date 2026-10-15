@@ -62,6 +62,10 @@ class QuizQuestion:
     example_en: str = ""
     other_example_ko: str = ""
     other_example_en: str = ""
+    # word_contrast: the pair's id, and whether this is the learner's first
+    # meeting with it (a guess: a wrong answer mustn't count against them).
+    contrast_id: str = ""
+    discovery: bool = False
     # Alternate accepted answers beyond correct_answer — currently used by
     # read_word, whose vocabulary entries carry an accepted_romanizations
     # list (e.g. both 'hangul' and 'hangeul'). Empty for every other mode,
@@ -86,6 +90,9 @@ class QuizResult:
     confused_target: Optional[str] = None
     # The pair can be shown even when it could not be queued for a comeback.
     comeback_queued: bool = False
+    # A wrong guess at something never taught (first meeting with a word
+    # pair): shown, but no effect on streak, accuracy or mastery.
+    ungraded: bool = False
 
 
 @dataclass
@@ -445,6 +452,15 @@ def _initial_roman(jamo: str) -> str:
 # Vowels before which ㅅ is pronounced 'sh' (the curriculum teaches this in
 # Lesson 3: "sh before ㅣㅑㅕㅛㅠ"). Official romanization still writes 's'
 # (시 = 'si'), but a learner who types 'shi' has read the letter correctly.
+# Natural English spellings accepted beside the official romanization
+# (decided 2026-10-14/15): 이 'ee', 구 'goo', 유 'yoo'. None of these spells
+# any other block, so no reading becomes ambiguous.
+_ENGLISH_VOWEL_SPELLINGS = {
+    "ㅣ": (("i", "ee"),),
+    "ㅜ": (("u", "oo"),),
+    "ㅠ": (("yu", "yoo"), ("u", "oo")),   # ('u','oo') covers 슈 'shu' -> 'shoo'
+}
+
 _SH_VOWELS = {"ㅣ": "i", "ㅑ": "a", "ㅕ": "eo", "ㅛ": "o", "ㅠ": "u", "ㅟ": "wi"}
 
 
@@ -1345,6 +1361,33 @@ class HangulQuiz:
             meaning=vocab.get("meaning", "") if vocab else "",
         )
 
+    def reward_word(self) -> Optional[dict]:
+        """A real word for the streak reward: any curated lesson word from
+        this lesson or earlier (each readable with the letters taught by
+        its own lesson), none repeated until all have been shown. Replaced
+        a picker that drew from 'mastered' blocks only, which early in
+        Lesson 2 could spell little but 오이, shown again and again."""
+        if self.current_lesson is None:
+            return None
+        pool, seen_words = [], set()
+        for lesson in self.curriculum["lessons"]:
+            if lesson["id"] > self.current_lesson["id"]:
+                continue
+            for w in self._lesson_words(lesson):
+                if w.get("word") and w["word"] not in seen_words:
+                    seen_words.add(w["word"])
+                    pool.append(w)
+        if not pool:
+            return None
+        shown = self.__dict__.setdefault("_rewards_shown", [])
+        fresh = [w for w in pool if w["word"] not in shown]
+        if not fresh:
+            shown.clear()
+            fresh = pool
+        pick = random.choice(fresh)
+        shown.append(pick["word"])
+        return pick
+
     def _lesson_words(self, lesson: dict) -> list:
         """The lesson's real words ({word, meaning, also?}) that are
         readable with what has been taught so far — checked, not trusted,
@@ -1950,7 +1993,9 @@ class HangulQuiz:
             example_ko=target.get("example_ko", ""),
             example_en=target.get("example_en", ""),
             other_example_ko=other.get("example_ko", ""),
-            other_example_en=other.get("example_en", "")
+            other_example_en=other.get("example_en", ""),
+            contrast_id=entry.get("id", ""),
+            discovery=entry.get("id", "") not in self.progress.setdefault("seen_contrasts", []),
         )
 
     def _safe_nonword_boundaries(self, candidate: str, lesson: dict) -> bool:
@@ -2388,6 +2433,16 @@ class HangulQuiz:
             else:
                 feedback = f"❌ Not quite — it's **{expected}** (you typed {user_clean})."
 
+        if question.discovery:
+            self._mark_contrast_seen(question)
+            if not is_correct:
+                # First meeting with this word pair: the meanings were never
+                # taught, so a wrong guess teaches (the CLI shows both
+                # example sentences) but doesn't count against the learner.
+                return QuizResult(correct=False, user_answer=user_clean, expected=expected,
+                                  feedback=feedback, lesson_id=question.lesson_id,
+                                  letter=question.letter, ungraded=True)
+
         # Track progress
         self.session_total += 1
         confused_with = pair_target = None
@@ -2487,6 +2542,11 @@ class HangulQuiz:
             confused_target=pair_target if is_mixup else None,
             comeback_queued=comeback_queued,
         )
+
+    def _mark_contrast_seen(self, question: QuizQuestion) -> None:
+        seen = self.progress.setdefault("seen_contrasts", [])
+        if question.contrast_id and question.contrast_id not in seen:
+            seen.append(question.contrast_id)
 
     # ── Mix-ups come back as ordinary questions ─────────────────────────
     # Replaces the old standalone "Look-alikes" drill in the rotation
@@ -2788,8 +2848,11 @@ class HangulQuiz:
         """
         if question is None:
             question = getattr(self, '_last_question', None)
-        self.session_streak = 0
         self.session_skips += 1
+        if question is not None and question.discovery:
+            self._mark_contrast_seen(question)   # a first-time guess: no penalty
+            return
+        self.session_streak = 0
         if question is None or not question.letter:
             return
         self._mark_mastered(question.letter, confidence=-1)
@@ -2988,14 +3051,14 @@ class HangulQuiz:
           - 'sh' for ㅅ before ㅣ/y-vowels ('shi' for 시), as Lesson 3 teaches;
           - each side of a slashed bare-letter spelling ('r' or 'l' for ㄹ,
             'ng' for ㅇ) instead of demanding the literal 'r/l';
-          - 'ee' for the vowel ㅣ ('ee' for 이, 'gee' for 기, 'shee' for 시,
-            'een' for 인) — the natural English spelling of that sound."""
+          - natural English spellings of three vowels: 'ee' for ㅣ (기 'gee',
+            인 'een'), 'oo' for ㅜ (구 'goo'), 'yoo' for ㅠ (유 'yoo')."""
         official = self._hangul_to_roman_hint(ch)
         if "/" in official:                       # bare letter like ㄹ -> 'r/l'
             return [p for p in official.split("/") if p]
         variants = [official]
-        if ch == "ㅣ":                             # the bare vowel letter
-            return variants + ["ee"]
+        if ch in _ENGLISH_VOWEL_SPELLINGS:          # a bare vowel letter
+            return variants + [new for _, new in _ENGLISH_VOWEL_SPELLINGS[ch]]
         cho, jung, jong = self._decompose_syllable(ch)
         if not cho:
             return variants
@@ -3005,12 +3068,12 @@ class HangulQuiz:
             variants.append("l" + tail)
         if cho == "ㅅ" and jung in _SH_VOWELS:
             variants.append("sh" + _SH_VOWELS[jung] + batchim)
-        if jung == "ㅣ":
-            # Every spelling so far ends in 'i' + batchim; swap that 'i'.
-            variants += [v[:len(v) - len(batchim) - 1] + "ee" + batchim
-                         for v in variants
-                         if v.endswith("i" + batchim)]
-        return variants
+        for old, new in _ENGLISH_VOWEL_SPELLINGS.get(jung, ()):
+            # Every spelling so far ends in the vowel + batchim; swap the vowel.
+            variants += [v[:len(v) - len(old + batchim)] + new + batchim
+                         for v in list(variants)
+                         if v.endswith(old + batchim)]
+        return list(dict.fromkeys(variants))
 
     def roman_variants(self, text: str) -> set[str]:
         """All accepted (normalized) romanizations of a syllable or a short

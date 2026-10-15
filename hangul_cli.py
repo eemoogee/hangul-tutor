@@ -1644,6 +1644,8 @@ def print_question(q: QuizQuestion, quiz: HangulQuiz = None, progress: str = "")
     label = mode_labels.get(q.mode, q.mode.replace('_', ' ').title())
     counter = f"  {styled('· ' + progress, DIM)}" if progress else ""
     print(f"\n{icon} {styled(label, CYAN)}{counter}")
+    if getattr(q, "discovery", False):
+        print(f"   {styled('✨ New words! Take a guess — a wrong guess won' + chr(39) + 't count against you.', YELLOW)}")
 
     rendered = False
     if quiz is not None and q.mode in ("build_syllable", "missing_vowel", "decompose_syllable", "confusion_drill", "word_contrast") and q.letter:
@@ -1946,6 +1948,8 @@ MASTERY_BAR_WIDTH = 20
 # a progress card with a clear next step — without them a lesson was one
 # endless stream of questions, and once it was finished nothing ever said so.
 ROUND_SIZE = 10
+# A real word to enjoy every this-many right answers in a row (was 5).
+REWARD_EVERY = 10
 # After this many rounds, a round in which nothing new became solid makes
 # the card offer the next lesson even though this one isn't finished.
 # Mistakes now count against an item, so a learner who keeps missing one
@@ -2052,35 +2056,24 @@ def _offer_advance(quiz: HangulQuiz, lesson_id: int):
 
 
 def _show_reading_reward(quiz: HangulQuiz):
-    """Every 5-answer streak, show something real the learner can read.
-    Offline (default) this is an instant real word they can already spell;
-    with --use-llm it tries a live model sentence first and falls back to
-    the same word if that fails."""
-    known = quiz.get_mastered_syllables(min_confidence=3)
-    if len(known) < 3:
-        return
-    # Only the LLM path actually builds a sentence; the offline path returns
-    # a single exposure word, so a "Building a sentence" banner there would
-    # be a lie.
+    """Every REWARD_EVERY right answers in a row, show a real word the
+    learner can read: one of the curated lesson words, never repeated until
+    all have been shown (quiz.reward_word). With --use-llm, a live model
+    sentence is tried first."""
     if USE_LLM:
-        print(f"\n{styled('📖 Building a sentence from what you know...', YELLOW)}")
-    sentence = generate_mini_sentence(known, quiz) if USE_LLM else None
-    turn_mode = "read_translate" if sentence else None
-    if not sentence:
-        turn = build_template_sentence(known, quiz)
-        if turn and turn.get("korean"):
-            eng = turn.get("english")
-            sentence = f"{styled(turn['korean'], BOLD)}  —  {eng}" if eng else turn["korean"]
-            turn_mode = turn.get("mode")
-    if not sentence:
+        known = quiz.get_mastered_syllables(min_confidence=3)
+        if len(known) >= 3:
+            print(f"\n{styled('📖 Building a sentence from what you know...', YELLOW)}")
+            sentence = generate_mini_sentence(known, quiz)
+            if sentence:
+                print(f"\n{styled('📖 You can now read:', GREEN)}")
+                print(f"   {sentence}")
+                return
+    word = quiz.reward_word()
+    if not word:
         return
-    # vocab_exposure means a real single word the learner can spell, not a
-    # sentence — framing it as "you can now read" would overclaim.
-    if turn_mode == "vocab_exposure":
-        print(f"\n{styled('📖 A real Korean word you can already spell:', GREEN)}")
-    else:
-        print(f"\n{styled('📖 You can now read:', GREEN)}")
-    print(f"   {sentence}")
+    print(f"\n{styled('📖 A real Korean word you can read now:', GREEN)}")
+    print(f"   {styled(word['word'], BOLD)}  —  {word.get('meaning', '')}")
 
 
 def _print_exposure(turn: dict):
@@ -2389,7 +2382,7 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
 
         if current_question is None:
             streak = quiz.session_streak
-            if (not sudden_death and streak >= 5 and streak % 5 == 0
+            if (not sudden_death and streak >= REWARD_EVERY and streak % REWARD_EVERY == 0
                     and streak != last_reward_streak):
                 last_reward_streak = streak
                 _show_reading_reward(quiz)
@@ -2616,6 +2609,8 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
         result = quiz.answer(user_input, current_question, response_ms=elapsed_ms,
                              assisted=hint_used)
         print(f"   {md(result.feedback)}")
+        if result.ungraded:
+            print(f"   {styled('(New words — that guess didn' + chr(39) + 't count. Now you know them.)', DIM)}")
         if result.correct and hint_used:
             print(f"   {styled('💡 With a hint — get it on your own to make it count toward solid.', DIM)}")
         if not result.correct:
