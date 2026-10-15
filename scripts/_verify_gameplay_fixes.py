@@ -326,6 +326,15 @@ check("a round ends with a progress card", "── Round 1 ·" in out)
 check("the card offers the next lesson when this one is done", "[n] Lesson 2" in out)
 check("pressing n on the card moves you to the next lesson", qz.current_lesson["id"] == 2, qz.current_lesson["id"])
 
+_real_rain, _real_conv = CLI.launch_rain_mode, CLI.run_conveyor
+CLI.launch_rain_mode = CLI.run_conveyor = (lambda *a, **k: None)
+try:
+    qz, out = _play(1, [], ["RIGHT", "RIGHT", "/rain", "/conveyor"])
+finally:
+    CLI.launch_rain_mode, CLI.run_conveyor = _real_rain, _real_conv
+check("after /rain and /conveyor the question comes back with its round counter",
+      out.count(f"· 3/{CLI.ROUND_SIZE}") == 3, out.count(f"· 3/{CLI.ROUND_SIZE}"))
+
 qz, out = _play(1, [], ["RIGHT"] * 30)
 check("blocks are celebrated the moment they become solid", "is solid now!" in out)
 check("an unfinished lesson's card lists what's still to go", "Still to go:" in out)
@@ -671,6 +680,22 @@ try:
     check("the CLI's input() strips key codes", _cli_k.input("> ") == "ga")
 finally:
     _b.input = _real
+
+print("Lesson-complete box")
+for lid in range(1, 12):
+    qb = fresh()
+    qb.start_lesson(lid)
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        CLI.print_lesson_complete(qb)
+    box = [l for l in _re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", buf.getvalue()).splitlines() if l.startswith(("║", "╔", "╠", "╚"))]
+    after_next = box[[i for i, l in enumerate(box) if "Next" in l][0] + 1:-1] if any("Next" in l for l in box) else []
+    nxt = qb._get_lesson(lid + 1)
+    ok = (len(after_next) == 2 and nxt["title"][:20] in after_next[0]
+          and after_next[1].strip("║ ") != ""
+          and len({CLI._vwidth(l) for l in box}) == 1)
+    check(f"lesson {lid} done: box previews Lesson {lid + 1} (title + what it teaches), borders line up",
+          ok, after_next)
 
 print("Hangul Rain")
 q = fresh()

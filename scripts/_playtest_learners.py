@@ -353,7 +353,8 @@ def play_course(profile, seed, max_q, lessons, check_render):
         L = dict(questions=0, correct=0, modes=Counter(), mode_right=Counter(),
                  fallbacks=Counter(), exposures=Counter(), back_to_back=0,
                  repeat_within_3=0, bar=[], bar_drops=0, tail=0, stalled=False,
-                 drills=0, drills_on_confused=0, minutes=0.0, sittings=0,
+                 drills=0, drills_on_confused=0, comebacks=0, comebacks_on_confused=0,
+                 minutes=0.0, sittings=0,
                  nudges=0)
         recent = []
         mset = (quiz.current_lesson.get("mastery_words")
@@ -368,6 +369,9 @@ def play_course(profile, seed, max_q, lessons, check_render):
                 L["stalled"] = True
                 break
             asked.clear()
+            # A mix-up comes back (engine _queue_comeback) when its wait
+            # reaches 0 on this call: remember which blocks those are.
+            coming_back = {c[1] for c in getattr(quiz, "_comeback", []) if c[0] <= 1}
             q = quiz.next_question()
             render = screen_text(quiz, q) if check_render else ""
             for p in quality_problems(quiz, q, render):
@@ -404,9 +408,17 @@ def play_course(profile, seed, max_q, lessons, check_render):
             if key in recent[-3:]:
                 L["repeat_within_3"] += 1
             recent.append(key)
-            if q.mode == "confusion_drill":
+            swap = learner.cfg.get("swap", {})
+            if q.mode == "match_sound" and q.letter in coming_back:
+                L["comebacks"] += 1
+                if swap:
+                    j1 = quiz._decompose_syllable(q.letter)[1]
+                    if any(swap.get(j1) == quiz._decompose_syllable(c)[1]
+                           or swap.get(quiz._decompose_syllable(c)[1]) == j1
+                           for c in (q.choices or []) if c != q.letter):
+                        L["comebacks_on_confused"] += 1
+            if q.mode == "confusion_drill":       # only via /mode confusion now
                 L["drills"] += 1
-                swap = learner.cfg.get("swap", {})
                 if swap:
                     j1 = quiz._decompose_syllable(q.letter)[1]
                     j2 = quiz._decompose_syllable(q.other)[1] if q.other else ""
@@ -583,13 +595,15 @@ def report(results, lessons, max_q):
 
     mixer = by_profile.get("eo_o_mixer", [])
     if mixer:
-        print("\nADAPTIVENESS: does the ㅓ/ㅗ mixer get drilled on ㅓ/ㅗ?")
+        print("\nADAPTIVENESS: are the ㅓ/ㅗ mixer's mix-ups asked again?")
+        print("   (a missed block comes back 3 questions later, with the block it was")
+        print("    mixed up with among the choices; counts summed over all runs)")
         for lid in lessons:
-            d = sum(r["lessons"][lid]["drills"] for r in mixer if lid in r["lessons"])
-            on = sum(r["lessons"][lid]["drills_on_confused"] for r in mixer if lid in r["lessons"])
-            avg_d = sum(r["lessons"][lid]["drills"] for r in by_profile.get("average", []) if lid in r["lessons"])
+            d = sum(r["lessons"][lid]["comebacks"] for r in mixer if lid in r["lessons"])
+            on = sum(r["lessons"][lid]["comebacks_on_confused"] for r in mixer if lid in r["lessons"])
+            avg_d = sum(r["lessons"][lid]["comebacks"] for r in by_profile.get("average", []) if lid in r["lessons"])
             if d or avg_d:
-                print(f"   L{lid:<3} mixer drills {d:>4} (on ㅓ/ㅗ: {on:>3})   average learner drills {avg_d:>4}")
+                print(f"   L{lid:<3} mixer comebacks {d:>4} (ㅓ/ㅗ: {on:>3})   average learner comebacks {avg_d:>4}")
 
     print("\nNUDGES (answered in the wrong writing system, re-prompted)")
     for p, runs in by_profile.items():

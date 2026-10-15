@@ -194,6 +194,21 @@ def build_session_data(quiz: HangulQuiz) -> dict:
     }
 
 
+def _lesson_preview(lesson: dict, width: int = 30) -> str:
+    """A short taste of what a lesson teaches, for the lesson-complete box:
+    its new letters, or — for lessons that teach blocks or words instead
+    (5, 11, 12 have no `letters`) — its first few words or blocks. At most
+    5 items, fewer if they don't fit `width` columns; '…' when cut."""
+    items = (lesson.get("letters") or lesson.get("mastery_words")
+             or lesson.get("mastery_syllables") or lesson.get("practice_syllables")
+             or lesson.get("example_syllables") or [])
+    items = [i for i in items if isinstance(i, str)]
+    shown = items[:5]
+    while shown and _vwidth(" ".join(shown) + (" …" if len(shown) < len(items) else "")) > width:
+        shown = shown[:-1]
+    return " ".join(shown) + (" …" if len(shown) < len(items) else "")
+
+
 def print_lesson_complete(quiz) -> None:
     """Print a structured lesson-complete summary block.
     Pure reformatting of data already tracked — no new fields, no Ollama calls."""
@@ -221,7 +236,7 @@ def print_lesson_complete(quiz) -> None:
     if has_lesson:
         try:
             nxt = quiz._get_lesson(quiz.current_lesson["id"] + 1)
-            next_lesson = {"title": nxt["title"], "letters": nxt.get("letters", [])}
+            next_lesson = {"title": nxt["title"], "preview": _lesson_preview(nxt)}
         except ValueError:
             pass
 
@@ -255,18 +270,18 @@ def print_lesson_complete(quiz) -> None:
     if weakest:
         lines.append(kv_row("Weakest", weakest, (YELLOW,)))
 
-    # Next lesson: show up to 5 letters, append "…" if more
+    # Next lesson: its title, then a preview of what it teaches
     if next_lesson:
         lines.append(blank_row())
         lines.append(kv_row("Next", f"Lesson {quiz.current_lesson['id'] + 1}", (GREEN,)))
-        letters = next_lesson["letters"]
-        if len(letters) > 5:
-            letters_str = " ".join(letters[:5]) + " …"
-        else:
-            letters_str = " ".join(letters)
-        lpad = (W - _vwidth(letters_str)) // 2
-        rpad = W - _vwidth(letters_str) - lpad
-        lines.append(f"║{' ' * lpad}{letters_str}{' ' * rpad}║")
+        for text in (next_lesson["title"], next_lesson["preview"]):
+            if not text:
+                continue
+            if _vwidth(text) > W - 2:
+                text = text[:W - 3] + "…"
+            lpad = (W - _vwidth(text)) // 2
+            rpad = W - _vwidth(text) - lpad
+            lines.append(f"║{' ' * lpad}{text}{' ' * rpad}║")
 
     lines.append(styled("╚" + "═" * W + "╝", CYAN))
     print("\n" + "\n".join(lines) + "\n")
@@ -2483,7 +2498,8 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
                 # Redraw the outstanding question so the quiz resumes where
                 # it left off.
                 if current_question:
-                    print_question(current_question, quiz)
+                    print_question(current_question, quiz,
+                                   progress="" if sudden_death else f"{round_asked + 1}/{ROUND_SIZE}")
 
             elif action == 'conveyor':
                 try:
@@ -2500,7 +2516,8 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
                 except KeyboardInterrupt:
                     pass
                 if current_question:
-                    print_question(current_question, quiz)
+                    print_question(current_question, quiz,
+                                   progress="" if sudden_death else f"{round_asked + 1}/{ROUND_SIZE}")
 
             elif action == 'mode':
                 choice = cmd[1].lower() if len(cmd) > 1 else ""
