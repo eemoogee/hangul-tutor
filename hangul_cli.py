@@ -1887,7 +1887,7 @@ def show_breakdown(quiz: HangulQuiz, q: QuizQuestion):
 
 def show_mixup(quiz: HangulQuiz, result) -> None:
     """After a real mix-up (가 given for 라, say), put the two side by side
-    with their sounds, and say the block will come back. This replaced the
+    with their sounds, and mention a comeback only if queued. This replaced the
     standalone Look-alikes question (2026-10-14)."""
     target, other = result.confused_target, result.confused_with
     if not (target and other):
@@ -1896,8 +1896,9 @@ def show_mixup(quiz: HangulQuiz, result) -> None:
         rt, ro = quiz._hangul_to_roman_hint(target), quiz._hangul_to_roman_hint(other)
     except Exception:
         return
+    comeback = f" {target} will come back in a moment." if result.comeback_queued else ""
     print(f"   👀 {styled(target, BOLD, CYAN)} is {rt} · {styled(other, BOLD)} is {ro} — "
-          f"easy to mix up. {target} will come back in a moment.")
+          f"easy to mix up.{comeback}")
 
 
 MODE_ALIASES = {

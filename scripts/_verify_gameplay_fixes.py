@@ -13,6 +13,7 @@ import random
 import sys
 import tempfile
 import contextlib
+import hashlib
 from collections import Counter
 from pathlib import Path
 from unittest.mock import patch
@@ -216,6 +217,68 @@ for lid in (10, 11):
             ok &= len(set(bq.choices)) == len(bq.choices)
     check(f"lesson {lid}: exactly one defensible answer per question", ok)
     check(f"lesson {lid}: both question forms appear", len(dirs) == 2, dict(dirs))
+
+print("Made-up words at batchim boundaries")
+q = fresh()
+lesson10 = q._get_lesson(10)
+check("갇문 and 갇아 boundaries are rejected",
+      not q._safe_nonword_boundaries("갇문", lesson10)
+      and not q._safe_nonword_boundaries("갇아", lesson10)
+      and q._safe_nonword_boundaries("갇치", lesson10))
+early_candidates = []
+for lid in range(1, 10):
+    lesson = q._get_lesson(lid)
+    random.seed(100 + lid)
+    early_candidates.append([
+        [q._generate_nonword_candidate(lesson) for _ in range(5)],
+        [q._generate_sequence_candidate(lesson) for _ in range(5)],
+    ])
+early_digest = hashlib.sha256(json.dumps(early_candidates, ensure_ascii=False).encode()).hexdigest()
+check("lessons 1-9 made-up word output matches the pre-fix seeds",
+      early_digest == "9e00114c68bddbeb97d87def9eea568042668b9c1bc036a65c9e39393a1c2fe8",
+      early_digest)
+
+unsafe = []
+generated = Counter()
+for lid in (10, 11, 12):
+    lesson = q._get_lesson(lid)
+    for seed in range(300):
+        random.seed(seed + lid * 1000)
+        for make in (q._generate_nonword_candidate, q._generate_sequence_candidate):
+            candidate = make(lesson)
+            if candidate is None:
+                continue
+            generated[(lid, len(candidate))] += 1
+            for left, right in zip(candidate, candidate[1:]):
+                _, _, final = q._decompose_syllable(left)
+                initial, _, _ = q._decompose_syllable(right)
+                if (final and (initial in ("ㅇ", "ㅎ", "ㄹ") or "ㅎ" in final
+                               or (final == "ㄹ" and initial == "ㄴ")
+                               or (q._batchim_sound(final) in ("k", "t", "p")
+                                   and initial in ("ㄴ", "ㅁ", "ㄱ", "ㄷ", "ㅂ", "ㅅ", "ㅈ")))):
+                    unsafe.append((lid, candidate))
+check("lessons 10-12 never join batchim into a sound-changing next block",
+      not unsafe and all(generated[lid, 2] and generated[lid, 3] for lid in (10, 11, 12)),
+      (unsafe[:5], dict(generated)))
+
+q.start_lesson(10)
+mix = Counter()
+for seed in range(10):
+    random.seed(seed)
+    mix.update(q.next_question().mode for _ in range(100))
+check("lesson 10 ten-seed question mix stays near the pre-fix mix",
+      60 <= mix["nonword_decode"] + mix["sequence_decode"] <= 110
+      and 90 <= mix["batchim_challenge"] <= 160,
+      dict(mix))
+
+with patch.object(q, "_generate_nonword_candidate", return_value=None) as nonword_try:
+    fallback = q._nonword_decode_question(q.current_lesson)
+check("nonword still falls back after 20 rejected candidates",
+      nonword_try.call_count == 20 and fallback.mode == "spell")
+with patch.object(q, "_generate_sequence_candidate", return_value=None) as sequence_try:
+    fallback = q._sequence_decode_question(q.current_lesson)
+check("sequence still falls back after 20 rejected candidates",
+      sequence_try.call_count == 20 and fallback.mode == "spell")
 
 print("Confusion drills")
 for lid in range(1, 13):
@@ -451,6 +514,58 @@ with _cl.redirect_stdout(buf):
     _cli_m.show_mixup(q, miss)
 shown = re.sub(r"\x1b\[[0-9;]*m", "", buf.getvalue())
 check("the miss shows both blocks with their sounds", "가 is ga" in shown and "라 is ra" in shown, shown)
+
+print("Final-consonant mix-ups")
+for direction, answer, choices, typed in (
+        ("sound_to_letter", "ㄱ", ["ㄱ", "ㄴ", "ㄷ", "ㄹ"], "ㄷ"),
+        ("letter_to_sound", "k", ["k", "n", "t", "l"], "t")):
+    q = fresh()
+    q.start_lesson(10)
+    batchim = E.QuizQuestion(mode="batchim_challenge", prompt="", correct_answer=answer,
+                             choices=choices, letter="각", lesson_id=10, direction=direction)
+    miss = q.answer(typed, batchim)
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        _cli_m.show_mixup(q, miss)
+    shown = re.sub(r"\x1b\[[0-9;]*m", "", buf.getvalue())
+    check(f"{direction}: records and shows built blocks with final sounds",
+          (miss.confused_target, miss.confused_with) == ("각", "갇")
+          and q.progress["confusion_counts"].get("갇↔각") == 1
+          and q._get_item("각").confusions.get("갇") == 1
+          and "각 is gak" in shown and "갇 is gat" in shown
+          and "ㄱ is" not in shown and "ㄷ is" not in shown,
+          shown)
+    check(f"{direction}: queues the built blocks, then asks the comeback",
+          miss.comeback_queued and q._comeback[-1][1:3] == ["각", "갇"])
+    q.next_question()
+    q.next_question()
+    back = q.next_question()
+    check(f"{direction}: comeback contrasts 각 and 갇",
+          back.mode == "match_sound" and back.letter == "각" and "갇" in back.choices)
+
+q = fresh()
+q.start_lesson(11)
+later_batchim = E.QuizQuestion(mode="batchim_challenge", prompt="", correct_answer="t",
+                               choices=["t", "k", "n", "p"], letter="옷",
+                               lesson_id=11, direction="letter_to_sound")
+miss = q.answer("k", later_batchim)
+check("lesson 11: a changed final sound also records whole blocks",
+      (miss.confused_target, miss.confused_with) == ("옷", "옥")
+      and q._comeback[-1][1:3] == ["옷", "옥"])
+
+q = fresh()
+q.start_lesson(10)
+batchim = E.QuizQuestion(mode="batchim_challenge", prompt="", correct_answer="ㄱ",
+                         choices=["ㄱ", "ㄴ", "ㄷ", "ㄹ"], letter="각",
+                         lesson_id=10, direction="sound_to_letter")
+with patch.object(q, "_queue_comeback", return_value=False):
+    miss = q.answer("ㄷ", batchim)
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf):
+    _cli_m.show_mixup(q, miss)
+check("mix-up feedback promises a comeback only when one was queued",
+      miss.confused_with == "갇" and not miss.comeback_queued
+      and "will come back" not in buf.getvalue())
 
 for lid in (10, 11):
     q.start_lesson(lid)

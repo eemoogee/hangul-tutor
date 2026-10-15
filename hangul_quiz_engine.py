@@ -83,6 +83,8 @@ class QuizResult:
     # gave (confused_with) instead of the right block (confused_target).
     confused_with: Optional[str] = None
     confused_target: Optional[str] = None
+    # The pair can be shown even when it could not be queued for a comeback.
+    comeback_queued: bool = False
 
 
 @dataclass
@@ -1830,6 +1832,30 @@ class HangulQuiz:
             other_example_en=other.get("example_en", "")
         )
 
+    def _safe_nonword_boundaries(self, candidate: str, lesson: dict) -> bool:
+        """Only join blocks whose written final/initial sounds stay put.
+
+        Earlier lessons have no batchim and keep their original generator.
+        In batchim lessons, avoid linking, nasalization, aspiration, and
+        tensing at each boundary. A final ㅎ (including ㄶ/ㅀ) is safest at
+        the end, since it can disappear or aspirate the next consonant.
+        """
+        if lesson["id"] < 10:
+            return True
+        for left, right in zip(candidate, candidate[1:]):
+            _, _, jong = self._decompose_syllable(left)
+            if not jong:
+                continue
+            cho, _, _ = self._decompose_syllable(right)
+            if "ㅎ" in jong or cho in ("ㅇ", "ㅎ", "ㄹ"):
+                return False
+            if jong == "ㄹ" and cho == "ㄴ":
+                return False
+            if self._batchim_sound(jong) in ("k", "t", "p") and cho in (
+                    "ㄴ", "ㅁ", "ㄱ", "ㄷ", "ㅂ", "ㅅ", "ㅈ"):
+                return False
+        return True
+
     def _generate_nonword_candidate(self, lesson: dict) -> Optional[str]:
         """Generate a 2-syllable nonword candidate for nonword_decode mode.
         Returns None if no valid candidate can be generated (pool too small
@@ -1849,6 +1875,8 @@ class HangulQuiz:
         if s1 == s2:
             return None
         candidate = s1 + s2
+        if not self._safe_nonword_boundaries(candidate, lesson):
+            return None
         # Reject if in KNOWN_LEXICAL_ITEMS (hard exclusion)
         if candidate in self.known_lexical_items:
             return None
@@ -1872,6 +1900,8 @@ class HangulQuiz:
         if len({s1, s2, s3}) < 3:
             return None
         candidate = s1 + s2 + s3
+        if not self._safe_nonword_boundaries(candidate, lesson):
+            return None
         # Hard exclusion: reject if the full trigram is a known lexical item
         if candidate in self.known_lexical_items:
             return None
@@ -2240,6 +2270,7 @@ class HangulQuiz:
         # Track progress
         self.session_total += 1
         confused_with = pair_target = None
+        comeback_queued = False
         if is_correct:
             self.session_correct += 1
             self.session_streak += 1
@@ -2296,6 +2327,12 @@ class HangulQuiz:
                 # bare vowel vs block — that drilled 오 against 미.
                 confused_with = self._missing_vowel_built(user_clean, question)
                 pair_target = question.letter
+            elif question.mode == "batchim_challenge":
+                # A final ㄱ vs ㄷ mistake is 각 vs 갇, not the bare letters'
+                # first-position sounds. Both question directions build the
+                # learner's chosen final into the target block.
+                confused_with = self._batchim_built(user_clean, question)
+                pair_target = question.letter
             elif question.mode in ("read_aloud", "real_word", "read_word",
                                    "nonword_decode", "sequence_decode"):
                 pair = self._reading_mixup(user_clean, question.letter)
@@ -2314,7 +2351,7 @@ class HangulQuiz:
                 pair = f"{confused_with}↔{pair_target}"
                 self.progress.setdefault("confusion_counts", {})
                 self.progress["confusion_counts"][pair] = self.progress["confusion_counts"].get(pair, 0) + 1
-                self._queue_comeback(pair_target, confused_with)
+                comeback_queued = self._queue_comeback(pair_target, confused_with)
 
         is_mixup = bool(not is_correct and confused_with and pair_target
                         and confused_with != pair_target)
@@ -2327,6 +2364,7 @@ class HangulQuiz:
             letter=question.letter,
             confused_with=confused_with if is_mixup else None,
             confused_target=pair_target if is_mixup else None,
+            comeback_queued=comeback_queued,
         )
 
     # ── Mix-ups come back as ordinary questions ─────────────────────────
@@ -2336,17 +2374,18 @@ class HangulQuiz:
     # feedback (CLI), and the missed block returns a few questions later.
     COMEBACK_AFTER = 3   # the 3rd question after the miss
 
-    def _queue_comeback(self, target: str, other: str) -> None:
+    def _queue_comeback(self, target: str, other: str) -> bool:
         """Ask `target` again soon, with `other` (what the learner gave
         instead) among the choices. Single blocks only; one entry per
-        target (a fresh miss restarts its wait)."""
+        target (a fresh miss restarts its wait). Return whether queued."""
         def _block(s):
             return isinstance(s, str) and len(s) == 1 and 0xAC00 <= ord(s) <= 0xD7A3
         if not (_block(target) and _block(other)) or target == other:
-            return
+            return False
         lesson_id = (self.current_lesson or {}).get("id")
         self._comeback = [c for c in self._comeback if c[1] != target]
         self._comeback.append([self.COMEBACK_AFTER, target, other, lesson_id])
+        return True
 
     def _comeback_question(self, lesson: dict) -> Optional["QuizQuestion"]:
         """Count every queued comeback down by one question; when one is
@@ -2392,6 +2431,23 @@ class HangulQuiz:
             return None
         built = self._compose_syllable(cho, vowel)
         return built if _looks_like_hangul_target(built) and len(built) == 1 else None
+
+    def _batchim_built(self, typed: str, question: QuizQuestion) -> Optional[str]:
+        """Build the block named by a wrong final letter or final sound."""
+        cho, jung, target_jong = self._decompose_syllable(question.letter)
+        if not target_jong:
+            return None
+        if question.direction == "letter_to_sound":
+            if typed not in question.choices:
+                return None
+            final = next((j for j in self._BASIC_BATCHIM
+                          if self._batchim_sound(j) == typed), None)
+        else:
+            final = typed if typed in question.choices else None
+        if not final or self._batchim_sound(final) == self._batchim_sound(target_jong):
+            return None
+        built = self._compose_syllable(cho, jung, final)
+        return built if _looks_like_hangul_target(built) and built != question.letter else None
 
     def _clean_pair(self, a: str, b: str) -> Optional[tuple]:
         """Tidy one saved confusion pair for display or drilling, or None
