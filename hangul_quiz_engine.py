@@ -1110,13 +1110,13 @@ class HangulQuiz:
             # the letter itself.
             hint = f"This is a single jamo on its own, no vowel attached — write just that one shape (romanizes as '{roman}')."
         elif cho == 'ㅇ' and not jong:
-            # Vowel-only syllable — Korean can't write a bare vowel, so it
-            # always gets a silent ㅇ placeholder in front. Previously
+            # Vowel-only syllable — in writing a block can't start with a
+            # vowel, so a silent ㅇ fills the first spot (left of ㅏ, above ㅗ). Previously
             # ended with ": {target}" — the composed answer itself. Now
             # names the target VOWEL jamo (jung) for clarity — since that's
             # not the final answer, just one ingredient in it — without
             # spelling out the composed syllable that combines it with ㅇ.
-            hint = f"The vowel {jung} romanizes as '{roman}'. Since a vowel can't stand alone in Korean, it gets a silent 'ㅇ' glued onto the front, combining into one syllable block."
+            hint = f"The vowel {jung} is read '{roman}'. In writing, a vowel can't start a block by itself, so a silent ㅇ takes the first spot."
         elif cho == 'ㅇ' and jong:
             # Silent placeholder + batchim (음, 안, 앙...). The ㅇ still
             # contributes no initial sound, so the syllable starts with the
@@ -1549,8 +1549,10 @@ class HangulQuiz:
             wrong = random.sample([s for s in self.BATCHIM_SOUNDS if s != sound], 3)
             choices = [sound] + wrong
             random.shuffle(choices)
-            if jong in self._BASIC_BATCHIM:
+            if jong in ("ㄱ", "ㄷ", "ㅂ"):
                 hint = f"At the bottom of a block, {jong} keeps its plain sound, but stops short — no puff of air."
+            elif jong in self._BASIC_BATCHIM:
+                hint = f"At the bottom of a block, {jong} keeps its plain sound."
             else:
                 hint = (f"{jong} doesn't keep its usual sound at the bottom of a block. "
                         f"Final consonants shrink to just 7 sounds — which plain letter is {jong} closest to?")

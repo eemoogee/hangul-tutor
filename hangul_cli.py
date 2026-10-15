@@ -574,7 +574,7 @@ def _print_syllable_block_intro():
     print()
     print(f"   {styled('💡 Notice how ㄱ takes a different shape in each block — letters reshape to fit the square depending on where the vowel sits.', CYAN)}")
     print()
-    vowel_tip = ("💡 A vowel can't start a syllable by itself: ㅏ is written 아, ㅗ is written 오. "
+    vowel_tip = ("💡 In writing, a vowel can't start a syllable by itself: ㅏ is written 아, ㅗ is written 오. "
                  "The ㅇ comes first and is silent — it just holds the place until a real "
                  "consonant takes it (가, 고).")
     print(f"   {styled(vowel_tip, CYAN)}")
@@ -842,7 +842,7 @@ def print_title_screen():
         print(roman_line)
         time.sleep(0.3)
     time.sleep(0.3)
-    print(f"\n   {styled('한글', BOLD, GREEN)}  —  \"Hangul\": literally, the great script")
+    print(f"\n   {styled('한글', BOLD, GREEN)}  —  \"Hangul\": often explained as 'the great script'")
     time.sleep(0.6)
 
     # Stage 2: CV chart animation
@@ -1525,8 +1525,8 @@ def run_beginner_intro(quiz: HangulQuiz, lesson: dict):
             print(f"{styled(f'Lesson {_n} not found — there are {_total} lessons.', YELLOW)}")
         # UNGRADED — accept any response (including blank), no validation
         # The reveal comes AFTER they respond (or press Enter with nothing)
-        print(f"\n   {styled('The', GREEN)} {styled('ㅇ', BOLD, GREEN)} {styled('at the front is silent in all of them.', GREEN)}")
-        print(f"   {styled('Every vowel needs it, since Korean can' + chr(39) + 't write a bare vowel alone.', GREEN)}")
+        print(f"\n   {styled('The', GREEN)} {styled('ㅇ', BOLD, GREEN)} {styled('is silent in all of them.', GREEN)}")
+        print(f"   {styled('In writing, a block that starts with a vowel sound needs it as a placeholder.', GREEN)}")
         time.sleep(0.5)
 
         print(f"\n{styled('Now let' + chr(39) + 's meet the vowels themselves:', BOLD, GREEN)}")

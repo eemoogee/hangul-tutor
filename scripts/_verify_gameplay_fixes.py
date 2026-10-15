@@ -989,6 +989,32 @@ check("walkthrough: ㅇ 'comes first' (not 'in front': it sits on top of 오/우
       "can't start a syllable by itself" in _cli_src
       and "Vowels never appear alone" not in _cli_src and "The ㅇ in front" not in _cli_src)
 
+print("Korean-language claims (accuracy audit, 2026-10-14)")
+_qa = fresh()
+_src = open(CLI.__file__, encoding="utf-8").read() + open(E.__file__, encoding="utf-8").read()
+for _old in ("t write a bare vowel alone", "at the front is silent", "glued onto the front",
+             "literally, the great script", "Six letters with a puff"):
+    check(f"old wording gone: {_old!r}", _old not in _src
+          and _old not in json.dumps(_qa.curriculum, ensure_ascii=False))
+check("Lesson 4: only ㅊ ㅋ ㅌ ㅍ are described as having a puff of air",
+      "four with a puff of air (ㅊ ㅋ ㅌ ㅍ)" in _qa._get_lesson(4)["description"])
+_acc = json.dumps(_qa.curriculum, ensure_ascii=False)
+check("학교: 'hagyo' (drops the audible ㄱ) is no longer accepted", '"hagyo"' not in _acc)
+check("Lesson 10 note: only ㄱ, ㄷ, ㅂ are told to stop short",
+      "ㄱ, ㄷ and ㅂ stop short" in _qa._get_lesson(10)["note"])
+_qa.start_lesson(10)
+_hints = {}
+for _ in range(400):
+    _bq = _qa._batchim_question(_qa.current_lesson)
+    _j = _qa._decompose_syllable(_bq.letter)[2] if _bq.letter else ""
+    if _bq.hint and "bottom of a block" in _bq.hint:
+        _hints.setdefault(_j, set()).add(_bq.hint)
+_bad = {j: h for j, h in _hints.items() if j in ("ㄴ", "ㄹ", "ㅁ", "ㅇ") and any("stops short" in x for x in h)}
+check("batchim hint: ㄴ ㄹ ㅁ ㅇ are not told to 'stop short'", not _bad and any(j in _hints for j in "ㄴㄹㅁㅇ"),
+      (_bad, sorted(_hints)))
+check("batchim hint: ㄱ ㄷ ㅂ still are", any("stops short" in x for j in "ㄱㄷㅂ" for x in _hints.get(j, ())),
+      sorted(_hints))
+
 print("Hangul Rain")
 q = fresh()
 for lid in (1, 10, 11, 12):

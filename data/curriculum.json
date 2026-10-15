@@ -318,7 +318,7 @@
     {
       "id": 4,
       "title": "Breathy Consonants",
-      "description": "Six letters with a puff of air — hello, 커피 (coffee)!",
+      "description": "Six new letters, four with a puff of air (ㅊ ㅋ ㅌ ㅍ) — hello, 커피 (coffee)!",
       "letters": [
         "ㅈ",
         "ㅊ",
@@ -1061,7 +1061,7 @@
           "각"
         ]
       ],
-      "note": "A consonant can also sit at the BOTTOM of a block — this is called batchim (받침): 가 + ㄴ = 간. Say it short, and don't let it 'pop'.",
+      "note": "A consonant can also sit at the BOTTOM of a block — this is called batchim (받침): 가 + ㄴ = 간. At the bottom, ㄱ, ㄷ and ㅂ stop short — don't let them 'pop'.",
       "words": [
         {
           "word": "물",
@@ -1295,8 +1295,7 @@
           "accepted_romanizations": [
             "hakgyo",
             "hak-gyo",
-            "hakkyo",
-            "hagyo"
+            "hakkyo"
           ]
         },
         {
