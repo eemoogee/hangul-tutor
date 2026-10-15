@@ -41,6 +41,7 @@ KONGLISH_VOCAB_PATH = DATA_DIR / "konglish_vocab.json"
 READING_PRACTICE_PATH = DATA_DIR / "reading_practice.jsonl"
 TATOEBA_KOR_PATH = DATA_DIR / "tatoeba_kor_sentences.tsv"
 PROGRESS_PATH = (Path(sys.executable).parent if getattr(sys, "frozen", False) else DATA_DIR) / "user_progress.json"
+CURRENT_SCHEMA_VERSION = 3
 
 
 # ── Data structures ────────────────────────────────────────────────────────
@@ -590,6 +591,7 @@ class HangulQuiz:
 
     def _load_progress(self) -> dict:
         data = None
+        source_path = None
         tmp_path = PROGRESS_PATH.with_suffix(".json.tmp")
         # A previous save may have written the complete snapshot but been
         # unable to replace a progress file held open by another program.
@@ -602,6 +604,7 @@ class HangulQuiz:
                     data = json.load(f)
                 if not isinstance(data, dict):
                     raise ValueError("pending progress is not an object")
+                source_path = tmp_path
             except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
                 data = None
                 print(f"[Hangul Tutor] Couldn't read pending progress in {tmp_path}; "
@@ -611,26 +614,38 @@ class HangulQuiz:
                 try:
                     with open(PROGRESS_PATH, encoding='utf-8') as f:
                         data = json.load(f)
+                    source_path = PROGRESS_PATH
                 except (json.JSONDecodeError, UnicodeDecodeError):
                     # A damaged progress file used to crash the app on launch.
                     # Keep the damaged copy (so nothing is silently thrown away)
                     # and start fresh.
-                    backup = PROGRESS_PATH.with_name(
-                        f"user_progress.backup-{time.strftime('%Y%m%d-%H%M%S')}.json")
+                    backup = self._progress_backup_path()
                     os.replace(PROGRESS_PATH, backup)
                     print(f"[Hangul Tutor] Your progress file couldn't be read, so it was "
                           f"moved to {backup.name} and a fresh one was started.")
         if data is None:
-            data = {
-                "current_lesson": 1,
-                "completed_lessons": [],
-                "mastered_letters": {},
-                "confusion_counts": {},
-                "total_questions_answered": 0,
-                "total_correct": 0,
-                "streak_best": 0,
-                "last_session": None
-            }
+            data = self._new_progress()
+        else:
+            try:
+                version = data.get("schema_version", 1)
+                if not isinstance(version, int) or isinstance(version, bool):
+                    raise ValueError(f"invalid schema version: {version!r}")
+                while version < CURRENT_SCHEMA_VERSION:
+                    migration = self.MIGRATIONS[version]
+                    migration(self, data)
+                    version += 1
+                    data["schema_version"] = version
+                if version != CURRENT_SCHEMA_VERSION:
+                    raise ValueError(f"unsupported schema version: {version}")
+            except Exception as exc:
+                # The on-disk source is still intact even if a step changed
+                # the in-memory dict before failing. Move it out of the way
+                # just as we do for a damaged JSON file.
+                backup = self._progress_backup_path()
+                os.replace(source_path, backup)
+                print(f"[Hangul Tutor] Your progress couldn't be migrated ({exc}); "
+                      f"a backup copy was kept in {backup.name} and a fresh one was started.")
+                return self._new_progress()
         # Fill in any keys an older (or hand-edited) progress file lacks, so
         # later code can index them directly without a KeyError.
         data.setdefault("current_lesson", 1)
@@ -638,10 +653,29 @@ class HangulQuiz:
         data.setdefault("mastered_letters", {})
         data.setdefault("confusion_counts", {})
         data.setdefault("learner_items", {})
-        self._migrate_old_progress(data)
         return data
 
-    def _migrate_old_progress(self, data: dict) -> None:
+    @staticmethod
+    def _new_progress() -> dict:
+        return {
+            "schema_version": CURRENT_SCHEMA_VERSION,
+            "current_lesson": 1, "completed_lessons": [],
+            "mastered_letters": {}, "confusion_counts": {}, "learner_items": {},
+            "total_questions_answered": 0, "total_correct": 0,
+            "streak_best": 0, "last_session": None,
+        }
+
+    @staticmethod
+    def _progress_backup_path() -> Path:
+        stem = f"user_progress.backup-{time.strftime('%Y%m%d-%H%M%S')}"
+        backup = PROGRESS_PATH.with_name(f"{stem}.json")
+        number = 2
+        while backup.exists():
+            backup = PROGRESS_PATH.with_name(f"{stem}-{number}.json")
+            number += 1
+        return backup
+
+    def _migrate_1_to_2(self, data: dict) -> None:
         """Backfill learner_items from the old flat mastered_letters
         ints, so nobody's existing user_progress.json is wiped or
         orphaned when this field is introduced. A key already present
@@ -664,7 +698,7 @@ class HangulQuiz:
         until enough wrong answers erode it one point at a time.
         """
         old = data.get("mastered_letters", {})
-        items = data["learner_items"]
+        items = data.setdefault("learner_items", {})
         for key, score in old.items():
             if key in items:
                 continue
@@ -673,6 +707,50 @@ class HangulQuiz:
                 key=key, correct=0, wrong=0,
                 _migrated_confidence=score,
             ).to_dict()
+
+        # Older item records kept only lifetime totals. Materialize the
+        # same inferred window that LearnerItem.from_dict used to create.
+        for item in items.values():
+            item.setdefault("history", LearnerItem._history_from_counts(
+                item.get("correct", 0), item.get("wrong", 0)))
+
+    def _migrate_2_to_3(self, data: dict) -> None:
+        """Store the same valid mix-up pairs that the readers used to show.
+
+        Keep original maps when normalization changes them, including pairs
+        the readers hid, so no saved evidence is discarded.
+        """
+        counts = data.get("confusion_counts", {})
+        cleaned = {}
+        for pair, count in counts.items():
+            parts = pair.split("↔")
+            valid = self._clean_pair(*parts) if len(parts) == 2 else None
+            if valid is not None:
+                key = "↔".join(valid)
+                cleaned[key] = cleaned.get(key, 0) + count
+        if cleaned != counts:
+            data.setdefault("_legacy_confusion_counts", dict(counts))
+            data["confusion_counts"] = cleaned
+
+        items = data.get("learner_items", {})
+        moved = {}
+        for key, item in items.items():
+            for other, count in item.get("confusions", {}).items():
+                valid = self._clean_pair(key, other)
+                if valid is not None:
+                    a, b = valid
+                    target = moved.setdefault(a, {})
+                    target[b] = target.get(b, 0) + count
+        for key, item in items.items():
+            old = item.get("confusions", {})
+            new = moved.pop(key, {})
+            if old != new:
+                item.setdefault("_legacy_confusions", dict(old))
+                item["confusions"] = new
+        for key, confusions in moved.items():
+            items[key] = LearnerItem(key=key, confusions=confusions).to_dict()
+
+    MIGRATIONS = {1: _migrate_1_to_2, 2: _migrate_2_to_3}
 
     def save_progress(self):
         self.progress["last_session"] = time.strftime("%Y-%m-%d %H:%M:%S")

@@ -48,6 +48,51 @@ def fresh():
 
 
 print("Progress saving")
+legacy = {
+    "current_lesson": 3, "completed_lessons": [1, 2],
+    "mastered_letters": {"가": 4},
+    "confusion_counts": {"ㅗ↔ㅣ": 2, "ㄷ↔ㅓ": 1},
+    "learner_items": {"미": {"correct": 3, "wrong": 1,
+                            "confusions": {"ㅗ": 2}}},
+    "total_questions_answered": 7, "total_correct": 4,
+    "streak_best": 2, "last_session": "2026-01-01 00:00:00",
+}
+E.PROGRESS_PATH.write_text(json.dumps(legacy, ensure_ascii=False), encoding="utf-8")
+q = E.HangulQuiz()
+check("v1 progress migrates scores, totals and old mix-up pairs",
+      q.progress["schema_version"] == E.CURRENT_SCHEMA_VERSION
+      and q.progress["learner_items"]["가"]["_migrated_confidence"] == 4
+      and q.progress["learner_items"]["미"]["history"] == "0111"
+      and q.progress["confusion_counts"] == {"오↔이": 2}
+      and q._pairs_from_learner_items() == {"모↔미": 2}
+      and q.progress["_legacy_confusion_counts"] == legacy["confusion_counts"])
+q.save_progress()
+saved = json.loads(E.PROGRESS_PATH.read_text(encoding="utf-8"))
+check("v1 migration saves the current schema version",
+      saved["schema_version"] == E.CURRENT_SCHEMA_VERSION)
+check("current progress loads unchanged", E.HangulQuiz().progress == saved)
+check("save then load round trip is identical", E.HangulQuiz().progress == q.progress)
+
+failing = {"current_lesson": 5, "completed_lessons": [1, 2, 3, 4]}
+raw_failing = json.dumps(failing)
+E.PROGRESS_PATH.write_text(raw_failing, encoding="utf-8")
+backups_before = set(TMP.glob("user_progress.backup-*.json"))
+
+def fail_after_edit(self, data):
+    data["current_lesson"] = 99
+    raise RuntimeError("test failure")
+
+with patch.dict(E.HangulQuiz.MIGRATIONS, {1: fail_after_edit}), \
+        contextlib.redirect_stdout(io.StringIO()) as migration_notice:
+    q = E.HangulQuiz()
+new_backups = set(TMP.glob("user_progress.backup-*.json")) - backups_before
+check("failing migration keeps an exact backup and says so",
+      len(new_backups) == 1
+      and next(iter(new_backups)).read_text(encoding="utf-8") == raw_failing
+      and "backup copy" in migration_notice.getvalue()
+      and q.progress["schema_version"] == E.CURRENT_SCHEMA_VERSION
+      and q.progress["current_lesson"] == 1)
+
 q = fresh()
 q.start_lesson(2)
 for _ in range(3):
