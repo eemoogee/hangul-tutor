@@ -410,6 +410,84 @@ q.answer("zzz", E.QuizQuestion(mode="read_aloud", prompt="", correct_answer="a",
 check("read-aloud: a typo is not recorded as a mix-up",
       all("아" not in k for k in q._pairs_from_learner_items()))
 
+print("Reading mix-ups inferred from taught blocks")
+
+def reading_miss(lesson, mode, target, typed):
+    quiz = fresh()
+    quiz.start_lesson(lesson)
+    expected = "".join(quiz._hangul_to_roman_hint(ch) for ch in target)
+    question = E.QuizQuestion(mode=mode, prompt="", correct_answer=expected,
+                              accepted=sorted(quiz.roman_variants(target)),
+                              letter=target, lesson_id=lesson)
+    return quiz, quiz.answer(typed, question)
+
+for lesson, target, typed, other in ((3, "보", "beo", "버"),
+                                      (4, "코", "keo", "커"),
+                                      (4, "바", "pa", "파"),
+                                      (10, "간", "gam", "감")):
+    q, miss = reading_miss(lesson, "read_aloud", target, typed)
+    check(f"lesson {lesson}: {target} read {typed} identifies {other}",
+          not miss.correct and (miss.confused_target, miss.confused_with) == (target, other))
+
+q, miss = reading_miss(3, "read_aloud", "보", "beo")
+check("inferred pair is in flat and per-item confusion history",
+      q.progress["confusion_counts"].get("버↔보") == 1
+      and q._get_item("보").confusions.get("버") == 1
+      and q._get_item("버").confusions.get("보") == 1)
+for _ in range(2):
+    q.next_question()
+back = q.next_question()
+check("inferred pair returns on the third question with the swapped block",
+      back.mode == "match_sound" and back.letter == "보" and "버" in back.choices)
+
+for mode, target, typed in (("real_word", "오이", "eoi"),
+                            ("read_word", "오이", "eoi"),
+                            ("nonword_decode", "오우", "eou"),
+                            ("sequence_decode", "오우아", "eoua")):
+    q, miss = reading_miss(1, mode, target, typed)
+    check(f"{mode}: one changed block is recorded, not the whole word",
+          not miss.correct and (miss.confused_target, miss.confused_with) == ("오", "어")
+          and q._get_item("오").confusions.get("어") == 1
+          and q._get_item("어").confusions.get("오") == 1
+          and not q._get_item(target).confusions)
+
+q = fresh()
+q.start_lesson(2)
+contrast = E.QuizQuestion(mode="word_contrast", prompt="", correct_answer="거기",
+                          choices=["거기", "고기"], letter="거기", lesson_id=2,
+                          direction="meaning_to_word")
+miss = q.answer("고기", contrast)
+check("word contrast: offered 고기 for 거기 records 고/거",
+      not miss.correct and (miss.confused_target, miss.confused_with) == ("거", "고")
+      and q.progress["confusion_counts"].get("고↔거") == 1
+      and q._get_item("거").confusions.get("고") == 1
+      and q._get_item("고").confusions.get("거") == 1
+      and q._comeback[-1][1:3] == ["거", "고"])
+
+for name, lesson, mode, target, typed in (
+        ("typo", 3, "read_aloud", "보", "beox"),
+        ("two changed blocks", 1, "real_word", "오이", "eoeu"),
+        ("ambiguous reading", 11, "read_aloud", "가", "ot"),
+        ("untaught letter", 1, "read_aloud", "아", "pa")):
+    q, miss = reading_miss(lesson, mode, target, typed)
+    check(f"reading mix-up: {name} records nothing",
+          not miss.correct and miss.confused_with is None and not q._comeback
+          and not q.progress["confusion_counts"])
+
+q = fresh()
+q.start_lesson(2)
+two_block_contrast = E.QuizQuestion(mode="word_contrast", prompt="", correct_answer="거기",
+                                    choices=["거기", "고가"], letter="거기", lesson_id=2,
+                                    direction="meaning_to_word")
+check("word contrast: an offered two-block alternative records nothing",
+      q.answer("고가", two_block_contrast).confused_with is None)
+single_contrast = E.QuizQuestion(mode="word_contrast", prompt="", correct_answer="거",
+                                 choices=["거", "고"], letter="거", lesson_id=2,
+                                 direction="meaning_to_word")
+check("word contrast: a studied but unoffered block records nothing",
+      q.answer("버", single_contrast).confused_with is None
+      and not q.progress["confusion_counts"])
+
 with contextlib.redirect_stdout(io.StringIO()):
     import hangul_cli as CLI
 import re as _re

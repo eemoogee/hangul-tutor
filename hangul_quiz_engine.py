@@ -480,6 +480,10 @@ class HangulQuiz:
         # "Find the Sound" question with the mixed-up block among the
         # choices: [questions_to_wait, target, other, lesson_id]. Session-only.
         self._comeback: list = []
+        # Romanization -> decodable blocks, built only when a wrong reading
+        # needs mix-up inference. The curriculum, not the practice pool,
+        # determines which blocks are available at each lesson.
+        self._reading_variant_blocks: dict[int, dict[str, set[str]]] = {}
         # Longest streak reached at any point this session. session_streak
         # resets to 0 on a miss, so reading it at quit time lost any streak
         # that ended before the last answer.
@@ -2235,19 +2239,13 @@ class HangulQuiz:
         else:
             self.session_streak = 0
             self._mark_mastered(question.letter, confidence=-1)
-            # Record confusion — only when both sides are real single
-            # Hangul/jamo characters. read_aloud's "expected" is a
-            # romanization string (e.g. "eo"), not Hangul, so a wrong
-            # read_aloud guess should never be recorded here; same for any
-            # stray typo the user typed that isn't a plausible letter.
+            # For Hangul-choice modes, record confusion only when both
+            # sides are plausible Hangul/jamo forms. Reading modes infer
+            # a block pair separately from the typed romanization below.
             #
-            # confused_with is user_clean, NOT expected: the mix-up this
-            # item had was with what the LEARNER typed, mirroring the
-            # existing f"{user_clean}↔{expected}" pair semantics right
-            # below. Passing expected here would have made an item
-            # record itself as confused with itself in most modes, since
-            # question.letter == expected for everything except
-            # confusion_drill (see _record_learner_item's docstring).
+            # In Hangul-choice modes, confused_with is the learner's
+            # choice, never the expected answer. For reading modes it is
+            # the single inferred block, if that inference is unique.
             # ...and only when what they typed is something they could
             # plausibly have mixed up — one of the offered choices or a
             # block from the lessons. A random typo like 뷁 used to be saved
@@ -2267,15 +2265,18 @@ class HangulQuiz:
                 # bare vowel vs block — that drilled 오 against 미.
                 confused_with = self._missing_vowel_built(user_clean, question)
                 pair_target = question.letter
-            elif not valid_pair and question.mode == "read_aloud":
-                # Reading 어 as 'o' IS the ㅓ/ㅗ mix-up, even though the
-                # answer was typed in English letters. Read-aloud is ~30% of
-                # all questions and its mistakes used to be thrown away.
-                confused_with = self._block_read_as(user_clean, question.letter)
-                pair_target = self._compose_bare_vowel(question.letter)
+            elif question.mode in ("read_aloud", "real_word", "read_word",
+                                   "nonword_decode", "sequence_decode"):
+                pair = self._reading_mixup(user_clean, question.letter)
+                pair_target, confused_with = pair if pair else (None, None)
+            elif question.mode == "word_contrast":
+                pair = (self._single_block_difference(expected, user_clean)
+                        if user_clean in (question.choices or []) else None)
+                pair_target, confused_with = pair if pair else (None, None)
             self._record_learner_item(
                 question, correct=False,
                 confused_with=confused_with,
+                confused_target=pair_target,
                 response_ms=response_ms,
             )
             if confused_with:
@@ -2384,23 +2385,72 @@ class HangulQuiz:
         a, b = self._compose_bare_vowel(a), self._compose_bare_vowel(b)
         return None if a == b else (a, b)
 
-    def _block_read_as(self, typed: str, target: str) -> Optional[str]:
-        """Which studied block did the learner read `target` as? For a
-        read-aloud miss: 'o' typed for 어 -> 오. Only an unambiguous match
-        among this lesson's blocks and already-completed lessons' blocks
-        counts (and never the target itself); anything else returns None,
-        so a typo is not mistaken for a mix-up."""
-        if len(target) != 1 or not typed or self.current_lesson is None:
+    @staticmethod
+    def _single_block_difference(target: str, other: str) -> Optional[tuple[str, str]]:
+        """The sole changed syllable in two same-length Hangul strings."""
+        if (not target or len(target) != len(other)
+                or not all(0xAC00 <= ord(ch) <= 0xD7A3 for ch in target + other)):
+            return None
+        changed = [(a, b) for a, b in zip(target, other) if a != b]
+        if len(changed) != 1:
+            return None
+        a, b = changed[0]
+        return a, b
+
+    def _reading_blocks_by_variant(self, lesson_id: int) -> dict[str, set[str]]:
+        """Index readings of blocks whose letters are taught by this lesson.
+
+        Build once per lesson on demand. A curated practice pool omits many
+        valid blocks (for example 버 beside a practised 보), so it cannot be
+        used to decide whether a reading error is a real mix-up.
+        """
+        if lesson_id not in self._reading_variant_blocks:
+            by_variant: dict[str, set[str]] = defaultdict(set)
+            for code in range(0xAC00, 0xD7A4):
+                block = chr(code)
+                taught_by = self.readable_from(block)
+                if taught_by is not None and taught_by <= lesson_id:
+                    for variant in self._syllable_roman_variants(block):
+                        by_variant[normalize_roman(variant)].add(block)
+            self._reading_variant_blocks[lesson_id] = dict(by_variant)
+        return self._reading_variant_blocks[lesson_id]
+
+    def _reading_mixup(self, typed: str, target: str) -> Optional[tuple[str, str]]:
+        """Infer one changed block from a wrong romanized reading.
+
+        Match the unchanged prefix and suffix in all accepted spellings,
+        then look up the middle as a taught block. Multiple matching full
+        strings are ambiguous, even if they happen to use the same pair of
+        blocks at different positions.
+        """
+        if (self.current_lesson is None or not target
+                or not all(0xAC00 <= ord(ch) <= 0xD7A3 for ch in target)):
             return None
         heard = normalize_roman(typed)
         if not heard:
             return None
-        pool = set(self._get_lesson_syllable_pool(self.current_lesson))
-        pool |= set(self._get_known_syllables())
-        target = self._compose_bare_vowel(target)
-        matches = [b for b in pool
-                   if b != target and len(b) == 1 and heard in self.roman_variants(b)]
-        return matches[0] if len(matches) == 1 else None
+        by_variant = self._reading_blocks_by_variant(self.current_lesson["id"])
+        matches = set()
+        for index, original in enumerate(target):
+            prefixes = self.roman_variants(target[:index])
+            suffixes = self.roman_variants(target[index + 1:])
+            for prefix in prefixes:
+                if not heard.startswith(prefix):
+                    continue
+                for suffix in suffixes:
+                    if not heard.endswith(suffix):
+                        continue
+                    end = len(heard) - len(suffix) if suffix else len(heard)
+                    middle = heard[len(prefix):end]
+                    for candidate in by_variant.get(middle, ()):
+                        if candidate != original:
+                            matches.add((index, original, candidate))
+                            if len(matches) > 1:
+                                return None
+        if len(matches) != 1:
+            return None
+        _, original, candidate = matches.pop()
+        return original, candidate
 
     def _is_studied_form(self, s: str, question: QuizQuestion) -> bool:
         """True if s is one of the question's choices, or a letter/block
@@ -2434,7 +2484,8 @@ class HangulQuiz:
         self.progress["mastered_letters"][item] = max(0, min(5, current + confidence))
 
     def _record_learner_item(self, question: QuizQuestion, correct: bool, confused_with: Optional[str] = None,
-                             response_ms: Optional[float] = None, assisted: bool = False):
+                             response_ms: Optional[float] = None, assisted: bool = False,
+                             confused_target: Optional[str] = None):
         """Update the richer LearnerItem record for this question's
         letter, in PARALLEL with _mark_mastered's flat int and the
         confusion_counts dict above — neither of those is touched or
@@ -2449,13 +2500,10 @@ class HangulQuiz:
         step — that one changes what the learner is actually shown, so
         it gets its own review rather than riding along with this one.
 
-        confused_with should be what the LEARNER typed (user_clean), not
-        the expected answer — question.letter is normally the same
-        value as `expected`, so recording a confusion against expected
-        would have this item list itself as its own confusion partner
-        in most modes. The caller already validates confused_with
-        against _looks_like_hangul_target before passing it, matching
-        the guard the confusion_counts write uses.
+        confused_with is the learner's chosen block, or the block
+        inferred from a romanized reading. confused_target identifies
+        which block of a multi-block word was mistaken; the word still
+        keeps its ordinary wrong-answer history under question.letter.
 
         Not called for questions with no letter (mirrors the `if not
         item: return` guard in _mark_mastered above).
@@ -2489,8 +2537,13 @@ class HangulQuiz:
             # point, same as it would erode a non-migrated item's
             # confidence — this is the only place that erosion happens.
             item._wrong_since_migration += 1
-            if confused_with and _looks_like_hangul_target(confused_with) and confused_with != item_key:
-                item.confusions[confused_with] = item.confusions.get(confused_with, 0) + 1
+            target_key = self._compose_bare_vowel(confused_target or item_key)
+            if (confused_with and _looks_like_hangul_target(confused_with)
+                    and _looks_like_hangul_target(target_key) and confused_with != target_key):
+                target_item = item if target_key == item_key else self._get_item(target_key)
+                target_item.confusions[confused_with] = target_item.confusions.get(confused_with, 0) + 1
+                if target_item is not item:
+                    self._save_item(target_item)
                 # Symmetric confusion recording. The flat confusion_counts
                 # dict above keys on the UNORDERED pair, so one wrong answer
                 # fed both directions at once — but this per-item record
@@ -2501,7 +2554,7 @@ class HangulQuiz:
                 # it. Record it on BOTH items, guarded exactly like the
                 # existing write above.
                 typed_item = self._get_item(confused_with)
-                typed_item.confusions[item_key] = typed_item.confusions.get(item_key, 0) + 1
+                typed_item.confusions[target_key] = typed_item.confusions.get(target_key, 0) + 1
                 self._save_item(typed_item)
 
         item.last_seen = time.time()
