@@ -15,6 +15,7 @@ import tempfile
 import contextlib
 from collections import Counter
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -40,6 +41,9 @@ def check(name, ok, detail=""):
 def fresh():
     if E.PROGRESS_PATH.exists():
         E.PROGRESS_PATH.unlink()
+    pending = E.PROGRESS_PATH.with_suffix(".json.tmp")
+    if pending.exists():
+        pending.unlink()
     return E.HangulQuiz()
 
 
@@ -70,6 +74,76 @@ with contextlib.redirect_stdout(io.StringIO()):
     q = E.HangulQuiz()
 check("corrupt progress file -> fresh start + backup kept",
       q.progress["current_lesson"] == 1 and any(TMP.glob("user_progress.backup-*.json")))
+
+q = fresh()
+q.progress["current_lesson"] = 2
+q.save_progress()
+real_replace = E.os.replace
+replace_calls = []
+
+def briefly_locked(src, dst):
+    replace_calls.append((src, dst))
+    if len(replace_calls) < 3:
+        raise PermissionError("file in use")
+    return real_replace(src, dst)
+
+q.progress["current_lesson"] = 3
+with patch.object(E.os, "replace", side_effect=briefly_locked), \
+        patch.object(E.time, "sleep") as sleep, \
+        contextlib.redirect_stdout(io.StringIO()) as notice:
+    q.save_progress()
+check("locked progress: retry then save succeeds",
+      len(replace_calls) == 3 and sleep.call_count == 2
+      and not notice.getvalue()
+      and json.loads(E.PROGRESS_PATH.read_text(encoding="utf-8"))["current_lesson"] == 3
+      and not E.PROGRESS_PATH.with_suffix(".json.tmp").exists())
+
+q.progress["current_lesson"] = 4
+q.progress["total_questions_answered"] = 17
+with patch.object(E.os, "replace", side_effect=PermissionError("file in use")) as replace, \
+        patch.object(E.time, "sleep") as sleep, \
+        contextlib.redirect_stdout(io.StringIO()) as notice:
+    q.save_progress()
+pending = E.PROGRESS_PATH.with_suffix(".json.tmp")
+check("locked progress: give up once, warn, and keep the complete temp file",
+      replace.call_count == 5 and sleep.call_count == 4
+      and notice.getvalue().count("Couldn't save progress") == 1
+      and str(pending) in notice.getvalue()
+      and json.loads(pending.read_text(encoding="utf-8"))["current_lesson"] == 4
+      and json.loads(pending.read_text(encoding="utf-8"))["total_questions_answered"] == 17
+      and json.loads(E.PROGRESS_PATH.read_text(encoding="utf-8"))["current_lesson"] == 3)
+
+with patch.object(E.os, "replace", side_effect=PermissionError("file in use")), \
+        patch.object(E.time, "sleep"), \
+        contextlib.redirect_stdout(io.StringIO()) as repeated_notice:
+    q.save_progress()
+check("locked progress: repeated autosave does not repeat the warning",
+      not repeated_notice.getvalue() and pending.exists())
+
+saved_mtime = E.PROGRESS_PATH.stat().st_mtime_ns
+E.os.utime(pending, ns=(saved_mtime + 1_000_000_000,) * 2)
+q = E.HangulQuiz()
+recovered = q.progress["current_lesson"] == 4 and q.progress["total_questions_answered"] == 17
+q.save_progress()
+check("locked progress: next start recovers newer temp, then saves it",
+      recovered
+      and json.loads(E.PROGRESS_PATH.read_text(encoding="utf-8"))["current_lesson"] == 4
+      and json.loads(E.PROGRESS_PATH.read_text(encoding="utf-8"))["total_questions_answered"] == 17
+      and not pending.exists())
+
+pending.write_text(json.dumps({**q.progress, "current_lesson": 1}), encoding="utf-8")
+saved_mtime = E.PROGRESS_PATH.stat().st_mtime_ns
+E.os.utime(pending, ns=(saved_mtime - 1_000_000_000,) * 2)
+check("older temp file cannot replace newer saved progress",
+      E.HangulQuiz().progress["current_lesson"] == 4)
+
+pending.write_text("{not json", encoding="utf-8")
+E.os.utime(pending, ns=(saved_mtime + 1_000_000_000,) * 2)
+with contextlib.redirect_stdout(io.StringIO()) as pending_notice:
+    q = E.HangulQuiz()
+check("corrupt newer temp keeps the last valid saved progress",
+      q.progress["current_lesson"] == 4 and "Couldn't read pending progress" in pending_notice.getvalue()
+      and pending.exists())
 
 print("Grading")
 q = fresh()

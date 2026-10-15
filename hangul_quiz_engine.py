@@ -495,6 +495,7 @@ class HangulQuiz:
         # last save — adding the full session counts each time double-counted.
         self._saved_total = 0
         self._saved_correct = 0
+        self._save_lock_warned = False
 
     # ── Data loading ───────────────────────────────────────────────────
 
@@ -589,19 +590,36 @@ class HangulQuiz:
 
     def _load_progress(self) -> dict:
         data = None
-        if PROGRESS_PATH.exists():
+        tmp_path = PROGRESS_PATH.with_suffix(".json.tmp")
+        # A previous save may have written the complete snapshot but been
+        # unable to replace a progress file held open by another program.
+        # Prefer that snapshot only when it is newer than the saved file.
+        if (tmp_path.exists() and
+                (not PROGRESS_PATH.exists() or
+                 tmp_path.stat().st_mtime_ns > PROGRESS_PATH.stat().st_mtime_ns)):
             try:
-                with open(PROGRESS_PATH, encoding='utf-8') as f:
+                with open(tmp_path, encoding='utf-8') as f:
                     data = json.load(f)
-            except (json.JSONDecodeError, UnicodeDecodeError):
-                # A damaged progress file used to crash the app on launch.
-                # Keep the damaged copy (so nothing is silently thrown away)
-                # and start fresh.
-                backup = PROGRESS_PATH.with_name(
-                    f"user_progress.backup-{time.strftime('%Y%m%d-%H%M%S')}.json")
-                os.replace(PROGRESS_PATH, backup)
-                print(f"[Hangul Tutor] Your progress file couldn't be read, so it was "
-                      f"moved to {backup.name} and a fresh one was started.")
+                if not isinstance(data, dict):
+                    raise ValueError("pending progress is not an object")
+            except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
+                data = None
+                print(f"[Hangul Tutor] Couldn't read pending progress in {tmp_path}; "
+                      "the last saved progress will be used.")
+        if PROGRESS_PATH.exists():
+            if data is None:
+                try:
+                    with open(PROGRESS_PATH, encoding='utf-8') as f:
+                        data = json.load(f)
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    # A damaged progress file used to crash the app on launch.
+                    # Keep the damaged copy (so nothing is silently thrown away)
+                    # and start fresh.
+                    backup = PROGRESS_PATH.with_name(
+                        f"user_progress.backup-{time.strftime('%Y%m%d-%H%M%S')}.json")
+                    os.replace(PROGRESS_PATH, backup)
+                    print(f"[Hangul Tutor] Your progress file couldn't be read, so it was "
+                          f"moved to {backup.name} and a fresh one was started.")
         if data is None:
             data = {
                 "current_lesson": 1,
@@ -673,7 +691,20 @@ class HangulQuiz:
         tmp_path = PROGRESS_PATH.with_suffix(".json.tmp")
         with open(tmp_path, 'w', encoding='utf-8') as f:
             json.dump(self.progress, f, indent=2, ensure_ascii=False)
-        os.replace(tmp_path, PROGRESS_PATH)
+        for attempt in range(5):
+            try:
+                os.replace(tmp_path, PROGRESS_PATH)
+                self._save_lock_warned = False
+                return
+            except PermissionError:
+                if attempt == 4:
+                    if not self._save_lock_warned:
+                        print(f"[Hangul Tutor] Couldn't save progress — another program has "
+                              f"the file open. Your progress is kept in {tmp_path} and "
+                              "will be retried on the next save.")
+                        self._save_lock_warned = True
+                    return
+                time.sleep(0.25)
 
     # ── Learner item access (not yet wired into answer()/next_question) ─
     #
