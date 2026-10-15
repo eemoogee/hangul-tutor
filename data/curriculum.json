@@ -60,7 +60,7 @@
           "ㅜ"
         ]
       ],
-      "note": "A vowel never stands alone in Korean writing. It always gets a silent ㅇ in front: ㅏ is written 아, and 아 just sounds like 'a'.",
+      "note": "In Korean writing, a vowel can't start a syllable by itself. A silent ㅇ comes first: ㅏ is written 아, and 아 just sounds like 'a'.",
       "block_rules": {
         "vertical_vowels": [
           "ㅏ",

@@ -864,6 +864,16 @@ qs.start_lesson(1)
 qs.record_skip(qs.next_question())
 check("record_skip counts one skip", qs.session_skips == 1 and qs.session_total == 0)
 
+print("The silent ㅇ is described correctly")
+_l1_note = fresh()._get_lesson(1).get("note", "")
+_cli_src = open(CLI.__file__, encoding="utf-8").read()
+check("Lesson 1 note: a vowel can't START a syllable alone (not 'never stands alone')",
+      "can't start a syllable by itself" in _l1_note
+      and "never stands alone" not in _l1_note and "always gets" not in _l1_note, _l1_note)
+check("walkthrough: ㅇ 'comes first' (not 'in front': it sits on top of 오/우/으)",
+      "can't start a syllable by itself" in _cli_src
+      and "Vowels never appear alone" not in _cli_src and "The ㅇ in front" not in _cli_src)
+
 print("Hangul Rain")
 q = fresh()
 for lid in (1, 10, 11, 12):

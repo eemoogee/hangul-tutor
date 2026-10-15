@@ -574,7 +574,10 @@ def _print_syllable_block_intro():
     print()
     print(f"   {styled('💡 Notice how ㄱ takes a different shape in each block — letters reshape to fit the square depending on where the vowel sits.', CYAN)}")
     print()
-    print(f"   {styled('💡 Vowels never appear alone in Korean: ㅏ is written 아, ㅓ is written 어. The ㅇ in front is silent — it just holds the place until a real consonant arrives.', CYAN)}")
+    vowel_tip = ("💡 A vowel can't start a syllable by itself: ㅏ is written 아, ㅗ is written 오. "
+                 "The ㅇ comes first and is silent — it just holds the place until a real "
+                 "consonant takes it (가, 고).")
+    print(f"   {styled(vowel_tip, CYAN)}")
     print()
 
 
