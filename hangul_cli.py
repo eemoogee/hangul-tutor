@@ -2287,10 +2287,26 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
     _print_session_summary(quiz)
 
 
+def _session_score_line(quiz: HangulQuiz) -> str:
+    """'Correct: 7 of 9 answered (78%) · 2 skipped'. Skips use up a round
+    turn but aren't graded answers, so they're shown on their own: ten
+    skips used to read 'Correct: 0/0 (0%)' right after a round card that
+    said '0 of 10 right'."""
+    answered, right = quiz.session_total, quiz.session_correct
+    skips = getattr(quiz, "session_skips", 0)
+    if answered:
+        line = f"Correct: {right} of {answered} answered ({round(100 * right / answered)}%)"
+    else:
+        line = "Correct: no answers yet"
+    if skips:
+        line += f" · {skips} skipped"
+    return line
+
+
 def _print_session_summary(quiz: HangulQuiz):
     summary = quiz.get_progress_summary()
     print(f"\n{styled('📊 Session Summary:', BOLD)}")
-    print(f"   Correct: {summary['session_score']} ({summary['session_pct']}%)")
+    print(f"   {_session_score_line(quiz)}")
     print(f"   Best streak this session: {quiz.session_best_streak}   (all-time: {summary['streak_best']})")
     if summary['top_confusions']:
         print(f"   Practice these: {', '.join(c['pair'] for c in summary['top_confusions'])}")

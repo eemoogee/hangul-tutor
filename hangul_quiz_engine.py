@@ -472,6 +472,7 @@ class HangulQuiz:
         self.session_streak = 0
         self.session_correct = 0
         self.session_total = 0
+        self.session_skips = 0     # /skip: uses a turn, isn't a graded answer
         # Last (mode, letter) pair asked — used by _select_from_pool to avoid
         # asking the exact same question back-to-back.
         self._last_asked: tuple = ("", "")
@@ -2527,6 +2528,7 @@ class HangulQuiz:
         if question is None:
             question = getattr(self, '_last_question', None)
         self.session_streak = 0
+        self.session_skips += 1
         if question is None or not question.letter:
             return
         self._mark_mastered(question.letter, confidence=-1)
@@ -2572,6 +2574,7 @@ class HangulQuiz:
             "session_streak": self.session_streak,
             "session_score": f"{self.session_correct}/{self.session_total}",
             "session_pct": round(100 * self.session_correct / max(1, self.session_total)),
+            "session_skips": self.session_skips,
             "streak_best": self.progress.get("streak_best", 0),
             "top_confusions": self._top_confusions(5)
         }

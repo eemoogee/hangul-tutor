@@ -697,6 +697,21 @@ for lid in range(1, 12):
     check(f"lesson {lid} done: box previews Lesson {lid + 1} (title + what it teaches), borders line up",
           ok, after_next)
 
+print("Session summary with skips")
+qz, out = _play(1, [], ["/skip"] * CLI.ROUND_SIZE + ["q"])
+check("ten skips: the round card and the summary agree",
+      "0 of 10 right" in out and "Correct: no answers yet · 10 skipped" in out,
+      [l for l in out.splitlines() if "Correct" in l or "right" in l][-3:])
+qz, out = _play(1, [], ["RIGHT", "WRONG", "/skip", "RIGHT"])
+check("mixed answers and a skip: graded answers and skips shown apart",
+      "Correct: 2 of 3 answered (67%) · 1 skipped" in out,
+      [l for l in out.splitlines() if "Correct" in l][-1:])
+qs = fresh()
+check("skips are counted for the session", qs.session_skips == 0)
+qs.start_lesson(1)
+qs.record_skip(qs.next_question())
+check("record_skip counts one skip", qs.session_skips == 1 and qs.session_total == 0)
+
 print("Hangul Rain")
 q = fresh()
 for lid in (1, 10, 11, 12):
