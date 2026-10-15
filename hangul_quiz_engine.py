@@ -41,6 +41,7 @@ KONGLISH_VOCAB_PATH = DATA_DIR / "konglish_vocab.json"
 READING_PRACTICE_PATH = DATA_DIR / "reading_practice.jsonl"
 TATOEBA_KOR_PATH = DATA_DIR / "tatoeba_kor_sentences.tsv"
 PROGRESS_PATH = (Path(sys.executable).parent if getattr(sys, "frozen", False) else DATA_DIR) / "user_progress.json"
+CURRENT_SCHEMA_VERSION = 3
 
 
 # ── Data structures ────────────────────────────────────────────────────────
@@ -591,48 +592,101 @@ class HangulQuiz:
         return bigrams
 
     def _load_progress(self) -> dict:
-        data = None
+        self._progress_read_only = False
         tmp_path = PROGRESS_PATH.with_suffix(".json.tmp")
-        # A previous save may have written the complete snapshot but been
-        # unable to replace a progress file held open by another program.
-        # Prefer that snapshot only when it is newer than the saved file.
-        if (tmp_path.exists() and
-                (not PROGRESS_PATH.exists() or
-                 tmp_path.stat().st_mtime_ns > PROGRESS_PATH.stat().st_mtime_ns)):
+        snapshots = {}
+        for path in (PROGRESS_PATH, tmp_path):
+            if not path.exists():
+                continue
             try:
-                with open(tmp_path, encoding='utf-8') as f:
+                with open(path, encoding='utf-8') as f:
                     data = json.load(f)
-                if not isinstance(data, dict):
-                    raise ValueError("pending progress is not an object")
-            except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
-                data = None
-                print(f"[Hangul Tutor] Couldn't read pending progress in {tmp_path}; "
+            except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+                snapshots[path] = (None, exc)
+            else:
+                snapshots[path] = (data, None)
+
+        # Check both files, including an older temp file: save_progress writes
+        # to that temp path and must never overwrite a newer-version snapshot.
+        future = [path for path, (data, _) in snapshots.items()
+                  if isinstance(data, dict)
+                  and type(data.get("schema_version", 1)) is int
+                  and data.get("schema_version", 1) > CURRENT_SCHEMA_VERSION]
+        if future:
+            self._progress_read_only = True
+            names = ", ".join(path.name for path in future)
+            print(f"[Hangul Tutor] {names} was saved by a newer version of the app. "
+                  "Update Hangul Tutor to use it; saving is disabled for this session.")
+            # A future main file is authoritative. A future temp file can sit
+            # beside an older, usable main file; show that main file read-only.
+            if PROGRESS_PATH in future:
+                return self._new_progress()
+            return (self._prepare_progress_snapshot(PROGRESS_PATH, snapshots)
+                    or self._new_progress())
+
+        # A previous save may have left a complete newer temp snapshot. Try
+        # it first, but a migration failure there must not hide a good main.
+        use_tmp = (tmp_path in snapshots and
+                   (PROGRESS_PATH not in snapshots or
+                    tmp_path.stat().st_mtime_ns > PROGRESS_PATH.stat().st_mtime_ns))
+        if use_tmp:
+            data = self._prepare_progress_snapshot(tmp_path, snapshots)
+            if data is not None:
+                return data
+        data = self._prepare_progress_snapshot(PROGRESS_PATH, snapshots)
+        if data is not None:
+            return data
+        # An older temp snapshot is still better than starting at lesson 1
+        # when the newer main file cannot be used.
+        if not use_tmp:
+            data = self._prepare_progress_snapshot(tmp_path, snapshots)
+            if data is not None:
+                return data
+        # If the temp JSON was unreadable and no main file worked, keep it
+        # before starting fresh. A usable main leaves that temp untouched.
+        if tmp_path in snapshots and tmp_path.exists():
+            backup = self._progress_backup_path()
+            os.replace(tmp_path, backup)
+            print(f"[Hangul Tutor] Unreadable pending progress was moved to "
+                  f"{backup.name}.")
+        if snapshots:
+            print("[Hangul Tutor] No usable progress file remains; starting fresh.")
+        return self._new_progress()
+
+    def _prepare_progress_snapshot(self, path: Path, snapshots: dict) -> Optional[dict]:
+        if path not in snapshots:
+            return None
+        data, error = snapshots[path]
+        pending = path != PROGRESS_PATH
+        if error is not None or not isinstance(data, dict):
+            if pending:
+                print(f"[Hangul Tutor] Couldn't read pending progress in {path}; "
                       "the last saved progress will be used.")
-        if PROGRESS_PATH.exists():
-            if data is None:
-                try:
-                    with open(PROGRESS_PATH, encoding='utf-8') as f:
-                        data = json.load(f)
-                except (json.JSONDecodeError, UnicodeDecodeError):
-                    # A damaged progress file used to crash the app on launch.
-                    # Keep the damaged copy (so nothing is silently thrown away)
-                    # and start fresh.
-                    backup = PROGRESS_PATH.with_name(
-                        f"user_progress.backup-{time.strftime('%Y%m%d-%H%M%S')}.json")
-                    os.replace(PROGRESS_PATH, backup)
-                    print(f"[Hangul Tutor] Your progress file couldn't be read, so it was "
-                          f"moved to {backup.name} and a fresh one was started.")
-        if data is None:
-            data = {
-                "current_lesson": 1,
-                "completed_lessons": [],
-                "mastered_letters": {},
-                "confusion_counts": {},
-                "total_questions_answered": 0,
-                "total_correct": 0,
-                "streak_best": 0,
-                "last_session": None
-            }
+            else:
+                backup = self._progress_backup_path()
+                os.replace(path, backup)
+                print(f"[Hangul Tutor] Your progress file couldn't be read, so it was "
+                      f"moved to {backup.name}.")
+            return None
+        try:
+            version = data.get("schema_version", 1)
+            if type(version) is not int or version < 1:
+                raise ValueError(f"invalid schema version: {version!r}")
+            while version < CURRENT_SCHEMA_VERSION:
+                migration = self.MIGRATIONS[version]
+                migration(self, data)
+                version += 1
+                data["schema_version"] = version
+        except Exception as exc:
+            # An in-memory migration may have partly changed data; the file
+            # on disk is intact and gets its own backup before fallback.
+            backup = self._progress_backup_path()
+            os.replace(path, backup)
+            next_step = ("trying the last saved progress" if pending
+                         else "checking for another saved snapshot")
+            print(f"[Hangul Tutor] Your progress couldn't be migrated ({exc}); "
+                  f"a backup copy was kept in {backup.name}; {next_step}.")
+            return None
         # Fill in any keys an older (or hand-edited) progress file lacks, so
         # later code can index them directly without a KeyError.
         data.setdefault("current_lesson", 1)
@@ -640,10 +694,29 @@ class HangulQuiz:
         data.setdefault("mastered_letters", {})
         data.setdefault("confusion_counts", {})
         data.setdefault("learner_items", {})
-        self._migrate_old_progress(data)
         return data
 
-    def _migrate_old_progress(self, data: dict) -> None:
+    @staticmethod
+    def _new_progress() -> dict:
+        return {
+            "schema_version": CURRENT_SCHEMA_VERSION,
+            "current_lesson": 1, "completed_lessons": [],
+            "mastered_letters": {}, "confusion_counts": {}, "learner_items": {},
+            "total_questions_answered": 0, "total_correct": 0,
+            "streak_best": 0, "last_session": None,
+        }
+
+    @staticmethod
+    def _progress_backup_path() -> Path:
+        stem = f"user_progress.backup-{time.strftime('%Y%m%d-%H%M%S')}"
+        backup = PROGRESS_PATH.with_name(f"{stem}.json")
+        number = 2
+        while backup.exists():
+            backup = PROGRESS_PATH.with_name(f"{stem}-{number}.json")
+            number += 1
+        return backup
+
+    def _migrate_1_to_2(self, data: dict) -> None:
         """Backfill learner_items from the old flat mastered_letters
         ints, so nobody's existing user_progress.json is wiped or
         orphaned when this field is introduced. A key already present
@@ -666,7 +739,7 @@ class HangulQuiz:
         until enough wrong answers erode it one point at a time.
         """
         old = data.get("mastered_letters", {})
-        items = data["learner_items"]
+        items = data.setdefault("learner_items", {})
         for key, score in old.items():
             if key in items:
                 continue
@@ -676,7 +749,53 @@ class HangulQuiz:
                 _migrated_confidence=score,
             ).to_dict()
 
+        # Older item records kept only lifetime totals. Materialize the
+        # same inferred window that LearnerItem.from_dict used to create.
+        for item in items.values():
+            item.setdefault("history", LearnerItem._history_from_counts(
+                item.get("correct", 0), item.get("wrong", 0)))
+
+    def _migrate_2_to_3(self, data: dict) -> None:
+        """Store the same valid mix-up pairs that the readers used to show.
+
+        Keep original maps when normalization changes them, including pairs
+        the readers hid, so no saved evidence is discarded.
+        """
+        counts = data.get("confusion_counts", {})
+        cleaned = {}
+        for pair, count in counts.items():
+            parts = pair.split("↔")
+            valid = self._clean_pair(*parts) if len(parts) == 2 else None
+            if valid is not None:
+                key = "↔".join(valid)
+                cleaned[key] = cleaned.get(key, 0) + count
+        if cleaned != counts:
+            data.setdefault("_legacy_confusion_counts", dict(counts))
+            data["confusion_counts"] = cleaned
+
+        items = data.get("learner_items", {})
+        moved = {}
+        for key, item in items.items():
+            for other, count in item.get("confusions", {}).items():
+                valid = self._clean_pair(key, other)
+                if valid is not None:
+                    a, b = valid
+                    target = moved.setdefault(a, {})
+                    target[b] = target.get(b, 0) + count
+        for key, item in items.items():
+            old = item.get("confusions", {})
+            new = moved.pop(key, {})
+            if old != new:
+                item.setdefault("_legacy_confusions", dict(old))
+                item["confusions"] = new
+        for key, confusions in moved.items():
+            items[key] = LearnerItem(key=key, confusions=confusions).to_dict()
+
+    MIGRATIONS = {1: _migrate_1_to_2, 2: _migrate_2_to_3}
+
     def save_progress(self):
+        if self._progress_read_only:
+            return
         self.progress["last_session"] = time.strftime("%Y-%m-%d %H:%M:%S")
         self.progress["total_questions_answered"] = (self.progress.get("total_questions_answered", 0)
                                                      + self.session_total - self._saved_total)
