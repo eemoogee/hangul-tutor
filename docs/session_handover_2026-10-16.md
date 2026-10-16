@@ -13,7 +13,9 @@ Paste this into a new session, or say "read
 
 - **New to coding.** Explain terms and processes plainly: what a command
   does, what a PR is.
-- **Never suggest ending a session, wrapping up, or resting.**
+- **Don't suggest ending a session, wrapping up, or resting.** The one
+  exception: say so when the conversation's context is filling up and a
+  fresh session (with a handover) would work better.
 - **Plays on an Android phone in Termux, about 49 columns wide.** Feedback
   usually arrives as phone screenshots with little or no text. Read them
   closely, as a QA pass: find what looks wrong and fix the real problems.
