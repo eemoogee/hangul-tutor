@@ -2217,9 +2217,20 @@ def _go_to_next_lesson(quiz: HangulQuiz):
     return info
 
 
+def _flush_round_notices(quiz: HangulQuiz, solid_now: list, milestones: list):
+    """Show pending notices, keeping only items that are still solid."""
+    for milestone in milestones:
+        print(f"   {styled(milestone, BOLD, YELLOW)}")
+    solid = list(dict.fromkeys(x for x in solid_now if quiz._is_solid(x)))
+    if solid:
+        print(f"   {styled('⭐ ' + ' · '.join(solid) + ' is solid now!', BOLD, YELLOW)}")
+    solid_now.clear()
+    milestones.clear()
+
+
 def _round_card(quiz: HangulQuiz, round_no: int, right: int, asked: int,
                 no_progress: bool = False, solid_now: Optional[list] = None,
-                milestones: Optional[list] = None) -> str:
+                milestones: Optional[list] = None, reward_earned: bool = False) -> str:
     """End-of-round progress card. Returns 'continue', 'next' or 'quit'.
     no_progress: nothing became solid during this round.
     solid_now: items that became solid during the round (shown here once).
@@ -2245,10 +2256,10 @@ def _round_card(quiz: HangulQuiz, round_no: int, right: int, asked: int,
         print(f"   Still to go: {' · '.join(styled(x, BOLD) for x in shown)}{more}")
 
     # Routine progress held back from mid-round, shown together here.
-    for milestone in (milestones or []):
-        print(f"   {styled(milestone, BOLD, YELLOW)}")
-    if solid_now:
-        print(f"   {styled('⭐ ' + ' · '.join(solid_now) + ' is solid now!', BOLD, YELLOW)}")
+    _flush_round_notices(quiz, solid_now if solid_now is not None else [],
+                          milestones if milestones is not None else [])
+    if reward_earned:
+        _show_reading_reward(quiz)
 
     options = []
     if done and not last:
@@ -2284,11 +2295,14 @@ def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
     print(f"{engine_label} | Lesson: {quiz.current_lesson['title']}")
     print(f"Type {styled('/help', CYAN)} for commands, {styled('/quit', RED)} to exit")
 
+    round_solid, round_milestones = [], []
     try:
-        _interactive_loop_body(quiz, args, lesson_info)
+        _interactive_loop_body(quiz, args, lesson_info, round_solid, round_milestones)
     except KeyboardInterrupt:
+        _flush_round_notices(quiz, round_solid, round_milestones)
         print(f"\n{styled('👋 안녕히 가세요! (Goodbye!)', GREEN)}")
     finally:
+        _flush_round_notices(quiz, round_solid, round_milestones)
         quiz.save_progress()
     _print_session_summary(quiz)
 
@@ -2328,7 +2342,8 @@ def _print_session_summary(quiz: HangulQuiz):
         print_lesson_complete(quiz)
 
 
-def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
+def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict,
+                           round_solid: list, round_milestones: list):
     # --mode locks the quiz to a single question type; None means auto-pick
     locked_mode = args.mode
     if locked_mode:
@@ -2363,12 +2378,7 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
     # Routine progress notices (items turned solid, streak milestones) are
     # collected during the round and shown once on the round-ending card, so
     # mid-round feedback stays limited to the answer itself.
-    round_solid: list = []
-    round_milestones: list = []
-    # The streak value the reading reward last fired at. The reward used
-    # to re-fire whenever a new question was drawn while the streak still
-    # sat on a multiple of 5 — e.g. after /skip or /mode.
-    last_reward_streak = 0
+    round_reward_earned = False
 
     # Wall-clock time when the current question was first displayed —
     # used to compute response_time_ms for the per-item EMA. Persists
@@ -2384,13 +2394,9 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
         if current_question is None and not sudden_death and round_asked >= ROUND_SIZE:
             choice = _round_card(quiz, round_no, round_right, round_asked,
                                  no_progress=len(quiz.unmastered_items()) >= (round_left or 0),
-                                 solid_now=round_solid, milestones=round_milestones)
-            # The deferred reading reward fires once, on the round card, when
-            # the streak crossed a REWARD_EVERY boundary during the round.
-            if quiz.session_streak >= REWARD_EVERY and quiz.session_streak != last_reward_streak:
-                last_reward_streak = quiz.session_streak
-                _show_reading_reward(quiz)
-            round_solid, round_milestones = [], []
+                                 solid_now=round_solid, milestones=round_milestones,
+                                 reward_earned=round_reward_earned)
+            round_reward_earned = False
             if choice == "quit":
                 print(f"\n{styled('👋 안녕히 가세요! (Goodbye!)', GREEN)}")
                 return
@@ -2415,6 +2421,7 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
         try:
             user_input = input(f"\n{styled('>', BOLD)} ").strip()
         except EOFError:
+            _flush_round_notices(quiz, round_solid, round_milestones)
             print(f"\n{styled('👋 안녕히 가세요! (Goodbye!)', GREEN)}")
             return
 
@@ -2439,6 +2446,7 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
             action = cmd[0].lower()
 
             if action in ('q', 'quit', 'exit'):
+                _flush_round_notices(quiz, round_solid, round_milestones)
                 print(f"\n{styled('👋 안녕히 가세요! (Goodbye!)', GREEN)}")
                 return
 
@@ -2491,6 +2499,8 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
                 lesson = info
                 current_question = None
                 round_no, round_asked, round_right = 1, 0, 0
+                round_solid.clear()
+                round_milestones.clear()
 
             elif action == 'next':
                 info = _go_to_next_lesson(quiz)
@@ -2498,12 +2508,16 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
                     lesson = info
                     current_question = None
                     round_no, round_asked, round_right = 1, 0, 0
+                    round_solid.clear()
+                    round_milestones.clear()
 
             elif action == 'intro':
                 _intro_result = run_beginner_intro(quiz, lesson)
                 if _intro_result is not None:
                     lesson = _intro_result
                     current_question = None
+                    round_solid.clear()
+                    round_milestones.clear()
 
             elif action == 'alphabet':
                 run_alphabet_intro(quiz)
@@ -2670,6 +2684,8 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
             # than interrupting the answer-by-answer flow.
             if result.correct and streak in STREAK_MILESTONES:
                 round_milestones.append(STREAK_MILESTONES[streak])
+            if result.correct and streak > 0 and streak % REWARD_EVERY == 0:
+                round_reward_earned = True
 
             newly = [x for x in left_before if x not in quiz.unmastered_items()]
             if newly:
@@ -2707,6 +2723,8 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict):
         # Round bookkeeping; the card itself shows at the top of the loop.
         if moved_on:
             round_no, round_asked, round_right = 1, 0, 0     # new lesson, new rounds
+            round_solid.clear()
+            round_milestones.clear()
         elif not sudden_death:
             round_asked += 1
             round_right += result.correct
