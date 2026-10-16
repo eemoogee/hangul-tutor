@@ -51,3 +51,8 @@ hangul_finetune_v*.jsonl
 # Flash card game progress (personal runtime data)
 data/flash_progress.json
 data/flash_progress.json.bak
+
+# Environment files
+.env
+.env.*
+!.env.example
