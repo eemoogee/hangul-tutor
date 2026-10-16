@@ -598,7 +598,7 @@ check("after /rain and /conveyor the question comes back with its round counter"
       out.count(f"· 3/{CLI.ROUND_SIZE}") == 3, out.count(f"· 3/{CLI.ROUND_SIZE}"))
 
 qz, out = _play(1, [], ["RIGHT"] * 30)
-check("blocks are celebrated the moment they become solid", "is solid now!" in out)
+check("blocks that become solid are announced at round end", "is solid now!" in out)
 check("an unfinished lesson's card lists what's still to go", "Still to go:" in out)
 
 print("Question mix (found by scripts/_playtest_learners.py)")
