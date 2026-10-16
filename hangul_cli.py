@@ -2288,18 +2288,6 @@ def _flush_round_notices(quiz: HangulQuiz, solid_now: list, milestones: list):
     milestones.clear()
 
 
-def _print_trouble_items(quiz: HangulQuiz, left: list, limit: int = 3):
-    """When the learner is stuck, name the unfinished items they've missed
-    most, so 'come back later' has something concrete to come back to."""
-    missed = [(quiz._get_item(x).wrong, x) for x in left]
-    missed = [(w, x) for w, x in missed if w > 0]
-    if not missed:
-        return
-    missed.sort(key=lambda t: -t[0])
-    names = " · ".join(styled(x, BOLD) for _, x in missed[:limit])
-    print(f"   {styled('Most misses so far:', YELLOW)} {names}")
-
-
 def _round_card(quiz: HangulQuiz, round_no: int, right: int, asked: int,
                 no_progress: bool = False, solid_now: Optional[list] = None,
                 milestones: Optional[list] = None, reward_earned: bool = False) -> str:
