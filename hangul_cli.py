@@ -1146,6 +1146,7 @@ def print_lesson_intro_rich(lesson: dict, quiz):
         else:
             print(f"\n{styled('🏁 Goal:', BOLD)} get all {m['pool_size']} solid "
                   f"({m['mastered_count']} so far). Rounds are {ROUND_SIZE} questions.")
+            print("   Then a short reading check: 4 of 5 on your own.")
 
     print()
     print(styled("Let's go →", GREEN))
@@ -1925,7 +1926,7 @@ KNOWN_ACTIONS = {
     'q', 'quit', 'exit', 'help', 'roman', 'romanize', 'romanization',
     'stats', 'lessons', 'lesson', 'mode', 'mnemonic', 'talk',
     'template', 'konglish', 'kspell', 'hint', 'h', 'skip', 'intro', 'table',
-    'alphabet', 'rain', 'conveyor', 'chart', 'next',
+    'alphabet', 'rain', 'conveyor', 'chart', 'next', 'check',
 }
 
 # Sudden death: start with this many hearts, lose one per miss. A streak of
@@ -1997,6 +1998,8 @@ def _offer_advance(quiz: HangulQuiz, lesson_id: int):
     the next one. Returns the new lesson_info if the learner advanced, or
     None if they declined or this was the final lesson."""
     total = len(quiz.curriculum["lessons"])
+    if lesson_id not in quiz.progress["completed_lessons"]:
+        return None
     m = quiz.lesson_mastery(lesson_id)
     print(f"\n{styled('🎉 Lesson mastered!', BOLD, GREEN)} "
           f"You've got {m['mastered_count']} of {m['pool_size']} solid.")
@@ -2053,6 +2056,99 @@ def _offer_advance(quiz: HangulQuiz, lesson_id: int):
             print(f"{styled('Type Y/n to decide, /lessons to browse, or /lesson N to jump.', YELLOW)}")
     print(f"{styled('No rush — staying here. Type /lessons to see all lessons, or /lesson N to jump to one whenever you want.', YELLOW)}")
     return None
+
+
+def _run_reading_check(quiz: HangulQuiz) -> str:
+    """A bounded check, then optional focused practice. No practice-score credit.
+
+    Returns passed/practice/quit. Practice and check answers are kept separate
+    from ordinary rounds, streaks and the mastery score.
+    """
+    from reading_check import make_reading_check, save_check_result, CHECK_SIZE, PASS_SCORE
+
+    print(f"\n{styled('📖 Read on your own', BOLD, CYAN)}")
+    print(f"   {CHECK_SIZE} prompts: 3 lesson items + 2 new combinations.")
+    print(f"   Read {PASS_SCORE} on your own. No choices, no timer.")
+    print("   /hint helps; that item returns for an independent try.")
+    print("   /skip reveals · /back returns to practice")
+    print("   /quit saves and exits")
+    while True:
+        try:
+            check = make_reading_check(quiz)
+        except ValueError as error:
+            print(f"   {error} Back to practice.")
+            return "practice"
+        while not check.finished:
+            q = check.current
+            # Remember exposures even if the check is interrupted. New
+            # combinations on a retry must really be new to this profile.
+            seen = quiz.progress.setdefault("reading_check_seen", [])
+            if q.letter not in seen:
+                seen.append(q.letter)
+                quiz.save_progress()
+            transfer = q.letter in check.transfer_targets
+            label = "New combination" if transfer else "Lesson item"
+            print(f"\n   {min(check.index + 1, CHECK_SIZE)}/{CHECK_SIZE} · {label}"
+                  if check.index < CHECK_SIZE else "\n   Independent retry")
+            print(f"   {styled(q.letter, BOLD, CYAN)}")
+            print("   Type its sound in English letters:")
+            assisted = False
+            while True:
+                answer = _ask("> ")
+                if answer is None or answer.lower() in ("/quit", "/q", "/exit"):
+                    quiz.save_progress()
+                    return "quit"
+                command = answer.lower()
+                if command in ("/back", "/practice"):
+                    return "practice"
+                if command in ("/hint", "/h"):
+                    print(f"   {q.hint}")
+                    assisted = True
+                    continue
+                if not answer:
+                    continue
+                if command == "/skip":
+                    correct = check.submit("", skipped=True)
+                    break
+                if command.startswith("/"):
+                    print("   /hint · /skip · /back · /quit")
+                    continue
+                if quiz.script_mismatch(answer, q):
+                    print("   Use English letters for the sound.")
+                    continue
+                correct = check.submit(answer, assisted=assisted)
+                break
+            if assisted:
+                print("   With help — this needs an independent try.")
+            elif correct:
+                print(f"   {styled('✓ Read independently!', GREEN)}")
+            else:
+                print(f"   {q.letter} → {q.correct_answer}")
+        save_check_result(quiz, check)
+        print(f"\n   {len(check.correct)}/{CHECK_SIZE} read independently.")
+        if check.passed:
+            print(f"   {styled('Reading check passed!', BOLD, GREEN)}")
+            return "passed"
+        print("   Let's practise the tricky ones. Your progress is kept.")
+        # One short practice prompt per missed item, at most three. This is
+        # supported practice: it never changes the check's score.
+        for q in list(check.missed.values())[:3]:
+            print(f"\n   {q.letter} → {q.correct_answer}")
+            print(f"   {q.hint}")
+            answer = _ask("   Try its sound (/back or /quit): ")
+            if answer is None or answer.lower() in ("/quit", "/q", "/exit"):
+                return "quit"
+            if answer.lower() in ("/back", "/practice"):
+                return "practice"
+            if normalize_roman(answer) in q.accepted:
+                print("   Yes — now blend it without help next time.")
+            else:
+                print(f"   The reading is {q.correct_answer}.")
+        answer = _ask("\n   [r] retry the check · [Enter] practice: ")
+        if answer is None or answer.lower() in ("/quit", "/q", "/exit"):
+            return "quit"
+        if answer.lower() not in ("r", "/check"):
+            return "practice"
 
 
 def _show_reading_reward(quiz: HangulQuiz):
@@ -2181,6 +2277,7 @@ def _print_help():
 {styled('While answering:', BOLD)}
   {styled('/hint', CYAN)}       — A nudge for the current question (also {styled('/h', CYAN)}) — a right answer after a hint doesn't count toward "solid"
   {styled('/skip', CYAN)}       — Reveal the answer and move on (counts as a miss and resets your streak)
+  {styled('/check', CYAN)}      — Read on your own after the practice goal
 
 {styled('Reference:', BOLD)}
   {styled('/table', CYAN)}      — This lesson's reference table
@@ -2202,14 +2299,14 @@ def _print_help():
 
 
 def _go_to_next_lesson(quiz: HangulQuiz):
-    """Move on to the next lesson (marking this one complete if it's
-    mastered). Returns the new lesson_info, or None if there is no next
-    lesson."""
+    """Navigate freely; leaving without a passed check is not completion."""
     lid = quiz.current_lesson["id"]
     if lid >= len(quiz.curriculum["lessons"]):
         print(f"   {styled('This is the last lesson — there is no next one. 🏆', YELLOW)}")
         return None
-    if lid not in quiz.progress["completed_lessons"] and quiz.lesson_mastery(lid)["is_mastered"]:
+    if (lid not in quiz.progress["completed_lessons"]
+            and quiz.lesson_mastery(lid)["is_mastered"]
+            and quiz.reading_check_passed(lid)):
         return _advance_and_show(quiz)
     info = quiz.start_lesson(lid + 1)
     print_lesson_intro_rich(info, quiz)
@@ -2251,9 +2348,10 @@ def _round_card(quiz: HangulQuiz, round_no: int, right: int, asked: int,
     lid = lesson["id"]
     m = quiz.lesson_mastery()
     left = quiz.unmastered_items()
-    done = lid in quiz.progress["completed_lessons"] or m["is_mastered"]
+    done = lid in quiz.progress["completed_lessons"]
+    ready = m["is_mastered"] and not done
     last = lid >= len(quiz.curriculum["lessons"])
-    stuck = not done and no_progress and round_no >= STUCK_AFTER_ROUNDS
+    stuck = not done and not ready and no_progress and round_no >= STUCK_AFTER_ROUNDS
 
     print(f"\n{styled(f'── Round {round_no} · {right} of {asked} right ──', BOLD, CYAN)}")
     if done:
@@ -2263,9 +2361,10 @@ def _round_card(quiz: HangulQuiz, round_no: int, right: int, asked: int,
     elif m["pool_size"]:
         bar = _mastery_bar(m["mastered_count"], m["pool_size"])
         print(f"📊 Lesson {lid}: {styled(bar, CYAN)} {m['mastered_count']} of {m['pool_size']} solid")
-        shown = left[:6]
-        more = f" +{len(left) - len(shown)} more" if len(left) > len(shown) else ""
-        print(f"   Still to go: {' · '.join(styled(x, BOLD) for x in shown)}{more}")
+        if left:
+            shown = left[:6]
+            more = f" +{len(left) - len(shown)} more" if len(left) > len(shown) else ""
+            print(f"   Still to go: {' · '.join(styled(x, BOLD) for x in shown)}{more}")
 
     # Routine progress held back from mid-round, shown together here.
     _flush_round_notices(quiz, solid_now if solid_now is not None else [],
@@ -2274,6 +2373,9 @@ def _round_card(quiz: HangulQuiz, round_no: int, right: int, asked: int,
         _show_reading_reward(quiz)
 
     options = []
+    if ready:
+        print("   Practice goal reached — next: read on your own.")
+        options.append(f"{styled('[r]', CYAN)} Reading check")
     if done and not last:
         nxt = quiz._get_lesson(lid + 1)
         options.append(f"{styled('[n]', CYAN)} Lesson {lid + 1}: {nxt['title']}")
@@ -2295,6 +2397,8 @@ def _round_card(quiz: HangulQuiz, round_no: int, right: int, asked: int,
     ans = _ask(f"{styled('>', BOLD)} ")
     if ans is None or ans.lower() in ("q", "/q", "quit", "/quit"):
         return "quit"
+    if ready and ans.lower() in ("r", "/check"):
+        return "check"
     if ans.lower() in ("n", "/next", "next") and (done or stuck) and not last:
         return "next"
     return "continue"
@@ -2348,11 +2452,9 @@ def _print_session_summary(quiz: HangulQuiz):
         # Optional natural-language recap (--use-llm), as the flag promises.
         print(f"   {generate_session_summary(build_session_data(quiz))}")
 
-    # Structured lesson-complete block — only shown when the current lesson
-    # is actually mastered, so quitting mid-lesson doesn't print a false
-    # "LESSON COMPLETE" banner.
+    # Only a recorded completion earns this banner, not practice readiness.
     if (quiz.current_lesson is not None
-            and quiz.lesson_mastery(quiz.current_lesson["id"])["is_mastered"]):
+            and quiz.current_lesson["id"] in quiz.progress["completed_lessons"]):
         print_lesson_complete(quiz)
 
 
@@ -2368,7 +2470,9 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict,
     # lesson_info has computed fields like letter_romanization.
     lesson = lesson_info
     print_lesson_intro_rich(lesson, quiz)
-    print_reference_table(quiz, lesson)
+    if (not quiz.lesson_mastery()["is_mastered"]
+            or lesson["id"] in quiz.progress["completed_lessons"]):
+        print_reference_table(quiz, lesson)
 
     # (Each letter's mnemonic is now part of the reference table above, so
     # the old one-letter "welcome mnemonic" here is gone.)
@@ -2381,10 +2485,10 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict,
               f"Each miss costs one; every {SUDDEN_DEATH_HEAL_EVERY} in a row wins one back.")
 
     current_question = None
-    # Lesson ids the learner has already been offered advancement on and
-    # said "not yet" to — so a mastered-but-not-advanced lesson doesn't
-    # re-prompt after every single subsequent correct answer.
+    # Don't interrupt practice with the same check repeatedly. /check and
+    # the round card allow an explicit retry; a new session offers it again.
     mastery_offered = set()
+    check_requested = False
     # Round bookkeeping (see ROUND_SIZE). round_left: how many items were
     # still to go when the round began, to spot a round with no progress.
     round_no, round_asked, round_right = 1, 0, 0
@@ -2403,6 +2507,27 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict,
     hint_used = False
 
     while True:
+        # Check on entry too: resuming or playing a mini-game can leave the
+        # practice goal ready without a fresh ordinary-quiz answer.
+        lid = quiz.current_lesson["id"]
+        ready = quiz.lesson_mastery(lid)["is_mastered"]
+        if (not sudden_death and (check_requested or
+                (ready and lid not in quiz.progress["completed_lessons"]
+                 and lid not in mastery_offered))):
+            check_requested = False
+            mastery_offered.add(lid)
+            outcome = _run_reading_check(quiz)
+            if outcome == "quit":
+                return
+            if outcome == "passed":
+                advanced = _offer_advance(quiz, lid)
+                if advanced is not None:
+                    lesson = advanced
+                    round_no, round_asked, round_right = 1, 0, 0
+                    round_solid.clear()          # new lesson: drop old notices
+                    round_milestones.clear()
+            current_question = None
+
         # End of round (an answer or a /skip filled it): a progress card
         # and a clear next step, before the next question.
         if current_question is None and not sudden_death and round_asked >= ROUND_SIZE:
@@ -2414,12 +2539,16 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict,
             if choice == "quit":
                 print(f"\n{styled('👋 안녕히 가세요! (Goodbye!)', GREEN)}")
                 return
+            if choice == "check":
+                check_requested = True
             round_no, round_asked, round_right = round_no + 1, 0, 0
             if choice == "next":
                 info = _go_to_next_lesson(quiz)
                 if info is not None:
                     lesson = info
                     round_no = 1
+            if check_requested:
+                continue
 
         if current_question is None:
             if round_asked == 0:
@@ -2467,6 +2596,16 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict,
             elif action == 'help':
                 _print_help()
 
+            elif action == 'check':
+                if sudden_death:
+                    print("   Reading checks are in normal practice mode.")
+                elif (quiz.lesson_mastery()["is_mastered"]
+                      or quiz.current_lesson["id"] in quiz.progress["completed_lessons"]):
+                    check_requested = True
+                    current_question = None
+                else:
+                    print("   Make the lesson items solid first, then try /check.")
+
             elif action in ('roman', 'romanize', 'romanization'):
                 print_romanization_key(quiz)
 
@@ -2482,7 +2621,7 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict,
                 m = quiz.lesson_mastery()
                 if m["pool_size"]:
                     print(f"   This lesson: {m['mastered_count']}/{m['pool_size']} solid "
-                          f"(need {m['needed']} to master)")
+                          f"(need {m['needed']} for the reading check)")
                 for label, key in (("Hangul Rain best", "rain_best"),
                                    ("Sudden death best", "sudden_death_best")):
                     if quiz.progress.get(key):
@@ -2715,31 +2854,15 @@ def _interactive_loop_body(quiz: HangulQuiz, args, lesson_info: dict,
             if not enc.startswith('['):
                 print(f"\n{styled('🌟', YELLOW)} {enc}")
 
-        # Lesson progression (normal mode only). When the active lesson's
-        # pool crosses the mastery bar, congratulate once and offer to
-        # advance; mastery_offered stops it re-asking after a "not yet".
-        moved_on = False
-        if result.correct and not sudden_death:
-            _lid = quiz.current_lesson["id"]
-            if (_lid not in quiz.progress["completed_lessons"]
-                    and _lid not in mastery_offered
-                    and quiz.lesson_mastery(_lid)["is_mastered"]):
-                mastery_offered.add(_lid)
-                _advanced = _offer_advance(quiz, _lid)
-                if _advanced is not None:
-                    lesson = _advanced
-                    moved_on = True
+        # The next loop offers the reading check once the practice goal is
+        # reached. Recognition alone must never trigger completion.
 
         # Save after every answer, so nothing is lost if the window closes.
         quiz.save_progress()
         current_question = None
 
         # Round bookkeeping; the card itself shows at the top of the loop.
-        if moved_on:
-            round_no, round_asked, round_right = 1, 0, 0     # new lesson, new rounds
-            round_solid.clear()
-            round_milestones.clear()
-        elif not sudden_death:
+        if not sudden_death:
             round_asked += 1
             round_right += result.correct
 

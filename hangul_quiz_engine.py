@@ -2936,6 +2936,10 @@ class HangulQuiz:
         """Mark the current lesson as completed."""
         if self.current_lesson:
             lid = self.current_lesson["id"]
+            if (lid not in self.progress["completed_lessons"]
+                    and not (self.lesson_mastery(lid)["is_mastered"]
+                             and self.reading_check_passed(lid))):
+                return "Read independently in /check before completing this lesson."
             if lid not in self.progress["completed_lessons"]:
                 self.progress["completed_lessons"].append(lid)
             self.progress["current_lesson"] = min(lid + 1, len(self.curriculum["lessons"]))
@@ -2943,9 +2947,14 @@ class HangulQuiz:
             return f"Lesson {lid} complete! Next: Lesson {self.progress['current_lesson']}"
         return "No active lesson."
 
+    def reading_check_passed(self, lesson_id=None):
+        """New checks are additive; previously completed lessons stay complete."""
+        lid = lesson_id if lesson_id is not None else self.current_lesson["id"]
+        return bool(self.progress.get("reading_checks", {}).get(str(lid), {}).get("passed"))
+
     # Minimum confidence (0–5) an item must reach to count as mastered.
     # Every item in a lesson's mastery_syllables (or mastery_words) set
-    # must reach this bar for the lesson to complete — there is no fraction
+    # must reach this bar to unlock the reading check — there is no fraction
     # or partial-completion shortcut. mastery_syllables is an explicit
     # pedagogical contract: the curriculum author chose those items because
     # they represent the lesson's core accomplishment, not because they
@@ -2986,7 +2995,10 @@ class HangulQuiz:
         return out
 
     def lesson_mastery(self, lesson_id: int = None) -> dict:
-        """Report mastery progress against the lesson's explicit mastery set.
+        """Report practice readiness against the lesson's mastery set.
+
+        is_mastered unlocks the independent reading check; it does not itself
+        mark a lesson completed. Previously completed lessons are preserved.
 
         The mastery set is mastery_words (word-based lessons like Lesson 12),
         mastery_syllables (every other lesson — now required in curriculum.json

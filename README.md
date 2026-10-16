@@ -64,6 +64,24 @@ data/flash_progress.json       Auto-created — hangul_flash.py progress (separa
 
 ## Hangul Tutor CLI (`hangul_cli.py`)
 
+Lessons now finish with a short independent reading check. First make the
+lesson's practice items solid; then read five prompts in English letters,
+without answer choices or a timer. Three are representative lesson items;
+two are new combinations of taught letters. Read four of five independently
+to complete the lesson.
+
+`/hint` remains available, but that prompt must be tried again without help
+to earn credit. A failed check offers up to three focused practice prompts
+and a fresh retry. `/check` starts another check after the practice goal;
+inside a check, `/back` returns to practice and `/quit` saves and exits.
+Navigation with `/next` or `/lesson N` remains available during ordinary
+practice; leaving an unchecked lesson does not mark it complete.
+
+Previously completed lessons stay completed. Finished check results are
+saved separately from ordinary practice scores. An interrupted check starts
+fresh next time, with new combinations. This checks immediate decoding,
+not next-day retention or spoken pronunciation.
+
 The main interactive tutor. Walks through 12 lessons (vowels, consonants,
 syllable blocks, batchim) with seven quiz modes, adapts to your mistakes, and
 uses Ollama for mnemonics and short constrained Korean sentences.
