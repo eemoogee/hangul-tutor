@@ -253,6 +253,48 @@ class ReadingChecks(unittest.TestCase):
             CLI._print_session_summary(self.q)
         complete.assert_not_called()
 
+    def test_misses_are_marked_not_yet_with_what_was_typed(self):
+        self.ready()
+        check = make_reading_check(self.q)
+        answers = iter(["wrong"] * 5 + ["x"] * 3 + [""])
+        out = io.StringIO()
+        with patch("reading_check.make_reading_check", return_value=check), \
+                patch.object(CLI, "_ask", side_effect=lambda _: next(answers)), \
+                contextlib.redirect_stdout(out):
+            self.assertEqual(CLI._run_reading_check(self.q), "practice")
+        text = out.getvalue()
+        self.assertIn("Not yet", text)
+        self.assertIn("you typed 'wrong'", text)
+        self.assertIn("you need 4", text)
+
+    def test_targeted_practice_asks_before_revealing_the_answer(self):
+        self.ready()
+        check = make_reading_check(self.q)
+        seen = []
+        answers = iter(["wrong"] * 5 + ["x"] * 3 + [""])
+        out = io.StringIO()
+
+        def ask(prompt):
+            if "Try its sound" in prompt:
+                seen.append(out.getvalue().split("practise the tricky ones")[-1])
+            return next(answers)
+
+        with patch("reading_check.make_reading_check", return_value=check), \
+                patch.object(CLI, "_ask", side_effect=ask), \
+                contextlib.redirect_stdout(out):
+            CLI._run_reading_check(self.q)
+        self.assertEqual(len(seen), 3)
+        self.assertNotIn("\u2192", seen[0])
+
+    def test_round_card_accepts_check_on_a_completed_lesson(self):
+        self.q.progress["completed_lessons"].append(1)
+        with patch.object(CLI, "_ask", return_value="/check"), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(CLI._round_card(self.q, 1, 10, 10), "check")
+        with patch.object(CLI, "_ask", return_value=""), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(CLI._round_card(self.q, 1, 10, 10), "continue")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

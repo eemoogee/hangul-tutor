@@ -2093,6 +2093,7 @@ def _run_reading_check(quiz: HangulQuiz) -> str:
             print(f"   {styled(q.letter, BOLD, CYAN)}")
             print("   Type its sound in English letters:")
             assisted = False
+            skipped = False
             while True:
                 answer = _ask("> ")
                 if answer is None or answer.lower() in ("/quit", "/q", "/exit"):
@@ -2108,6 +2109,7 @@ def _run_reading_check(quiz: HangulQuiz) -> str:
                 if not answer:
                     continue
                 if command == "/skip":
+                    skipped = True
                     correct = check.submit("", skipped=True)
                     break
                 if command.startswith("/"):
@@ -2122,10 +2124,15 @@ def _run_reading_check(quiz: HangulQuiz) -> str:
                 print("   With help — this needs an independent try.")
             elif correct:
                 print(f"   {styled('✓ Read independently!', GREEN)}")
+            elif skipped:
+                print(f"   {q.letter} is read {q.correct_answer}.")
             else:
-                print(f"   {q.letter} → {q.correct_answer}")
+                print(f"   {styled('✗ Not yet', YELLOW)} — {q.letter} is read "
+                      f"{q.correct_answer} (you typed '{answer}')")
         save_check_result(quiz, check)
-        print(f"\n   {len(check.correct)}/{CHECK_SIZE} read independently.")
+        score = f"{len(check.correct)}/{CHECK_SIZE} read independently"
+        print(f"\n   {score}." if check.passed
+              else f"\n   {score} — you need {PASS_SCORE}.")
         if check.passed:
             print(f"   {styled('Reading check passed!', BOLD, GREEN)}")
             return "passed"
@@ -2133,7 +2140,7 @@ def _run_reading_check(quiz: HangulQuiz) -> str:
         # One short practice prompt per missed item, at most three. This is
         # supported practice: it never changes the check's score.
         for q in list(check.missed.values())[:3]:
-            print(f"\n   {q.letter} → {q.correct_answer}")
+            print(f"\n   {styled(q.letter, BOLD, CYAN)}")
             print(f"   {q.hint}")
             answer = _ask("   Try its sound (/back or /quit): ")
             if answer is None or answer.lower() in ("/quit", "/q", "/exit"):
@@ -2143,7 +2150,7 @@ def _run_reading_check(quiz: HangulQuiz) -> str:
             if normalize_roman(answer) in q.accepted:
                 print("   Yes — now blend it without help next time.")
             else:
-                print(f"   The reading is {q.correct_answer}.")
+                print(f"   Not yet — {q.letter} is read {q.correct_answer}.")
         answer = _ask("\n   [r] retry the check · [Enter] practice: ")
         if answer is None or answer.lower() in ("/quit", "/q", "/exit"):
             return "quit"
@@ -2397,7 +2404,7 @@ def _round_card(quiz: HangulQuiz, round_no: int, right: int, asked: int,
     ans = _ask(f"{styled('>', BOLD)} ")
     if ans is None or ans.lower() in ("q", "/q", "quit", "/quit"):
         return "quit"
-    if ready and ans.lower() in ("r", "/check"):
+    if (ready and ans.lower() in ("r", "/check")) or (done and ans.lower() == "/check"):
         return "check"
     if ans.lower() in ("n", "/next", "next") and (done or stuck) and not last:
         return "next"
