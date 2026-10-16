@@ -43,6 +43,8 @@ from hangul_rain import launch_rain_mode
 from conveyor_game import run_conveyor, make_conveyor_state
 import term_wrap
 from term_wrap import strip_key_codes
+from lesson_flow import (AdvanceFlow, ReadingCheckFlow, round_card_choice,
+                         round_card_events)
 
 
 def input(prompt: str = "") -> str:  # noqa: A001 — deliberately wraps the builtin
@@ -1992,173 +1994,127 @@ def _advance_and_show(quiz: HangulQuiz) -> dict:
     return new_info
 
 
-def _offer_advance(quiz: HangulQuiz, lesson_id: int):
-    """Called the moment a lesson tips over the mastery bar. Congratulates,
-    then either finishes the curriculum (last lesson) or offers to move to
-    the next one. Returns the new lesson_info if the learner advanced, or
-    None if they declined or this was the final lesson."""
-    total = len(quiz.curriculum["lessons"])
-    if lesson_id not in quiz.progress["completed_lessons"]:
-        return None
-    m = quiz.lesson_mastery(lesson_id)
-    print(f"\n{styled('🎉 Lesson mastered!', BOLD, GREEN)} "
-          f"You've got {m['mastered_count']} of {m['pool_size']} solid.")
-    # Celebrate with what they can now actually READ, not just a count.
-    try:
-        words = _lesson_words_for(quiz._get_lesson(lesson_id))
-    except ValueError:
-        words = []
-    if words:
-        print(f"   {styled('📖 Words you can read now:', BOLD)}")
-        shown = words[:8]
-        for i in range(0, len(shown), 2):
-            row = "   ".join(f"{styled(w, BOLD, CYAN)} {mean}" for w, mean in shown[i:i + 2])
-            print(f"      {row}")
-        if len(words) > len(shown):
-            print(f"      {styled(f'...and {len(words) - len(shown)} more.', DIM)}")
-
-    if lesson_id >= total:
-        # Final lesson — mark it done and celebrate the whole curriculum.
-        quiz.complete_lesson()
-        print(f"{styled('🏆 That was the final lesson — you have read your way through the entire Hangul curriculum! 축하합니다! 🏆', BOLD, GREEN)}")
-        print(f"{styled('Keep drilling any lesson with /lesson N, or check /stats.', CYAN)}")
-        return None
-
-    total_lessons = len(quiz.curriculum["lessons"])
-    while True:
-        ans = _ask(f"\n{styled(f'Move on to Lesson {lesson_id + 1}? [Y/n] ', CYAN)}")
-        if ans is None:
-            break
-        a = ans.strip().lower()
-        if a in ("", "y", "yes"):
-            return _advance_and_show(quiz)
-        if a in ("n", "no"):
-            break
-        # Allow a subset of slash commands while the advance prompt is open
-        # so the learner isn't trapped without navigation.
-        parts = ans.split()
-        cmd0 = parts[0].lstrip("/").lower() if parts else ""
-        if cmd0 == "lesson" and len(parts) == 2 and parts[1].isdigit():
-            n = int(parts[1])
-            if 1 <= n <= total_lessons:
-                new_info = quiz.start_lesson(n)
-                print_lesson_intro(new_info.get("introduction", ""), new_info.get("note", ""))
-                print_reference_table(quiz, new_info)
-                return new_info
-            print(f"{styled(f'Lesson {n} not found — there are {total_lessons} lessons.', YELLOW)}")
-        elif cmd0 == "lessons":
+def _render_lesson_events(quiz: HangulQuiz, events: list):
+    """Render plain lesson-flow events for this terminal interface."""
+    for event in events:
+        kind = event["kind"]
+        if kind == "check_intro":
+            print(f"\n{styled('📖 Read on your own', BOLD, CYAN)}")
+            print(f"   {event['size']} prompts: 3 lesson items + 2 new combinations.")
+            print(f"   Read {event['pass_score']} on your own. No choices, no timer.")
+            print("   /hint helps; that item returns for an independent try.")
+            print("   /skip reveals · /back returns to practice")
+            print("   /quit saves and exits")
+        elif kind == "check_unavailable":
+            print(f"   {event['reason']} Back to practice.")
+        elif kind == "check_question":
+            label = "New combination" if event["transfer"] else "Lesson item"
+            print("\n   Independent retry" if event["retry"] else
+                  f"\n   {event['number']}/{event['size']} · {label}")
+            print(f"   {styled(event['letter'], BOLD, CYAN)}")
+            print("   Type its sound in English letters:")
+        elif kind == "check_hint":
+            print(f"   {event['hint']}")
+        elif kind == "check_commands":
+            print("   /hint · /skip · /back · /quit")
+        elif kind == "check_script_mismatch":
+            print("   Use English letters for the sound.")
+        elif kind == "check_feedback":
+            if event["assisted"]:
+                print("   With help — this needs an independent try.")
+            elif event["correct"]:
+                print(f"   {styled('✓ Read independently!', GREEN)}")
+            elif event["skipped"]:
+                print(f"   {event['letter']} is read {event['correct_answer']}.")
+            else:
+                print(f"   {styled('✗ Not yet', YELLOW)} — {event['letter']} is read "
+                      f"{event['correct_answer']} (you typed '{event['answer']}')")
+        elif kind == "check_score":
+            score = f"{event['correct']}/{event['size']} read independently"
+            print(f"\n   {score}." if event["passed"] else
+                  f"\n   {score} — you need {event['pass_score']}.")
+            if event["passed"]:
+                print(f"   {styled('Reading check passed!', BOLD, GREEN)}")
+        elif kind == "check_practice_intro":
+            print("   Let's practise the tricky ones. Your progress is kept.")
+        elif kind == "check_practice_question":
+            print(f"\n   {styled(event['letter'], BOLD, CYAN)}")
+            print(f"   {event['hint']}")
+        elif kind == "check_practice_feedback":
+            if event["correct"]:
+                print("   Yes — now blend it without help next time.")
+            else:
+                print(f"   Not yet — {event['letter']} is read {event['correct_answer']}.")
+        elif kind == "lesson_mastered":
+            print(f"\n{styled('🎉 Lesson mastered!', BOLD, GREEN)} "
+                  f"You've got {event['mastered_count']} of {event['pool_size']} solid.")
+            words = event["words"]
+            if words:
+                print(f"   {styled('📖 Words you can read now:', BOLD)}")
+                shown = words[:8]
+                for i in range(0, len(shown), 2):
+                    row = "   ".join(f"{styled(w['word'], BOLD, CYAN)} {w['meaning']}"
+                                     for w in shown[i:i + 2])
+                    print(f"      {row}")
+                if len(words) > len(shown):
+                    print(f"      {styled(f'...and {len(words) - len(shown)} more.', DIM)}")
+        elif kind == "curriculum_complete":
+            print(f"{styled('🏆 That was the final lesson — you have read your way through the entire Hangul curriculum! 축하합니다! 🏆', BOLD, GREEN)}")
+            print(f"{styled('Keep drilling any lesson with /lesson N, or check /stats.', CYAN)}")
+        elif kind == "lesson_started":
+            info = event["lesson"]
+            if event["message"]:
+                print(f"\n{styled('📖 ' + event['message'], BOLD)}")
+            if event["rich"]:
+                print_lesson_intro_rich(info, quiz)
+            else:
+                print_lesson_intro(info.get("introduction", ""), info.get("note", ""))
+            print_reference_table(quiz, info)
+        elif kind == "advance_missing_lesson":
+            message = f"Lesson {event['number']} not found — there are {event['total']} lessons."
+            print(styled(message, YELLOW))
+        elif kind == "advance_lessons":
             print(f"\n{styled('📚 Lessons:', BOLD)}")
-            for _l in quiz.list_lessons():
-                _mark = styled('✓', GREEN) if _l['completed'] else ''
-                _here = styled('  ← you are here', CYAN) if _l['id'] == quiz.current_lesson['id'] else ''
-                print(f"   {_l['id']:2}. {_l['title']} {_mark}{_here}")
-        else:
+            for lesson in event["lessons"]:
+                mark = styled('✓', GREEN) if lesson['completed'] else ''
+                here = styled('  ← you are here', CYAN) if lesson['id'] == event['current_id'] else ''
+                print(f"   {lesson['id']:2}. {lesson['title']} {mark}{here}")
+        elif kind == "advance_help":
             print(f"{styled('Type Y/n to decide, /lessons to browse, or /lesson N to jump.', YELLOW)}")
-    print(f"{styled('No rush — staying here. Type /lessons to see all lessons, or /lesson N to jump to one whenever you want.', YELLOW)}")
-    return None
+        elif kind == "advance_stay":
+            print(f"{styled('No rush — staying here. Type /lessons to see all lessons, or /lesson N to jump to one whenever you want.', YELLOW)}")
+        elif kind == "round_card":
+            _render_round_card(quiz, event)
+        elif kind not in ("advance_prompt", "check_input",
+                        "round_prompt"):
+            raise ValueError(f"Unknown lesson-flow event: {kind}")
+
+
+def _offer_advance(quiz: HangulQuiz, lesson_id: int):
+    """Terminal adapter for the UI-independent advance flow."""
+    flow = AdvanceFlow(quiz, lesson_id)
+    _render_lesson_events(quiz, flow.start())
+    while not flow.finished:
+        answer = _ask(f"\n{styled(f'Move on to Lesson {lesson_id + 1}? [Y/n] ', CYAN)}")
+        _render_lesson_events(quiz, flow.submit(answer))
+    return flow.lesson_info
 
 
 def _run_reading_check(quiz: HangulQuiz) -> str:
-    """A bounded check, then optional focused practice. No practice-score credit.
-
-    Returns passed/practice/quit. Practice and check answers are kept separate
-    from ordinary rounds, streaks and the mastery score.
-    """
-    from reading_check import make_reading_check, save_check_result, CHECK_SIZE, PASS_SCORE
-
-    print(f"\n{styled('📖 Read on your own', BOLD, CYAN)}")
-    print(f"   {CHECK_SIZE} prompts: 3 lesson items + 2 new combinations.")
-    print(f"   Read {PASS_SCORE} on your own. No choices, no timer.")
-    print("   /hint helps; that item returns for an independent try.")
-    print("   /skip reveals · /back returns to practice")
-    print("   /quit saves and exits")
+    """Terminal adapter for the UI-independent reading check flow."""
+    flow = ReadingCheckFlow(quiz)
+    events = flow.start()
     while True:
-        try:
-            check = make_reading_check(quiz)
-        except ValueError as error:
-            print(f"   {error} Back to practice.")
-            return "practice"
-        while not check.finished:
-            q = check.current
-            # Remember exposures even if the check is interrupted. New
-            # combinations on a retry must really be new to this profile.
-            seen = quiz.progress.setdefault("reading_check_seen", [])
-            if q.letter not in seen:
-                seen.append(q.letter)
-                quiz.save_progress()
-            transfer = q.letter in check.transfer_targets
-            label = "New combination" if transfer else "Lesson item"
-            print(f"\n   {min(check.index + 1, CHECK_SIZE)}/{CHECK_SIZE} · {label}"
-                  if check.index < CHECK_SIZE else "\n   Independent retry")
-            print(f"   {styled(q.letter, BOLD, CYAN)}")
-            print("   Type its sound in English letters:")
-            assisted = False
-            skipped = False
-            while True:
-                answer = _ask("> ")
-                if answer is None or answer.lower() in ("/quit", "/q", "/exit"):
-                    quiz.save_progress()
-                    return "quit"
-                command = answer.lower()
-                if command in ("/back", "/practice"):
-                    return "practice"
-                if command in ("/hint", "/h"):
-                    print(f"   {q.hint}")
-                    assisted = True
-                    continue
-                if not answer:
-                    continue
-                if command == "/skip":
-                    skipped = True
-                    correct = check.submit("", skipped=True)
-                    break
-                if command.startswith("/"):
-                    print("   /hint · /skip · /back · /quit")
-                    continue
-                if quiz.script_mismatch(answer, q):
-                    print("   Use English letters for the sound.")
-                    continue
-                correct = check.submit(answer, assisted=assisted)
-                break
-            if assisted:
-                print("   With help — this needs an independent try.")
-            elif correct:
-                print(f"   {styled('✓ Read independently!', GREEN)}")
-            elif skipped:
-                print(f"   {q.letter} is read {q.correct_answer}.")
-            else:
-                print(f"   {styled('✗ Not yet', YELLOW)} — {q.letter} is read "
-                      f"{q.correct_answer} (you typed '{answer}')")
-        save_check_result(quiz, check)
-        score = f"{len(check.correct)}/{CHECK_SIZE} read independently"
-        print(f"\n   {score}." if check.passed
-              else f"\n   {score} — you need {PASS_SCORE}.")
-        if check.passed:
-            print(f"   {styled('Reading check passed!', BOLD, GREEN)}")
-            return "passed"
-        print("   Let's practise the tricky ones. Your progress is kept.")
-        # One short practice prompt per missed item, at most three. This is
-        # supported practice: it never changes the check's score.
-        for q in list(check.missed.values())[:3]:
-            print(f"\n   {styled(q.letter, BOLD, CYAN)}")
-            print(f"   {q.hint}")
-            answer = _ask("   Try its sound (/back or /quit): ")
-            if answer is None or answer.lower() in ("/quit", "/q", "/exit"):
-                return "quit"
-            if answer.lower() in ("/back", "/practice"):
-                return "practice"
-            if normalize_roman(answer) in q.accepted:
-                print("   Yes — now blend it without help next time.")
-            else:
-                print(f"   Not yet — {q.letter} is read {q.correct_answer}.")
-        answer = _ask("\n   [r] retry the check · [Enter] practice: ")
-        if answer is None or answer.lower() in ("/quit", "/q", "/exit"):
-            return "quit"
-        if answer.lower() not in ("r", "/check"):
-            return "practice"
+        _render_lesson_events(quiz, events)
+        if flow.outcome is not None:
+            return flow.outcome
+        prompt = {"question": "> ",
+                  "practice": "   Try its sound (/back or /quit): ",
+                  "retry": "\n   [r] retry the check · [Enter] practice: "}[events[-1]["phase"]]
+        events = flow.submit(_ask(prompt))
 
 
-def _show_reading_reward(quiz: HangulQuiz):
+def _show_reading_reward(quiz: HangulQuiz, reward=None, already_drawn=False):
     """Every REWARD_EVERY right answers in a row, show a real word the
     learner can read: one of the curated lesson words, never repeated until
     all have been shown (quiz.reward_word). With --use-llm, a live model
@@ -2172,7 +2128,7 @@ def _show_reading_reward(quiz: HangulQuiz):
                 print(f"\n{styled('📖 You can now read:', GREEN)}")
                 print(f"   {sentence}")
                 return
-    word = quiz.reward_word()
+    word = reward if already_drawn else quiz.reward_word()
     if not word:
         return
     print(f"\n{styled('📖 A real Korean word you can read now:', GREEN)}")
@@ -2347,20 +2303,22 @@ def _print_trouble_items(quiz: HangulQuiz, left: list, limit: int = 3):
 def _round_card(quiz: HangulQuiz, round_no: int, right: int, asked: int,
                 no_progress: bool = False, solid_now: Optional[list] = None,
                 milestones: Optional[list] = None, reward_earned: bool = False) -> str:
-    """End-of-round progress card. Returns 'continue', 'next' or 'quit'.
-    no_progress: nothing became solid during this round.
-    solid_now: items that became solid during the round (shown here once).
-    milestones: streak milestones reached during the round (shown here once)."""
-    lesson = quiz.current_lesson
-    lid = lesson["id"]
-    m = quiz.lesson_mastery()
-    left = quiz.unmastered_items()
-    done = lid in quiz.progress["completed_lessons"]
-    ready = m["is_mastered"] and not done
-    last = lid >= len(quiz.curriculum["lessons"])
-    stuck = not done and not ready and no_progress and round_no >= STUCK_AFTER_ROUNDS
+    """Terminal adapter for a plain round-card event."""
+    events = round_card_events(quiz, round_no, right, asked,
+                               no_progress=no_progress, solid_now=solid_now,
+                               milestones=milestones, reward_earned=reward_earned,
+                               stuck_after_rounds=STUCK_AFTER_ROUNDS,
+                               terminal_llm_reward=USE_LLM)
+    card = events[0]
+    _render_lesson_events(quiz, events)
+    return round_card_choice(card, _ask(f"{styled('>', BOLD)} "))
 
-    print(f"\n{styled(f'── Round {round_no} · {right} of {asked} right ──', BOLD, CYAN)}")
+
+def _render_round_card(quiz: HangulQuiz, card: dict):
+    lid, m, left = card["lesson_id"], card["mastery"], card["left"]
+    done, ready, stuck, last = (card[key] for key in ("done", "ready", "stuck", "last"))
+    heading = f"── Round {card['round_no']} · {card['right']} of {card['asked']} right ──"
+    print(f"\n{styled(heading, BOLD, CYAN)}")
     if done:
         solid = (f"all {m['pool_size']} solid!" if m["is_mastered"]
                  else f"{m['mastered_count']} of {m['pool_size']} still solid.")
@@ -2372,43 +2330,40 @@ def _round_card(quiz: HangulQuiz, round_no: int, right: int, asked: int,
             shown = left[:6]
             more = f" +{len(left) - len(shown)} more" if len(left) > len(shown) else ""
             print(f"   Still to go: {' · '.join(styled(x, BOLD) for x in shown)}{more}")
-
-    # Routine progress held back from mid-round, shown together here.
-    _flush_round_notices(quiz, solid_now if solid_now is not None else [],
-                          milestones if milestones is not None else [])
-    if reward_earned:
-        _show_reading_reward(quiz)
-
+    for milestone in card["milestones"]:
+        print(f"   {styled(milestone, BOLD, YELLOW)}")
+    if card["solid_now"]:
+        print(f"   {styled('⭐ ' + ' · '.join(card['solid_now']) + ' is solid now!', BOLD, YELLOW)}")
+    if card["reward_earned"]:
+        _show_reading_reward(quiz, card["reward"], already_drawn=not USE_LLM)
     options = []
     if ready:
         print("   Practice goal reached — next: read on your own.")
         options.append(f"{styled('[r]', CYAN)} Reading check")
     if done and not last:
-        nxt = quiz._get_lesson(lid + 1)
-        options.append(f"{styled('[n]', CYAN)} Lesson {lid + 1}: {nxt['title']}")
+        nxt = card["next_lesson"]
+        options.append(f"{styled('[n]', CYAN)} Lesson {nxt['id']}: {nxt['title']}")
     elif stuck and not last:
-        nxt = quiz._get_lesson(lid + 1)
+        nxt = card["next_lesson"]
         print(f"   {styled('💭 A tough one — fine to move on and come back later.', YELLOW)}")
-        _print_trouble_items(quiz, left)
-        options.append(f"{styled('[n]', CYAN)} Lesson {lid + 1}: {nxt['title']} "
+        _render_trouble_items(card["trouble"])
+        options.append(f"{styled('[n]', CYAN)} Lesson {nxt['id']}: {nxt['title']} "
                        f"{styled(f'(back here anytime: /lesson {lid})', DIM)}")
     elif stuck and last:
         print(f"   {styled('💭 A tough one — going back over an earlier lesson can help (/lessons).', YELLOW)}")
-        _print_trouble_items(quiz, left)
+        _render_trouble_items(card["trouble"])
     elif done and last:
         print(f"   {styled('🏆 That was the last lesson — you can read Hangul!', BOLD, YELLOW)}")
     options.append(f"{styled('[Enter]', CYAN)} keep {'practising' if done else 'going'} · "
                    f"{styled('[q]', CYAN)} stop for now")
     for line in options:
         print(f"   {line}")
-    ans = _ask(f"{styled('>', BOLD)} ")
-    if ans is None or ans.lower() in ("q", "/q", "quit", "/quit"):
-        return "quit"
-    if (ready and ans.lower() in ("r", "/check")) or (done and ans.lower() == "/check"):
-        return "check"
-    if ans.lower() in ("n", "/next", "next") and (done or stuck) and not last:
-        return "next"
-    return "continue"
+
+
+def _render_trouble_items(items):
+    if items:
+        names = " · ".join(styled(x, BOLD) for x in items)
+        print(f"   {styled('Most misses so far:', YELLOW)} {names}")
 
 
 def interactive_loop(quiz: HangulQuiz, args, lesson_info: dict):
