@@ -480,10 +480,12 @@ def _praise() -> str:
 # ── Engine ─────────────────────────────────────────────────────────────────
 
 class HangulQuiz:
-    def __init__(self):
+    def __init__(self, persist: bool = True):
+        self.persist = persist
         self.curriculum = self._load_curriculum()
         self.word_contrasts = self._load_word_contrasts()
-        self.progress = self._load_progress()
+        self._progress_read_only = False
+        self.progress = self._load_progress() if persist else self._new_progress()
         # Exclusion sets for nonword_decode mode — built once at startup
         self.known_lexical_items = self._load_known_lexical_items()
         self.corpus_seen_bigrams = self._load_corpus_seen_bigrams()
@@ -685,14 +687,7 @@ class HangulQuiz:
                       f"moved to {backup.name}.")
             return None
         try:
-            version = data.get("schema_version", 1)
-            if type(version) is not int or version < 1:
-                raise ValueError(f"invalid schema version: {version!r}")
-            while version < CURRENT_SCHEMA_VERSION:
-                migration = self.MIGRATIONS[version]
-                migration(self, data)
-                version += 1
-                data["schema_version"] = version
+            return self._prepare_progress_data(data)
         except Exception as exc:
             # An in-memory migration may have partly changed data; the file
             # on disk is intact and gets its own backup before fallback.
@@ -703,6 +698,22 @@ class HangulQuiz:
             print(f"[Hangul Tutor] Your progress couldn't be migrated ({exc}); "
                   f"a backup copy was kept in {backup.name}; {next_step}.")
             return None
+
+    def _prepare_progress_data(self, data: dict) -> dict:
+        """Validate and migrate one parsed progress object, from disk or JSON."""
+        if not isinstance(data, dict):
+            raise ValueError("Progress must be a JSON object.")
+        version = data.get("schema_version", 1)
+        if type(version) is not int or version < 1:
+            raise ValueError(f"invalid schema version: {version!r}")
+        if version > CURRENT_SCHEMA_VERSION:
+            self._progress_read_only = True
+            return data
+        while version < CURRENT_SCHEMA_VERSION:
+            migration = self.MIGRATIONS[version]
+            migration(self, data)
+            version += 1
+            data["schema_version"] = version
         # Fill in any keys an older (or hand-edited) progress file lacks, so
         # later code can index them directly without a KeyError.
         data.setdefault("current_lesson", 1)
@@ -711,6 +722,36 @@ class HangulQuiz:
         data.setdefault("confusion_counts", {})
         data.setdefault("learner_items", {})
         return data
+
+    def import_state(self, text: str) -> None:
+        """Replace in-memory progress from a JSON string, without file I/O.
+
+        Anything unusable raises ValueError. A failed import changes nothing:
+        the current progress and its read-only state stay exactly as they were.
+        """
+        try:
+            data = json.loads(text)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Progress is not readable JSON.") from exc
+        if not isinstance(data, dict):
+            raise ValueError("Progress must be a JSON object.")
+        # _prepare_progress_data only ever turns read-only ON (for a newer
+        # schema), so clear it first, and put it back if the data is rejected.
+        was_read_only = self._progress_read_only
+        self._progress_read_only = False
+        try:
+            data = self._prepare_progress_data(data)
+        except Exception as exc:
+            self._progress_read_only = was_read_only
+            raise ValueError(f"Progress couldn't be loaded ({exc}).") from exc
+        self.progress = data
+        self._saved_total = self.session_total
+        self._saved_correct = self.session_correct
+
+    def export_state(self) -> str:
+        """Return current progress as JSON after folding in session totals."""
+        self._update_progress_totals()
+        return json.dumps(self.progress, ensure_ascii=False)
 
     @staticmethod
     def _new_progress() -> dict:
@@ -812,15 +853,9 @@ class HangulQuiz:
     def save_progress(self):
         if self._progress_read_only:
             return
-        self.progress["last_session"] = time.strftime("%Y-%m-%d %H:%M:%S")
-        self.progress["total_questions_answered"] = (self.progress.get("total_questions_answered", 0)
-                                                     + self.session_total - self._saved_total)
-        self.progress["total_correct"] = (self.progress.get("total_correct", 0)
-                                          + self.session_correct - self._saved_correct)
-        self._saved_total = self.session_total
-        self._saved_correct = self.session_correct
-        if self.session_best_streak > self.progress.get("streak_best", 0):
-            self.progress["streak_best"] = self.session_best_streak
+        self._update_progress_totals()
+        if not self.persist:
+            return
         PROGRESS_PATH.parent.mkdir(parents=True, exist_ok=True)
         # Write to a temp file and swap it in, so a crash or Ctrl+C in the
         # middle of a write can never leave a half-written (unreadable)
@@ -842,6 +877,19 @@ class HangulQuiz:
                         self._save_lock_warned = True
                     return
                 time.sleep(0.25)
+
+    def _update_progress_totals(self):
+        if self._progress_read_only:
+            return
+        self.progress["last_session"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        self.progress["total_questions_answered"] = (self.progress.get("total_questions_answered", 0)
+                                                     + self.session_total - self._saved_total)
+        self.progress["total_correct"] = (self.progress.get("total_correct", 0)
+                                          + self.session_correct - self._saved_correct)
+        self._saved_total = self.session_total
+        self._saved_correct = self.session_correct
+        if self.session_best_streak > self.progress.get("streak_best", 0):
+            self.progress["streak_best"] = self.session_best_streak
 
     # ── Learner item access (not yet wired into answer()/next_question) ─
     #
@@ -882,6 +930,15 @@ class HangulQuiz:
                 lesson_id = 1
         self.current_lesson = self._get_lesson(lesson_id)
         self.progress["current_lesson"] = lesson_id
+        return self._lesson_info()
+
+    def start_custom_lesson(self, lesson: dict) -> dict:
+        """Begin an external lesson without changing the curriculum position."""
+        self.current_lesson = lesson
+        return self._lesson_info()
+
+    def _lesson_info(self) -> dict:
+        lesson_id = self.current_lesson["id"]
         return {
             "id": lesson_id,
             "title": self.current_lesson["title"],
@@ -1547,11 +1604,14 @@ class HangulQuiz:
         # offering ㅐ/ㅔ as options in Lesson 2 asked a beginner to rule out
         # letters they'd never seen. Early lessons still have the six basic
         # vowels, so there are always enough options.
-        taught = [v for v in ["ㅏ", "ㅓ", "ㅗ", "ㅜ", "ㅡ", "ㅣ", "ㅑ", "ㅕ", "ㅛ", "ㅠ", "ㅐ", "ㅔ"]
-                  if (self._lesson_teaching_letter(v) or 99) <= lesson["id"]]
-        if len(taught) < 4:
-            taught = ["ㅏ", "ㅓ", "ㅗ", "ㅜ", "ㅡ", "ㅣ"]
-        wrong = random.sample([v for v in taught if v != jung], 3)
+        if lesson["id"] == 0:
+            taught = [v for v in lesson.get("letters", []) if v in _VOWEL_JAMO]
+        else:
+            taught = [v for v in ["ㅏ", "ㅓ", "ㅗ", "ㅜ", "ㅡ", "ㅣ", "ㅑ", "ㅕ", "ㅛ", "ㅠ", "ㅐ", "ㅔ"]
+                      if (self._lesson_teaching_letter(v) or 99) <= lesson["id"]]
+            if len(taught) < 4:
+                taught = ["ㅏ", "ㅓ", "ㅗ", "ㅜ", "ㅡ", "ㅣ"]
+        wrong = random.sample([v for v in taught if v != jung], min(3, len(taught) - 1))
         vowel_options = [jung] + wrong
         random.shuffle(vowel_options)
         return QuizQuestion(
@@ -2936,6 +2996,8 @@ class HangulQuiz:
         """Mark the current lesson as completed."""
         if self.current_lesson:
             lid = self.current_lesson["id"]
+            if not any(lesson["id"] == lid for lesson in self.curriculum["lessons"]):
+                return "This lesson is outside the curriculum."
             if (lid not in self.progress["completed_lessons"]
                     and not (self.lesson_mastery(lid)["is_mastered"]
                              and self.reading_check_passed(lid))):
