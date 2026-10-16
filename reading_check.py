@@ -102,6 +102,10 @@ def make_reading_check(quiz):
     parts = [p for p in parts if p[0] and p[1]]
     seen = set(quiz.progress.get("learner_items", {}))
     seen.update(quiz.progress.get("reading_check_seen", []))
+    # A custom lesson is not in the curriculum loop below, but its own
+    # practice targets still cannot count as new transfer combinations.
+    seen.update(pool)
+    seen.update(quiz._get_lesson_syllable_pool(lesson))
     for prior in quiz.curriculum["lessons"]:
         if prior["id"] <= lesson["id"]:
             seen.update(quiz._get_lesson_syllable_pool(prior))
@@ -163,6 +167,8 @@ def save_check_result(quiz, check):
         "targets": [q.letter for q in check.questions[:CHECK_SIZE]],
         "transfer_targets": check.transfer_targets,
     }
-    if check.passed and check.lesson_id not in quiz.progress["completed_lessons"]:
+    if (check.passed
+            and any(lesson["id"] == check.lesson_id for lesson in quiz.curriculum["lessons"])
+            and check.lesson_id not in quiz.progress["completed_lessons"]):
         quiz.progress["completed_lessons"].append(check.lesson_id)
     quiz.save_progress()
