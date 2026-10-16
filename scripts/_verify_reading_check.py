@@ -189,7 +189,7 @@ class ReadingChecks(unittest.TestCase):
                 patch.object(CLI, "input", side_effect=answer), \
                 patch.object(CLI.time, "sleep"), \
                 contextlib.redirect_stdout(io.StringIO()):
-            CLI._interactive_loop_body(self.q, args, self.q.start_lesson(1))
+            CLI._interactive_loop_body(self.q, args, self.q.start_lesson(1), [], [])
         self.assertIn(1, self.q.progress["completed_lessons"])
         self.assertEqual(self.q.current_lesson["id"], 1)
         self.assertTrue(self.q.reading_check_passed())
@@ -237,7 +237,7 @@ class ReadingChecks(unittest.TestCase):
                 patch.object(CLI, "print_reference_table") as table, \
                 patch.object(CLI, "print_lesson_intro_rich"), \
                 patch.object(self.q, "next_question") as next_question:
-            CLI._interactive_loop_body(self.q, args, info)
+            CLI._interactive_loop_body(self.q, args, info, [], [])
         run.assert_called_once()
         table.assert_not_called()
         next_question.assert_not_called()
