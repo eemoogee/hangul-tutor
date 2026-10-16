@@ -18,6 +18,14 @@
         "ㅡ",
         "ㅣ"
       ],
+      "mastery_syllables": [
+        "아",
+        "어",
+        "오",
+        "우",
+        "으",
+        "이"
+      ],
       "pronunciation": {
         "ㅏ": "ah, as in 'father'",
         "ㅓ": "uh — like the 'u' in 'sun', mouth open a bit wider (lips not rounded)",
@@ -166,6 +174,23 @@
         "루",
         "무"
       ],
+      "mastery_syllables": [
+        "가",
+        "나",
+        "다",
+        "라",
+        "마",
+        "기",
+        "니",
+        "디",
+        "리",
+        "미",
+        "구",
+        "누",
+        "두",
+        "루",
+        "무"
+      ],
       "note": "Each block is a consonant plus a vowel: ㄴ + ㅏ = 나. Read the consonant first, then the vowel.",
       "words": [
         {
@@ -257,6 +282,17 @@
         ]
       ],
       "practice_syllables": [
+        "바",
+        "사",
+        "아",
+        "보",
+        "소",
+        "오",
+        "부",
+        "수",
+        "우"
+      ],
+      "mastery_syllables": [
         "바",
         "사",
         "아",
@@ -385,6 +421,20 @@
         ]
       ],
       "practice_syllables": [
+        "자",
+        "차",
+        "카",
+        "타",
+        "파",
+        "하",
+        "조",
+        "초",
+        "코",
+        "토",
+        "포",
+        "호"
+      ],
+      "mastery_syllables": [
         "자",
         "차",
         "카",
@@ -718,6 +768,22 @@
         "예",
         "계"
       ],
+      "mastery_syllables": [
+        "애",
+        "개",
+        "내",
+        "배",
+        "해",
+        "에",
+        "게",
+        "네",
+        "세",
+        "제",
+        "얘",
+        "걔",
+        "예",
+        "계"
+      ],
       "words": [
         {
           "word": "개",
@@ -826,6 +892,23 @@
       ],
       "note": "These are two vowels said quickly in one breath: ㅗ + ㅏ = ㅘ 'wa', ㅜ + ㅓ = ㅝ 'wo'. Good news: ㅙ, ㅚ and ㅞ all sound like 'we' today.",
       "practice_syllables": [
+        "와",
+        "과",
+        "화",
+        "왜",
+        "돼",
+        "외",
+        "최",
+        "뭐",
+        "워",
+        "웨",
+        "위",
+        "귀",
+        "쥐",
+        "의",
+        "희"
+      ],
+      "mastery_syllables": [
         "와",
         "과",
         "화",
@@ -954,6 +1037,18 @@
         "쎄",
         "쩨"
       ],
+      "mastery_syllables": [
+        "까",
+        "따",
+        "빠",
+        "싸",
+        "짜",
+        "께",
+        "떼",
+        "뻬",
+        "쎄",
+        "쩨"
+      ],
       "words": [
         {
           "word": "아빠",
@@ -1028,6 +1123,22 @@
         "ㅇ": "ng, as in 'sing'"
       },
       "example_syllables": [
+        "각",
+        "간",
+        "갇",
+        "갈",
+        "감",
+        "갑",
+        "강",
+        "먹",
+        "문",
+        "믿",
+        "물",
+        "몸",
+        "밥",
+        "방"
+      ],
+      "mastery_syllables": [
         "각",
         "간",
         "갇",
