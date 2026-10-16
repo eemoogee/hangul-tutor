@@ -165,6 +165,44 @@ def test_custom_completion_guard():
     assert quiz.progress["completed_lessons"] == before[1]
 
 
+def test_failed_import_changes_nothing():
+    future = {"schema_version": engine.CURRENT_SCHEMA_VERSION + 1, "keep": [1, 2]}
+    quiz = engine.HangulQuiz(persist=False)
+    quiz.import_state(json.dumps(future))
+    for bad in ('{"schema_version": 0}', '{"schema_version": "2"}', "not json", "[]"):
+        try:
+            quiz.import_state(bad)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"accepted {bad!r}")
+        assert quiz._progress_read_only, bad
+        assert quiz.progress == future, bad
+    quiz.session_total = 3
+    assert json.loads(quiz.export_state()) == future
+    quiz = engine.HangulQuiz(persist=False)
+    before = json.dumps(quiz.progress, sort_keys=True)
+    try:
+        quiz.import_state('{"schema_version": 0}')
+    except ValueError:
+        pass
+    assert not quiz._progress_read_only
+    assert json.dumps(quiz.progress, sort_keys=True) == before
+
+
+def test_malformed_old_data_is_value_error():
+    for bad in ('{"mastered_letters": "oops"}', '{"mastered_letters": {"가": "x"}}'):
+        quiz = engine.HangulQuiz(persist=False)
+        before = json.dumps(quiz.progress, sort_keys=True)
+        try:
+            quiz.import_state(bad)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"accepted {bad!r}")
+        assert json.dumps(quiz.progress, sort_keys=True) == before, bad
+
+
 if __name__ == "__main__":
     checks = [
         ("persist=False leaves files untouched and counts 20 answers", test_no_file_io),
@@ -176,6 +214,8 @@ if __name__ == "__main__":
         ("Batch 1: 200 correct answers", test_batch_1),
         ("both custom reading checks have five distinct taught targets", test_reading_checks),
         ("custom lesson cannot complete curriculum lesson 0", test_custom_completion_guard),
+        ("a failed import keeps progress and read-only state", test_failed_import_changes_nothing),
+        ("malformed old progress raises ValueError", test_malformed_old_data_is_value_error),
     ]
     for name, check in checks:
         detail = check()

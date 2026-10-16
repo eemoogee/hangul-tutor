@@ -724,15 +724,27 @@ class HangulQuiz:
         return data
 
     def import_state(self, text: str) -> None:
-        """Replace in-memory progress from a JSON string, without file I/O."""
+        """Replace in-memory progress from a JSON string, without file I/O.
+
+        Anything unusable raises ValueError. A failed import changes nothing:
+        the current progress and its read-only state stay exactly as they were.
+        """
         try:
             data = json.loads(text)
         except (TypeError, ValueError) as exc:
             raise ValueError("Progress is not readable JSON.") from exc
         if not isinstance(data, dict):
             raise ValueError("Progress must be a JSON object.")
+        # _prepare_progress_data only ever turns read-only ON (for a newer
+        # schema), so clear it first, and put it back if the data is rejected.
+        was_read_only = self._progress_read_only
         self._progress_read_only = False
-        self.progress = self._prepare_progress_data(data)
+        try:
+            data = self._prepare_progress_data(data)
+        except Exception as exc:
+            self._progress_read_only = was_read_only
+            raise ValueError(f"Progress couldn't be loaded ({exc}).") from exc
+        self.progress = data
         self._saved_total = self.session_total
         self._saved_correct = self.session_correct
 
