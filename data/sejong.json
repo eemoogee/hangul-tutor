@@ -1,0 +1,629 @@
+{
+  "version": 1,
+  "status": "DRAFT 2026-10-16 rev 2 - accepted spellings tightened after review; owner sign-off on Korean still pending",
+  "about": "Content for the Sejong Test playable slice (Batches 0-1). Batch/letter choice follows docs/sejong-test-spec.md v2. Voice follows the Hangul Tutor Voice Guide. 'source' marks historical facts (haerye = Hunminjeongeum Haerye, 1446) versus invented narrator lines.",
+  "wager": {
+    "scope": "24 basic letters plus simple consonant-vowel blocks; no batchim",
+    "timer": "active play only; pauses when hidden or after 120 s without input",
+    "verdict_tiers_minutes": [
+      {
+        "max": 60,
+        "id": "hour"
+      },
+      {
+        "max": 720,
+        "id": "morning"
+      },
+      {
+        "max": 14400,
+        "id": "ten_days"
+      },
+      {
+        "max": null,
+        "id": "longer"
+      }
+    ]
+  },
+  "batches": [
+    {
+      "id": 0,
+      "name": "The Revelation",
+      "phases": [
+        "discover",
+        "predict_reveal",
+        "build",
+        "decode"
+      ],
+      "letters": [
+        {
+          "jamo": "ㄴ",
+          "type": "consonant",
+          "roman": "n",
+          "sound": "n, as in 'no'",
+          "shape": "Your tongue tip touching the ridge behind your top teeth. Say 'n' and feel it.",
+          "source": "haerye"
+        },
+        {
+          "jamo": "ㄷ",
+          "type": "consonant",
+          "roman": "d",
+          "sound": "a soft d, between the d in 'do' and the t in 'stop'",
+          "shape": "ㄴ with a lid on top. One more stroke, a firmer sound.",
+          "source": "haerye",
+          "notice_line": {
+            "speaker": "jeong",
+            "text": "ㄴ, with an added stroke. His Majesty preferred a system to a collection.",
+            "source": "invented"
+          }
+        },
+        {
+          "jamo": "ㅏ",
+          "type": "vowel",
+          "roman": "a",
+          "sound": "a, as in 'father'",
+          "shape": "A standing person, with the sky's dot on the right.",
+          "source": "haerye"
+        },
+        {
+          "jamo": "ㅗ",
+          "type": "vowel",
+          "roman": "o",
+          "sound": "o, as in 'go' (without the w at the end)",
+          "shape": "The flat earth, with the sky's dot above it.",
+          "source": "haerye"
+        }
+      ],
+      "confusion_pairs": [
+        {
+          "pair": [
+            "ㄴ",
+            "ㄷ"
+          ],
+          "tell": "ㄷ has the extra stroke on top."
+        },
+        {
+          "pair": [
+            "ㅏ",
+            "ㅗ"
+          ],
+          "tell": "ㅏ's short stroke points right. ㅗ's points up."
+        }
+      ],
+      "predict_reveal": {
+        "consonant": "ㄴ",
+        "vowel": "ㅏ",
+        "block": "나",
+        "roman": "na",
+        "meaning": "I, me"
+      },
+      "words": [
+        {
+          "ko": "나",
+          "roman": "na",
+          "en": "I, me"
+        },
+        {
+          "ko": "다",
+          "roman": "da",
+          "en": "all",
+          "first_read_line": {
+            "speaker": "jeong",
+            "text": "\"All.\" A modest beginning, then.",
+            "source": "invented"
+          }
+        },
+        {
+          "ko": "도",
+          "roman": "do",
+          "en": "do (as in do-re-mi)",
+          "first_read_line": {
+            "speaker": "jeong",
+            "text": "Do, as in do-re-mi. A musical education, at no extra charge.",
+            "source": "invented"
+          }
+        },
+        {
+          "ko": "노",
+          "roman": "no",
+          "en": "oar"
+        },
+        {
+          "ko": "나도",
+          "roman": "nado",
+          "en": "me too",
+          "first_read_line": {
+            "speaker": "jeong",
+            "text": "\"Me too.\" Two syllables, and you can already agree with people.",
+            "source": "invented"
+          }
+        },
+        {
+          "ko": "도도",
+          "roman": "dodo",
+          "en": "haughty, snobbish (from 도도하다)"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "name": "First Words",
+      "phases": [
+        "discover",
+        "predict_reveal",
+        "recognize",
+        "retrieve",
+        "build",
+        "decode"
+      ],
+      "letters": [
+        {
+          "jamo": "ㅁ",
+          "type": "consonant",
+          "roman": "m",
+          "sound": "m, as in 'mom'",
+          "shape": "The shape of a mouth. Close your lips: 'm'.",
+          "source": "haerye"
+        },
+        {
+          "jamo": "ㅂ",
+          "type": "consonant",
+          "roman": "b",
+          "sound": "a soft b, between the b in 'bus' and the p in 'spin'",
+          "shape": "ㅁ with two strokes added. Lips again, with a small burst.",
+          "source": "haerye",
+          "notice_line": {
+            "speaker": "jeong",
+            "text": "Start with ㅁ; add two strokes to make ㅂ. Another letter, without another committee.",
+            "source": "invented"
+          }
+        },
+        {
+          "jamo": "ㅓ",
+          "type": "vowel",
+          "roman": "eo",
+          "sound": "uh, as in 'sun'",
+          "shape": "ㅏ turned around: the dot is on the left now.",
+          "source": "haerye",
+          "notice_line": {
+            "speaker": "jeong",
+            "text": "Notice: ㅏ, facing the other way.",
+            "source": "invented"
+          }
+        },
+        {
+          "jamo": "ㅜ",
+          "type": "vowel",
+          "roman": "u",
+          "sound": "oo, as in 'moon'",
+          "shape": "ㅗ upside down: the dot is below the earth.",
+          "source": "haerye",
+          "notice_line": {
+            "speaker": "jeong",
+            "text": "Notice: ㅗ, upside down. Yes, again.",
+            "source": "invented"
+          }
+        }
+      ],
+      "confusion_pairs": [
+        {
+          "pair": [
+            "ㅁ",
+            "ㅂ"
+          ],
+          "tell": "ㅂ has two strokes sticking up."
+        },
+        {
+          "pair": [
+            "ㅓ",
+            "ㅏ"
+          ],
+          "tell": "Check which side the short stroke is on."
+        },
+        {
+          "pair": [
+            "ㅜ",
+            "ㅗ"
+          ],
+          "tell": "Up is ㅗ. Down is ㅜ."
+        }
+      ],
+      "predict_reveal": {
+        "consonant": "ㅁ",
+        "vowel": "ㅜ",
+        "block": "무",
+        "roman": "mu",
+        "meaning": "radish"
+      },
+      "words": [
+        {
+          "ko": "바다",
+          "roman": "bada",
+          "en": "sea",
+          "first_read_line": {
+            "speaker": "jeong",
+            "text": "\"Sea.\" Large, wet, and now readable.",
+            "source": "invented"
+          }
+        },
+        {
+          "ko": "나무",
+          "roman": "namu",
+          "en": "tree",
+          "first_read_line": {
+            "speaker": "jeong",
+            "text": "\"Tree.\" Paper begins somewhere.",
+            "source": "invented"
+          }
+        },
+        {
+          "ko": "바나나",
+          "roman": "banana",
+          "en": "banana",
+          "first_read_line": {
+            "speaker": "jeong",
+            "text": "Banana. Some words are generous.",
+            "source": "invented"
+          }
+        },
+        {
+          "ko": "두부",
+          "roman": "dubu",
+          "en": "tofu",
+          "first_read_line": {
+            "speaker": "jeong",
+            "text": "\"Tofu.\" You can now read a menu. Partially.",
+            "source": "invented"
+          }
+        },
+        {
+          "ko": "모두",
+          "roman": "modu",
+          "en": "all, everyone",
+          "first_read_line": {
+            "speaker": "jeong",
+            "text": "\"Everyone.\" Which is exactly who these letters were for.",
+            "source": "invented"
+          }
+        },
+        {
+          "ko": "부모",
+          "roman": "bumo",
+          "en": "parents",
+          "first_read_line": {
+            "speaker": "jeong",
+            "text": "\"Parents.\" A useful word. Their advice is usually longer.",
+            "source": "invented"
+          }
+        },
+        {
+          "ko": "너",
+          "roman": "neo",
+          "en": "you (informal)",
+          "first_read_line": {
+            "speaker": "jeong",
+            "text": "\"You,\" casually. Do not say it to your elders. Or to me.",
+            "source": "invented"
+          }
+        },
+        {
+          "ko": "너무",
+          "roman": "neomu",
+          "en": "too, very",
+          "first_read_line": {
+            "speaker": "jeong",
+            "text": "\"Too\" or \"very.\" Even excess has its uses.",
+            "source": "invented"
+          }
+        },
+        {
+          "ko": "바보",
+          "roman": "babo",
+          "en": "fool"
+        },
+        {
+          "ko": "도마",
+          "roman": "doma",
+          "en": "cutting board"
+        },
+        {
+          "ko": "무",
+          "roman": "mu",
+          "en": "radish"
+        },
+        {
+          "ko": "두",
+          "roman": "du",
+          "en": "two (before a noun or counter, as in 'two of them'; counting on its own is 둘)",
+          "first_read_line": {
+            "speaker": "jeong",
+            "text": "\"Two,\" before a noun or counter. For counting on its own: 둘. Korean has opinions about counting.",
+            "source": "invented"
+          }
+        }
+      ],
+      "dropped_from_sept_spec": {
+        "누": "archaic 'who'",
+        "보": "listed as 'barley' (that is 보리)",
+        "모": "'cap' is 모자"
+      }
+    }
+  ],
+  "lines": {
+    "intro": [
+      {
+        "speaker": "sejong",
+        "text": "My people could not write their own words. So I made twenty-eight letters, for everyone.",
+        "source": "real, paraphrased (Sejong's preface)"
+      },
+      {
+        "speaker": "jeong",
+        "text": "Some learned gentlemen objected. They had spent rather a long time becoming learned gentlemen.",
+        "source": "invented"
+      },
+      {
+        "speaker": "jeong",
+        "text": "I wrote that a wise person learns these letters in a morning, and a fool in ten days.",
+        "source": "real (Jeong In-ji's postscript, 1446)"
+      },
+      {
+        "speaker": "jeong",
+        "text": "Twenty-four of His Majesty's letters are still in use today. Those are your test.",
+        "source": "real (28 created, 4 no longer used)"
+      },
+      {
+        "speaker": "jeong",
+        "text": "A confident claim. Let us find out how confidently I should have written it.",
+        "source": "invented"
+      },
+      {
+        "speaker": "jeong",
+        "text": "The clock starts now.",
+        "source": "invented"
+      }
+    ],
+    "baseline_offer": {
+      "speaker": "jeong",
+      "text": "First, how much can you read already? Eight quick questions. Guess freely. Or skip, if you are confident there is nothing to measure.",
+      "source": "invented"
+    },
+    "batch_intro": {
+      "0": {
+        "speaker": "jeong",
+        "text": "Four letters. Two consonants, two vowels. That is enough to begin.",
+        "source": "invented"
+      },
+      "1": {
+        "speaker": "jeong",
+        "text": "Four more. Each one looks like a letter you already know. That is not an accident.",
+        "source": "invented"
+      }
+    },
+    "predict_prompt": {
+      "speaker": "jeong",
+      "text": "You know {consonant} and you know {vowel}. Put them together. What does it say?",
+      "source": "invented"
+    },
+    "predict_reveal": {
+      "0": {
+        "speaker": "jeong",
+        "text": "나. It means 'I'. You have just written yourself.",
+        "source": "invented"
+      },
+      "1": {
+        "speaker": "jeong",
+        "text": "무. A radish. Not glamorous, but entirely yours.",
+        "source": "invented"
+      }
+    },
+    "first_breakthrough": {
+      "speaker": "jeong",
+      "text": "Four letters, and you can build syllables. My colleagues would be alarmed.",
+      "source": "invented"
+    },
+    "correct": [
+      {
+        "speaker": "jeong",
+        "text": "좋아요. Good.",
+        "first_times_only_gloss": true,
+        "source": "invented"
+      },
+      {
+        "speaker": "jeong",
+        "text": "Not bad.",
+        "source": "invented"
+      },
+      {
+        "speaker": "jeong",
+        "text": "Hm. Correct.",
+        "source": "invented"
+      },
+      {
+        "speaker": "jeong",
+        "text": "The king would nod. Briefly.",
+        "source": "invented"
+      }
+    ],
+    "streak": {
+      "5": {
+        "speaker": "jeong",
+        "text": "Five in a row. The morning is looking possible.",
+        "source": "invented"
+      },
+      "10": {
+        "speaker": "jeong",
+        "text": "Ten in a row. My reputation thanks you.",
+        "source": "invented"
+      },
+      "15": {
+        "speaker": "jeong",
+        "text": "Fifteen. I shall take some credit for the instruction.",
+        "source": "invented"
+      }
+    },
+    "miss": [
+      {
+        "speaker": "jeong",
+        "text": "That's {chosen}. {tell}",
+        "source": "invented"
+      },
+      {
+        "speaker": "jeong",
+        "text": "Not yet. {tell}",
+        "source": "invented"
+      }
+    ],
+    "repeated_miss": [
+      {
+        "speaker": "jeong",
+        "text": "Then my explanation needs improvement. Look again.",
+        "source": "invented"
+      },
+      {
+        "speaker": "jeong",
+        "text": "My fault. Look closer this time.",
+        "source": "invented"
+      }
+    ],
+    "first_word_read": {
+      "speaker": "jeong",
+      "text": "You read it without me. Most inconvenient for my importance.",
+      "source": "invented"
+    },
+    "fool_word": {
+      "speaker": "jeong",
+      "text": "바보. 'Fool.' Reading it does not make you one. Taking ten days might.",
+      "playtest_alt": "바보. 'Fool.' Merely reading the word proves nothing. We shall reserve judgment.",
+      "source": "invented"
+    },
+    "decode_check_intro": {
+      "speaker": "jeong",
+      "text": "Now, no choices. Read these yourself. Four out of five, and I will call it reading.",
+      "source": "invented"
+    },
+    "decode_check_fail": {
+      "speaker": "jeong",
+      "text": "Not yet. We practice the ones you missed, then try again. The clock is patient. Mostly.",
+      "source": "invented"
+    },
+    "victory_1": [
+      {
+        "speaker": "sejong",
+        "text": "Now you can write your own words.",
+        "source": "invented"
+      },
+      {
+        "speaker": "jeong",
+        "text": "Eight letters in {time}.",
+        "source": "invented"
+      }
+    ],
+    "pace_verdict": {
+      "hour": {
+        "speaker": "jeong",
+        "text": "At this pace, all twenty-four before the hour is out. I may have been modest.",
+        "source": "invented"
+      },
+      "morning": {
+        "speaker": "jeong",
+        "text": "At this pace, done before the morning ends. As I wrote.",
+        "source": "invented"
+      },
+      "ten_days": {
+        "speaker": "jeong",
+        "text": "At this pace, ten days. The fool's pace, and still faster than any yangban learned his first hundred Chinese characters.",
+        "source": "invented"
+      },
+      "longer": {
+        "speaker": "jeong",
+        "text": "Slower than I promised. Then I miscounted. You are reading anyway, and that was the point.",
+        "source": "invented"
+      }
+    },
+    "later_draft": {
+      "victory_2": {
+        "speaker": "jeong",
+        "text": "Twenty-four basic letters. And you have already put them to use.",
+        "use": "Victory 2: let the learner enjoy finishing before any reveal.",
+        "source": "invented"
+      },
+      "complexity_reveal": {
+        "speaker": "jeong",
+        "text": "I said you would learn the letters in a morning. I never said Korean.",
+        "use": "Right after Victory 2, before the next layer (spec 7.7).",
+        "source": "invented"
+      }
+    },
+    "dodo_word": {
+      "speaker": "jeong",
+      "text": "도도. 'Haughty.' A word my colleagues never needed to read. They only needed to be it.",
+      "source": "invented"
+    },
+    "baseline_skip": {
+      "speaker": "jeong",
+      "text": "Skipping the test. Confident, or cautious? We shall see.",
+      "source": "invented"
+    },
+    "baseline_zero": {
+      "speaker": "jeong",
+      "text": "Then we begin at the beginning. A perfectly respectable place.",
+      "source": "invented"
+    },
+    "return_after_pause": {
+      "speaker": "jeong",
+      "text": "Welcome back. The clock stopped while you were away. I am more patient than I look.",
+      "source": "invented"
+    },
+    "resume_saved": {
+      "speaker": "jeong",
+      "text": "Your place is saved. Shall we resume?",
+      "source": "invented"
+    },
+    "decode_check_pass": {
+      "speaker": "jeong",
+      "text": "Four of five. You can read these. My claim survives another examination.",
+      "source": "invented"
+    },
+    "decode_check_perfect": {
+      "speaker": "jeong",
+      "text": "Five of five. Show-off.",
+      "source": "invented"
+    }
+  },
+  "accepted_rule": "Grading uses the engine's roman_variants() only; this file does not add spellings. Engine today: ㅓ = eo only; ㅜ = u or oo; ㄷ/ㅂ = d/b only; ㅏ/ㅗ = a/o only. No alias is shared between two letters taught together.",
+  "later_words": {
+    "note": "Owner-suggested everyday words for later batches (batch per sejong-test-spec letter order).",
+    "words": [
+      {
+        "ko": "비",
+        "roman": "bi",
+        "en": "rain",
+        "batch": 2
+      },
+      {
+        "ko": "소",
+        "roman": "so",
+        "en": "cow",
+        "batch": 2
+      },
+      {
+        "ko": "하마",
+        "roman": "hama",
+        "en": "hippo",
+        "batch": 4
+      },
+      {
+        "ko": "호두",
+        "roman": "hodu",
+        "en": "walnut",
+        "batch": 4
+      }
+    ]
+  },
+  "humor_rules": [
+    "Jokes target words, history, the elite scholars, or Jeong himself; never the learner's mistakes. Miss feedback stays plain.",
+    "A word's first_read_line is eligible on its first reading only; words without one show the meaning plainly.",
+    "'Show-off' is reserved for a perfect decode check.",
+    "notice_line is a visual observation; the 'shape' field is the historical (Haerye) account. Keep them distinct.",
+    "return_after_pause is only true because the timer stops when the page is hidden or idle over 120 s."
+  ]
+}
