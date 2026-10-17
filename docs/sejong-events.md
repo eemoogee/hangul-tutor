@@ -25,7 +25,7 @@ flow   = SejongFlow.from_state(quiz, content, text)
 - `seed` makes question order repeatable for tests.
 - `answer` is the text typed, or the exact `choices` string tapped. `""` means a tap on a "continue" prompt.
 - Commands: `"/hint"` (only when the current question says `hint_available`), `"/quit"`. Anything else starting with `/` returns a `notice` and changes nothing.
-- `active_ms` is the active time since the previous call, already idle-capped by the renderer (see Timer). Python adds it to the saved total.
+- `active_ms` is the active time since the previous call, already idle-capped by the renderer (see Timer). Python ignores time sent before the first Batch 0 `letter_intro`; it adds later time to the saved total.
 - `resume("reopen")` after the app is reopened from saved state; `resume("pause")` after the page comes back from being hidden or idle. Each returns the right narrator line, then repeats the current screen so the renderer can redraw it.
 - Every returned list ends with exactly one `await` or one `finished` event.
 
@@ -34,7 +34,7 @@ flow   = SejongFlow.from_state(quiz, content, text)
 1. Show events in list order.
 2. `narrator`, `letter_intro`, `reveal`, `word_read` and `milestone` each occupy the screen until the learner taps. The tap is handled locally: **no Python call**. Then show the next event.
 3. `stage` updates the header and shows nothing by itself.
-4. `result` replaces the question card it answers (same `qid`) and waits for a local tap.
+4. `result` replaces the practice or check question card it answers (same `qid`) and waits for a local tap. Baseline and post-test answers go directly to the next question or the final `score`, without per-question feedback.
 5. On `await`, show the input and send the answer with `submit()`.
 6. Unknown `kind`: skip it and log it. Unknown fields: ignore them. Python may add fields without breaking older renderers.
 7. After every `submit()`, save `flow.export_state()` (browser: IndexedDB).
@@ -88,6 +88,7 @@ Unscored guess before a block is revealed. Always followed by an `await` with `i
 
 ### `reveal`
 The block assembles. Comes after the predict answer, whatever was picked.
+After a wrong prediction, the next event is a `narrator` from `lines.predict_wrong.side` or `.stack` (matching the target vowel's layout), followed by `lines.predict_reveal`. A right prediction goes straight to `lines.predict_reveal`.
 
 | Field | Type | Notes |
 | --- | --- | --- |
@@ -114,8 +115,10 @@ One question card.
 | **hint_available** | bool | |
 | round | {index, size} | Position in the current phase, for the round bar. `size` can grow if a missed item is re-queued. |
 
+Build cards offer at least one distractor with the same consonant and a different vowel, and one with the same vowel and a different consonant. Batch 1 asks only blocks containing a new Batch 1 letter.
+
 ### `result`
-The grade for one question. The renderer shows the useful fact first, then the line.
+The grade for a practice or check question. Baseline and post-test questions emit no `result`; only their final `score` is shown. The renderer shows the useful fact first, then the line.
 
 | Field | Type | Notes |
 | --- | --- | --- |
@@ -125,7 +128,7 @@ The grade for one question. The renderer shows the useful fact first, then the l
 | **correct_answer** | str | Display form |
 | chosen_is | str | If the wrong answer is another real letter/block, what it is ("ㅋ") |
 | tell | str | The confusion-pair tell from `sejong.json` ("ㄷ has the extra stroke on top.") |
-| line | narrator | Jeong's reaction, if any. Absent on baseline, check and post-test cards. |
+| line | narrator | Jeong's reaction, if any. Correct practice lines are occasional; a streak at 5/10/15 uses its streak line here instead. After three consecutive wrong practice answers in one phase, this is `lines.repeated_miss`. Absent on check cards. |
 | **streak** | int | Current streak after this answer (0 after a miss) |
 | requeued | bool | True when a missed item will come back later this phase |
 
@@ -188,7 +191,7 @@ What the renderer should ask for next. Always last in the list (unless `finished
 ## Timer
 
 - The renderer counts active milliseconds. It stops counting when the page is hidden (`visibilitychange`) or after **120 s** without input, and resumes on the next interaction.
-- It sends the elapsed active time with every `submit()`. Python owns the total and saves it in `export_state()`.
+- It sends the elapsed active time with every `submit()`. Python starts the saved total at the first Batch 0 `letter_intro`, after the baseline or skip, and emits `lines.clock_start` immediately before Batch 0's intro line.
 - The time is shown **only** on `milestone` screens, never during questions.
 - When counting resumes after a hide or idle stop, the renderer calls `resume("pause")` before anything else, so Jeong's "the clock stopped" line is true.
 
@@ -205,6 +208,7 @@ flow.start() ->
 flow.submit("Skip", active_ms=41000) ->
 [ {"kind":"narrator","speaker":"jeong","text":"Skipping the test. Confident, or cautious? We shall see.","line_id":"lines.baseline_skip","source":"invented"},
   {"kind":"stage","batch_id":0,"batch_name":"The Revelation","phase":"discover","letters_known":[]},
+  {"kind":"narrator","line_id":"lines.clock_start", …},
   {"kind":"narrator","speaker":"jeong","text":"Four letters. Two consonants, two vowels. That is enough to begin.", …},
   {"kind":"letter_intro","jamo":"ㄴ","type":"consonant","roman":"n","sound":"n, as in 'no'","shape":"Your tongue tip touching …","shape_source":"haerye"},
   {"kind":"letter_intro","jamo":"ㄷ", …, "related":"ㄴ","notice_line":{"speaker":"jeong","text":"ㄴ, with an added stroke. …"}},
@@ -220,5 +224,5 @@ flow.submit("Skip", active_ms=41000) ->
 - Every event has `kind`, and every **bold** field above for its kind.
 - Every `narrator.line_id` resolves to a line in `sejong.json`, and its `text` has no unfilled `{placeholder}`.
 - No `question` (except `context: "baseline"`), `predict` choice or `display` uses a letter outside `letters_known`. The post-test remains strict.
-- `result.line` never appears on baseline, check or post-test cards.
+- Baseline and post-test cards emit no `result`; check results have no `line`.
 - `export_state()` → `from_state()` mid-batch, then the same answers, gives the same events as an uninterrupted run (same seed).

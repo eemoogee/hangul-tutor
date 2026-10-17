@@ -98,8 +98,10 @@ def contract():
                 assert all(all(c in known and v in known and not final
                     for c, v, final in [flow.quiz._decompose_syllable(block)])
                     for block in e["choices"])
-            if e["kind"] == "result" and e["qid"].split("-")[1] in ("baseline", "check", "post_test"):
+            if e["kind"] == "result" and e["qid"].split("-")[1] == "check":
                 assert "line" not in e
+            if e["kind"] == "result":
+                assert e["qid"].split("-")[1] not in ("baseline", "post_test")
             for line in ([e] if e["kind"] == "narrator" else
                          [e["line"]] if e["kind"] in ("result", "word_read") and "line" in e else
                          e["lines"] if e["kind"] == "milestone" else []):
@@ -132,35 +134,175 @@ def misses_requeue():
         if flow.current and flow.current.get("card", {}).get("context") == "practice":
             counter += 1
             if counter % 3 == 0:
-                return "WRONG"
+                card = flow.current["card"]
+                return (next(x for x in card["choices"] if x != answer)
+                        if card["input"] == "choice" else "WRONG")
         return answer
     events = flattened(run(new_flow(), mutate=miss))
     assert any(e["kind"] == "result" and e["requeued"] for e in events)
-    assert any(e["kind"] == "question" and e.get("round", {}).get("size", 0) > 16 for e in events)
+    assert any(e["kind"] == "question" and e["qid"].startswith("b1-build-")
+               and e.get("round", {}).get("size", 0) > 12 for e in events)
     assert events[-1]["outcome"] == "victory_1"
 
 
 def narrator_and_words():
-    first_target = None
     misses = 0
-    def twice(flow, events, answer, step):
-        nonlocal first_target, misses
-        if flow.phase == "build" and flow.batch_index == 0:
-            if first_target is None:
-                first_target = flow.current["target"]
-            if flow.current["target"] == first_target and misses < 2:
-                misses += 1
-                return next(x for x in flow.current["card"]["choices"] if x != answer)
+    def three_wrong(flow, events, answer, step):
+        nonlocal misses
+        if flow.phase == "build" and flow.batch_index == 0 and misses < 3:
+            misses += 1
+            return next(x for x in flow.current["card"]["choices"] if x != answer)
         return answer
-    events = flattened(run(new_flow(), mutate=twice))
+    events = flattened(run(new_flow(), mutate=three_wrong))
     lines = [e["line"]["line_id"] for e in events if e["kind"] == "result" and "line" in e]
     assert "lines.miss_no_tell" in lines
-    assert any(x.startswith("lines.repeated_miss.") for x in lines)
+    assert sum(x.startswith("lines.repeated_miss.") for x in lines) == 1
     words = [e for e in events if e["kind"] == "word_read"]
     assert len(words) == 18 and len({w["ko"] for w in words}) == 18
     assert words[0]["line"]["line_id"] == "lines.first_word_read"
     assert next(w for w in words if w["ko"] == "바보")["line"]["line_id"] == "lines.fool_word"
     assert next(w for w in words if w["ko"] == "도도")["line"]["line_id"] == "lines.dodo_word"
+
+
+def clock_starts_after_baseline():
+    flow = new_flow()
+    events = flow.start()
+    transcript = [events]
+    expected_ms = 0
+    for _ in range(300):
+        if events[-1]["kind"] == "finished":
+            break
+        active_ms = 1000 if flow.letters_known else 60000
+        if flow.letters_known:
+            expected_ms += active_ms
+        events = flow.submit(answer_for(flow, events), active_ms=active_ms)
+        transcript.append(events)
+    all_events = flattened(transcript)
+    clock_positions = [i for i, event in enumerate(all_events)
+                       if event["kind"] == "narrator" and event["line_id"] == "lines.clock_start"]
+    assert len(clock_positions) == 1
+    baseline_end = max(i for i, event in enumerate(all_events)
+                       if event["kind"] == "score" and event["context"] == "baseline")
+    batch_intro = next(i for i, event in enumerate(all_events)
+                       if event["kind"] == "narrator" and event["line_id"] == "lines.batch_intro.0")
+    assert baseline_end < clock_positions[0] == batch_intro - 1
+    victory = next(event for event in all_events
+                   if event["kind"] == "milestone" and event["id"] == "victory_1")
+    assert victory["active_ms"] == expected_ms
+
+
+def assessments_have_no_feedback():
+    events = flattened(run(new_flow()))
+    assert not any(e["kind"] == "result" and e["qid"].split("-")[1]
+                   in ("baseline", "post_test") for e in events)
+    assert [e["context"] for e in events if e["kind"] == "score"
+            and e["context"] in ("baseline", "post_test")] == ["baseline", "post_test"]
+
+
+def occasional_correct_lines():
+    correct_results = []
+    for seed in range(20):
+        events = flattened(run(new_flow(seed)))
+        results = [e for e in events if e["kind"] == "result" and e["correct"]
+                   and e["qid"].split("-")[1] in ("recognize", "retrieve", "build", "decode")]
+        correct_results.extend(results)
+        previous_had_line = False
+        line_ids = []
+        for result in results:
+            line_id = result.get("line", {}).get("line_id", "")
+            has_correct_line = line_id.startswith("lines.correct.")
+            assert not (previous_had_line and has_correct_line)
+            previous_had_line = has_correct_line
+            if has_correct_line:
+                line_ids.append(line_id)
+        assert all(a != b for a, b in zip(line_ids, line_ids[1:]))
+    share = sum(e.get("line", {}).get("line_id", "").startswith("lines.correct.")
+                for e in correct_results) / len(correct_results)
+    assert .20 <= share <= .45, share
+
+
+def streak_line_replaces_correct_line():
+    transcript = run(new_flow())
+    streaks = []
+    for group in transcript:
+        for event in group:
+            if event["kind"] != "result" or event["streak"] not in (5, 10, 15):
+                continue
+            if event["qid"].split("-")[1] not in ("recognize", "retrieve", "build", "decode"):
+                continue
+            assert event["line"]["line_id"] == f"lines.streak.{event['streak']}"
+            assert not any(e["kind"] == "narrator" and e["line_id"].startswith(
+                ("lines.correct.", "lines.streak.")) for e in group)
+            streaks.append(event["streak"])
+    assert {5, 10, 15} <= set(streaks)
+
+
+def consecutive_misses_only():
+    attempt = 0
+    def alternating(flow, events, answer, step):
+        nonlocal attempt
+        if flow.current and flow.current.get("card", {}).get("context") == "practice" and attempt < 20:
+            attempt += 1
+            if attempt % 2:
+                card = flow.current["card"]
+                return (next(x for x in card["choices"] if x != answer)
+                        if card["input"] == "choice" else "WRONG")
+        return answer
+    events = flattened(run(new_flow(), mutate=alternating))
+    assert not any(e["kind"] == "result" and e.get("line", {}).get("line_id", "").startswith(
+        "lines.repeated_miss.") for e in events)
+    wrongs = 0
+    def triple(flow, events, answer, step):
+        nonlocal wrongs
+        if flow.batch_index == 0 and flow.phase == "build" and wrongs < 3:
+            wrongs += 1
+            return next(x for x in flow.current["card"]["choices"] if x != answer)
+        return answer
+    events = flattened(run(new_flow(), mutate=triple))
+    repeated = [e for e in events if e["kind"] == "result" and
+                e.get("line", {}).get("line_id", "").startswith("lines.repeated_miss.")]
+    assert len(repeated) == 1
+
+
+def batch_one_build_targets_and_choices():
+    flow = new_flow()
+    events = flow.start()
+    targets = []
+    while events[-1]["kind"] != "finished":
+        if flow.batch_index == 1 and flow.phase == "build":
+            target = flow.current["target"]
+            card = flow.current["card"]
+            targets.append(target)
+            consonant, vowel, _ = flow.quiz._decompose_syllable(target)
+            distractors = [x for x in card["choices"] if x != target]
+            parts = [flow.quiz._decompose_syllable(x) for x in distractors]
+            assert len(distractors) == 3 and len(set(card["choices"])) == 4
+            assert any(c == consonant and v != vowel for c, v, _ in parts)
+            assert any(v == vowel and c != consonant for c, v, _ in parts)
+        events = flow.submit(answer_for(flow, events))
+    assert len(targets) == len(set(targets)) == 12
+    assert not set(targets) & {"나", "노", "다", "도"}
+
+
+def wrong_predict_reaction():
+    def reach_predict(batch_index):
+        flow = new_flow()
+        events = flow.start()
+        while not (flow.batch_index == batch_index and flow.phase == "predict_reveal"):
+            events = flow.submit(answer_for(flow, events))
+        return flow
+    for batch_index, layout in ((0, "side"), (1, "stack")):
+        flow = reach_predict(batch_index)
+        wrong = next(x for x in flow.current["choices"] if x != flow.current["target"])
+        events = flow.submit(wrong)
+        assert [e["line_id"] if e["kind"] == "narrator" else e["kind"]
+                for e in events[:3]] == ["reveal", f"lines.predict_wrong.{layout}",
+                                        f"lines.predict_reveal.{batch_index}"]
+        assert "{" not in events[1]["text"]
+    flow = reach_predict(0)
+    events = flow.submit(flow.current["target"])
+    assert not any(e["kind"] == "narrator" and e["line_id"].startswith("lines.predict_wrong.")
+                   for e in events)
 
 
 def check_retry_independence():
@@ -322,7 +464,9 @@ def timer():
     flow = new_flow()
     transcript = run(flow, tick=15000)
     milestone = next(e for e in flattened(transcript) if e["kind"] == "milestone" and e["id"] == "victory_1")
-    assert milestone["active_ms"] == 15000 * (len(transcript) - 1)
+    first_batch_group = next(i for i, group in enumerate(transcript)
+                             if any(e["kind"] == "letter_intro" for e in group))
+    assert milestone["active_ms"] == 15000 * (len(transcript) - first_batch_group - 1)
     minutes = max(1, int(milestone["active_ms"] / 60000 + .5))
     assert milestone["time_text"] == f"{minutes} minute" + ("" if minutes == 1 else "s")
     assert milestone["verdict"]["projected_minutes"] == milestone["active_ms"] / 60000 * 3
@@ -333,6 +477,13 @@ def timer():
 
 if __name__ == "__main__":
     for name, fn in (("event contract", contract), ("all-correct order and scores", order_and_scores),
+                     ("clock starts after baseline", clock_starts_after_baseline),
+                     ("assessment answers stay hidden", assessments_have_no_feedback),
+                     ("occasional correct lines", occasional_correct_lines),
+                     ("streak line replaces correct line", streak_line_replaces_correct_line),
+                     ("misses must be consecutive", consecutive_misses_only),
+                     ("Batch 1 build targets and distractors", batch_one_build_targets_and_choices),
+                     ("wrong predict reaction", wrong_predict_reaction),
                      ("misses requeued", misses_requeue), ("narrator and word payoff", narrator_and_words),
                      ("check retry and independence", check_retry_independence),
                      ("recognize reverses retrieve", recognize_reverses_retrieve),
