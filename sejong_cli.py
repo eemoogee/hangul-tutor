@@ -43,7 +43,9 @@ def wait_for_enter():
         print("Press Enter without typing to continue. Answers go at the choice or text prompt.")
 
 
-def render(events, clock):
+def render(events, clock, question_contexts=None):
+    if question_contexts is None:
+        question_contexts = {}
     for event in events:
         kind = event["kind"]
         if kind == "stage":
@@ -62,14 +64,21 @@ def render(events, clock):
         elif kind == "reveal":
             print(f"{event['parts'][0]} + {event['parts'][1]} = {event['block']} ({event['roman']})")
         elif kind == "question":
+            question_contexts[event["qid"]] = event["context"]
             print(f"\n{event['prompt']}\n{event['display']}")
             if "round" in event:
                 print(f"{event['round']['index']} / {event['round']['size']}")
         elif kind == "result":
-            print(("Correct" if event["correct"] else "Try again later") +
-                  f" — {event['correct_answer']}")
+            context = question_contexts.pop(event.get("qid"), None)
+            if not event["correct"] and context in ("check", "after"):
+                print(f"It reads {event['correct_answer']}.")
+            else:
+                print(("Correct" if event["correct"] else "Try again later") +
+                      f" — {event['correct_answer']}")
             if "line" in event:
                 show_line(event["line"])
+            if event.get("tell") and event["tell"] not in event.get("line", {}).get("text", ""):
+                print(event["tell"])
         elif kind == "word_read":
             print(f"{event['ko']} ({event['roman']}) = {event['en']}")
             if "line" in event:
@@ -77,7 +86,10 @@ def render(events, clock):
         elif kind == "hint":
             print("Hint:", event["text"])
         elif kind == "score":
-            print(f"{event['context']}: {event['correct']} / {event['size']}")
+            if event["context"] == "check":
+                print(f"Reading check: {event['correct']} of {event['size']}")
+            else:
+                print(f"{event['context']}: {event['correct']} of {event['size']}")
         elif kind == "milestone":
             print(f"\n*** {event['id'].replace('_', ' ').title()} — {event['time_text']} ***")
             for line in event["lines"]:
@@ -127,9 +139,10 @@ def main():
         events = flow.start()
     save(flow)
     clock = ActiveClock()
+    question_contexts = {}
     try:
         while True:
-            reply = render(events, clock)
+            reply = render(events, clock, question_contexts)
             if reply is None:
                 break
             answer, active_ms = reply

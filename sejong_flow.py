@@ -179,7 +179,8 @@ class SejongFlow:
             self.remaining = [block for block in self._practice_blocks()
                               if any(part in new_letters for part in self.quiz._decompose_syllable(block)[:2])]
         elif self.phase == "decode":
-            self.remaining = [x["ko"] for x in self._batch()["words"]]
+            self.remaining = [x["ko"] for x in self._batch()["words"]
+                              if x["ko"] != self.content["before_after"]["word"]]
         else:
             raise ValueError(self.phase)
         self.rng.shuffle(self.remaining)
@@ -264,7 +265,7 @@ class SejongFlow:
 
     def _new_check(self, events):
         held_back = self._batch().get("held_back", [])
-        if held_back:
+        if held_back and str(self.batch_index) not in self.check_results:
             if self.construction_target is None:
                 self.construction_target = self.rng.choice(held_back)
             self.construction_correct = None
@@ -277,11 +278,33 @@ class SejongFlow:
         return self._new_reading_check(events)
 
     def _new_reading_check(self, events):
-        self._seed_engine()
+        before_word = self.content["before_after"]["word"]
         try:
-            self.check = make_reading_check(self.quiz)
+            for _ in range(12):
+                self._seed_engine()
+                self.check = make_reading_check(self.quiz)
+                if all(q.letter != before_word for q in self.check.questions):
+                    break
+            else:
+                used = {q.letter for q in self.check.questions}
+                replacements = [block for block in self._practice_blocks()
+                                if block != before_word and block not in used]
+                for index, q in enumerate(self.check.questions):
+                    if q.letter != before_word:
+                        continue
+                    target = self.rng.choice(replacements)
+                    replacements.remove(target)
+                    self.check.questions[index] = QuizQuestion(
+                        mode="read_aloud", letter=target, lesson_id=0,
+                        prompt=f"How does **{target}** sound? Type it in English letters.",
+                        correct_answer=self.quiz._word_romanization(target),
+                        accepted=sorted(self.quiz.roman_variants(target)),
+                        hint=self.quiz._piece_hint(target))
+                    self.check.transfer_targets = [item for item in self.check.transfer_targets
+                                                   if item != before_word]
         except ValueError:
-            familiar = list(dict.fromkeys(word["ko"] for word in self._batch()["words"]))
+            familiar = list(dict.fromkeys(word["ko"] for word in self._batch()["words"]
+                                              if word["ko"] != before_word))
             if len(familiar) < 5:
                 self.check = None
                 self.check_results[str(self.batch_index)] = {"passed": False, "unavailable": True}
@@ -314,6 +337,7 @@ class SejongFlow:
         if self.check.finished:
             score = len(self.check.correct)
             passed = self.check.passed
+            first_attempt = str(self.batch_index) not in self.check_results
             record = self.check_results.setdefault(str(self.batch_index), {})
             record.update({"passed": passed, "correct": score})
             if self.construction_target is not None and "first_attempt" not in record:
@@ -329,7 +353,7 @@ class SejongFlow:
                                                "correct": self.construction_correct}
             events.append(score_event)
             if passed:
-                events.append(self._line("lines.decode_check_perfect" if score == 5
+                events.append(self._line("lines.decode_check_perfect" if score == 5 and first_attempt
                                          else "lines.decode_check_pass"))
                 return self._advance_after_check(events)
             events.append(self._line("lines.decode_check_fail"))
@@ -378,18 +402,55 @@ class SejongFlow:
         return self._finish(events)
 
     def _chosen_tell(self, answer, target):
+        pairs = [pair for batch in self.content["batches"][:self.batch_index + 1]
+                 for pair in batch["confusion_pairs"]]
+        def tell_for(left, right):
+            return next((pair["tell"] for pair in pairs
+                         if left != right and left in pair["pair"] and right in pair["pair"]), None)
+
+        def visible(candidate):
+            if candidate == self.content["before_after"]["word"]:
+                return None
+            if self.batch_index == 1 and "1" not in self.check_results:
+                if any(block in candidate for block in self._batch().get("held_back", [])):
+                    return None
+            return candidate
+
         known_forms = self.letters_known + self._practice_blocks()
         chosen = answer if answer in known_forms else None
+        if chosen is not None and chosen != target:
+            tell = tell_for(target, chosen)
+            if len(chosen) == len(target) == 1 and "가" <= target <= "힣":
+                target_parts = self.quiz._decompose_syllable(target)
+                chosen_parts = self.quiz._decompose_syllable(chosen)
+                differences = [(a, b) for a, b in zip(target_parts, chosen_parts) if a != b]
+                if len(differences) == 1:
+                    tell = tell_for(*differences[0])
+            return visible(chosen), tell
+
+        roman = normalize_roman(answer)
+        if roman and all("가" <= block <= "힣" for block in target):
+            for index, block in enumerate(target):
+                parts = list(self.quiz._decompose_syllable(block))
+                for part_index in (0, 1):
+                    for pair in pairs:
+                        if parts[part_index] not in pair["pair"]:
+                            continue
+                        swapped = parts.copy()
+                        swapped[part_index] = next(letter for letter in pair["pair"]
+                                                   if letter != parts[part_index])
+                        candidate = (target[:index]
+                                     + self.quiz._compose_syllable(*swapped)
+                                     + target[index + 1:])
+                        if roman in self.quiz.roman_variants(candidate):
+                            return visible(candidate), pair["tell"]
+
         if chosen is None:
             chosen = next((form for form in known_forms
-                           if normalize_roman(answer) in self.quiz.roman_variants(form)), None)
+                           if roman in self.quiz.roman_variants(form)), None)
         if chosen is None or chosen == target:
             return None, None
-        for batch in self.content["batches"][:self.batch_index + 1]:
-            for pair in batch["confusion_pairs"]:
-                if target in pair["pair"] and chosen in pair["pair"]:
-                    return chosen, pair["tell"]
-        return chosen, None
+        return visible(chosen), tell_for(target, chosen)
 
     def _reaction(self, correct, target, answer, word_line=False):
         if correct:
@@ -398,9 +459,13 @@ class SejongFlow:
             if word_line:
                 self.last_correct_line = True
                 return None, None, None
-            if str(self.streak) in self.content["lines"]["streak"]:
-                self.last_correct_line = False
+            streaks = self.content["lines"]["streak"]
+            if str(self.streak) in streaks:
+                self.last_correct_line = True
                 return self._line(f"lines.streak.{self.streak}"), None, None
+            if str(self.streak + 1) in streaks:
+                self.last_correct_line = False
+                return None, None, None
             speak = not self.last_correct_line and self.rng.random() < 1 / 3
             self.last_correct_line = speak
             if speak:
@@ -490,6 +555,9 @@ class SejongFlow:
         events = [result]
         if context == "after":
             word = self.content["before_after"]
+            if correct:
+                events.append({"kind": "word_read", "ko": word["word"],
+                               "roman": word["roman"], "en": word["en"]})
             events.append(self._line("lines.after_right" if correct else "lines.after_close",
                                      roman=word["roman"], en=word["en"]))
             return self._victory(events)

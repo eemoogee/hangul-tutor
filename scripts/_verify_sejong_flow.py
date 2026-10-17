@@ -54,6 +54,170 @@ def flattened(transcript):
     return [event for group in transcript for event in group]
 
 
+def strings(value):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for child in value.values():
+            yield from strings(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from strings(child)
+
+
+def reach_question(target, phase):
+    flow = new_flow()
+    events = flow.start()
+    for _ in range(300):
+        if flow.phase == phase and flow.current and flow.current.get("target") == target:
+            return flow
+        events = flow.submit(answer_for(flow, events))
+    raise AssertionError(f"did not reach {target} in {phase}")
+
+
+def mixup_tips():
+    flow = reach_question("도", "build")
+    result = flow.submit("다")[0]
+    assert not result["correct"] and result["chosen_is"] == "다"
+    assert result["tell"] == CONTENT["batches"][0]["confusion_pairs"][1]["tell"]
+    assert result["line"]["line_id"] == "lines.miss.0"
+    assert "다" in result["line"]["text"] and result["tell"] in result["line"]["text"]
+
+    for target, answer, chosen, pair_index in (
+        ("두부", "dobu", "도부", 2),
+        ("너무", "namu", None, 1),
+        ("도마", "domeo", None, 1),
+        ("바다", "beoda", None, 1),
+    ):
+        flow = reach_question(target, "decode")
+        events = flow.submit(answer)
+        result = events[0]
+        assert not result["correct"] and result.get("chosen_is") == chosen, (target, result)
+        assert result["tell"] == CONTENT["batches"][1]["confusion_pairs"][pair_index]["tell"]
+        assert result["line"]["line_id"] == ("lines.miss.0" if chosen else "lines.miss_no_tell")
+        if chosen is None:
+            assert not any(block in value for event in events for value in strings(event)
+                           for block in ("누", "머", "버", "나무"))
+
+
+def before_word_stays_hidden():
+    for seed in range(1, 31):
+        def every_third(flow, events, answer, step):
+            if (flow.current and flow.current.get("card", {}).get("context") == "practice"
+                    and step % 3 == 0):
+                card = flow.current["card"]
+                return (next(x for x in card["choices"] if x != answer)
+                        if card["input"] == "choice" else "WRONG")
+            return answer
+        def fail_first_checks(flow, events, answer, step):
+            if (flow.phase == "check" and flow.current["card"]["mode"] == "read_aloud"
+                    and str(flow.batch_index) not in flow.check_results):
+                return "WRONG"
+            return answer
+        for mutate in (None, every_third, fail_first_checks):
+            events = flattened(run(new_flow(seed), mutate=mutate))
+            start = next(i for i, e in enumerate(events) if e["kind"] == "before_word")
+            end = next(i for i, e in enumerate(events)
+                       if e["kind"] == "question" and e["context"] == "after")
+            assert not any("나무" in value for event in events[start + 1:end]
+                           for value in strings(event)), seed
+            assert events[end]["display"] == "나무"
+            after_result = next(i for i, e in enumerate(events[end + 1:], end + 1)
+                                if e["kind"] == "result" and e["qid"] == events[end]["qid"])
+            assert events[after_result + 1] == {
+                "kind": "word_read", "ko": "나무", "roman": "namu", "en": "tree"}
+            assert events[after_result + 2]["line_id"] == "lines.after_right"
+
+
+def check_regeneration_and_fallback():
+    from sejong_flow import make_reading_check as real_make
+    for forced in (1, 12):
+        flow = new_flow()
+        events = flow.start()
+        while not (flow.phase == "decode" and not flow.remaining):
+            events = flow.submit(answer_for(flow, events))
+        calls = 0
+        def make(quiz):
+            nonlocal calls
+            calls += 1
+            check = real_make(quiz)
+            if calls <= forced:
+                word = CONTENT["before_after"]["word"]
+                check.questions[-1].letter = word
+                check.questions[-1].correct_answer = "namu"
+                check.questions[-1].accepted = ["namu"]
+                check.transfer_targets[-1] = word
+            return check
+        with patch("sejong_flow.make_reading_check", side_effect=make):
+            flow.submit(answer_for(flow, events))
+        assert calls >= forced + (forced == 1)
+        assert all(q.letter != "나무" for q in flow.check.questions)
+        assert "나무" not in flow.check.transfer_targets
+
+
+def retry_construction_and_lines():
+    flow = new_flow()
+    def fail_batch_one(flow, events, answer, step):
+        if (flow.batch_index == 1 and flow.phase == "check"
+                and flow.current["card"]["mode"] == "read_aloud"
+                and "1" not in flow.check_results):
+            return "WRONG"
+        return answer
+    events = flattened(run(flow, mutate=fail_batch_one))
+    cards = [e for e in events if e["kind"] == "question" and e["context"] == "check"
+             and e["mode"] == "build_syllable"]
+    assert len(cards) == 1
+    batch_one_scores = [e for e in events if e["kind"] == "score" and "construction" in e]
+    assert [e["passed"] for e in batch_one_scores] == [False, True]
+    assert batch_one_scores[-1]["correct"] == 5
+    assert any(e["kind"] == "narrator" and e["line_id"] == "lines.decode_check_pass"
+               for e in events)
+    assert sum(e["kind"] == "narrator" and e["line_id"] == "lines.decode_check_perfect"
+               for e in events) == 1  # Batch 0's first-attempt perfect score.
+    for seed in range(1, 11):
+        perfect = flattened(run(new_flow(seed)))
+        assert sum(e["kind"] == "narrator" and e["line_id"] == "lines.decode_check_perfect"
+                   for e in perfect) == 2
+
+
+def streak_line_spacing():
+    for seed in range(1, 31):
+        groups = run(new_flow(seed))
+        practice = [next(e for e in group if e["kind"] == "result") for group in groups
+                    if any(e["kind"] == "result" and
+                           e["qid"].split("-")[1] in ("recognize", "retrieve", "build", "decode")
+                           for e in group)]
+        for left, right in zip(practice, practice[1:]):
+            a = left.get("line", {}).get("line_id", "")
+            b = right.get("line", {}).get("line_id", "")
+            assert not (a.startswith("lines.correct.") and b.startswith("lines.streak."))
+            assert not (a.startswith("lines.streak.") and b.startswith("lines.correct."))
+
+
+def cli_check_wording():
+    from sejong_cli import render
+    class Clock:
+        def take(self):
+            return 0
+        def mark(self):
+            pass
+    contexts = {}
+    card = {"kind": "question", "qid": "b1-check-1", "context": "check",
+            "prompt": "Read this.", "display": "머"}
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output), patch("builtins.input", return_value="wrong"):
+        render([card, {"kind": "await", "input": "text"}], Clock(), contexts)
+    with contextlib.redirect_stdout(output), patch("sejong_cli.wait_for_enter"):
+        render([{"kind": "result", "qid": "b1-check-1", "correct": False,
+                 "correct_answer": "meo", "tell": "Check the vowel.",
+                 "line": {"speaker": "jeong", "text": "Not yet."}},
+                {"kind": "score", "context": "check", "correct": 4, "size": 5}],
+               Clock(), contexts)
+    text = output.getvalue()
+    assert "It reads meo." in text and "Reading check: 4 of 5" in text
+    assert "Check the vowel." in text and "Try again later" not in text
+
+
 def contract():
     flow = new_flow()
     transcript = run(flow)
@@ -534,7 +698,11 @@ def after_answers():
         events = flow.submit(answer, active_ms=777)
         assert events[0]["kind"] == "result" and events[0]["correct"] is correct
         assert "line" not in events[0] and not events[0]["requeued"]
-        assert events[1]["line_id"] == line_id and "{" not in events[1]["text"]
+        if correct:
+            assert events[1] == {"kind": "word_read", "ko": "나무",
+                                 "roman": "namu", "en": "tree"}
+        line = events[2] if correct else events[1]
+        assert line["line_id"] == line_id and "{" not in line["text"]
         assert next(e for e in events if e["kind"] == "milestone")["id"] == "victory_1"
         assert events[-1] == {"kind": "finished", "outcome": "victory_1"}
         assert flow.quiz.session_total == before
@@ -643,6 +811,12 @@ if __name__ == "__main__":
                      ("construction and first-attempt evidence", construction_and_first_attempt),
                      ("mid-check replay", replay_mid_check),
                      ("one Jeong line per answer", one_jeong_line_per_answer),
+                     ("block and word mix-up tips", mixup_tips),
+                     ("before word stays hidden until after", before_word_stays_hidden),
+                     ("check regeneration and fallback", check_regeneration_and_fallback),
+                     ("retry construction and perfect lines", retry_construction_and_lines),
+                     ("streak line spacing", streak_line_spacing),
+                     ("CLI check wording", cli_check_wording),
                      ("wrong predict reaction", wrong_predict_reaction),
                      ("misses requeued", misses_requeue), ("narrator and word payoff", narrator_and_words),
                      ("check retry and independence", check_retry_independence),

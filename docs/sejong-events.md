@@ -34,7 +34,7 @@ flow   = SejongFlow.from_state(quiz, content, text)
 1. Show events in list order.
 2. `narrator`, `before_word`, `letter_intro`, `reveal`, `word_read` and `milestone` each occupy the screen until the learner taps. The tap is handled locally: **no Python call**. Then show the next event. The `lines.before_show` tap is the following `await` with `input: "continue"`; send `submit("")` on that tap to start Batch 0.
 3. `stage` updates the header and shows nothing by itself.
-4. `result` replaces the question card it answers (same `qid`) and waits for a local tap. The `after` result has no `line`; the next narrator line closes the before/after moment.
+4. `result` replaces the question card it answers (same `qid`) and waits for a local tap. The `after` result has no `line`; a correct answer is followed by a line-free `word_read` giving the word's meaning, then the narrator closes the before/after moment. A wrong answer goes directly to the narrator line.
 5. On `await`, show the input and send the answer with `submit()`.
 6. Unknown `kind`: skip it and log it. Unknown fields: ignore them. Python may add fields without breaking older renderers.
 7. After every `submit()`, save `flow.export_state()` (browser: IndexedDB).
@@ -133,14 +133,14 @@ The grade for a practice, check, or after question. The renderer shows the usefu
 | **correct** | bool | |
 | **answer** | str | What the learner gave |
 | **correct_answer** | str | Display form |
-| chosen_is | str | If the wrong answer is another real letter/block, what it is ("ㅋ") |
-| tell | str | The confusion-pair tell from `sejong.json` ("ㄷ has the extra stroke on top.") |
-| line | narrator | Jeong's reaction, if any. Correct practice lines are occasional; a streak at 5/10/15 uses its streak line here instead. When a `word_read` has a line for the same answer, this field is absent and any displaced streak line is dropped. After three consecutive wrong practice answers in one phase, this is `lines.repeated_miss`. Absent on check and after cards. |
+| chosen_is | str | A mistaken letter, block, or word, when safe to reveal. Omitted for the before/after word and hidden held-back blocks. |
+| tell | str | The taught confusion-pair tip, including a one-letter swap within a block or word. It can be present without `chosen_is`; renderers should still show it. |
+| line | narrator | Jeong's reaction, if any. Correct practice lines are occasional; a streak at 5/10/15 uses its streak line here instead. Generic correct lines are suppressed immediately before and after a streak line. When a `word_read` has a line for the same answer, this field is absent and any displaced streak line is dropped. After three consecutive wrong practice answers in one phase, this is `lines.repeated_miss`. Absent on check and after cards. |
 | **streak** | int | Current practice streak; an `after` answer leaves it unchanged |
 | requeued | bool | True when a missed item will come back later this phase |
 
 ### `word_read`
-The payoff after a real word is read correctly for the first time.
+The payoff after a real word is read correctly for the first time, or after a correct `after` answer. The before/after word is kept out of all intervening practice and checks. Its `word_read` has no `line`.
 
 | Field | Type | Notes |
 | --- | --- | --- |
@@ -169,7 +169,7 @@ End of a decode check.
 | passed | bool | |
 | construction | {target: str, correct: bool} | Batch 1 only. Records the preceding build card; the pass rule still uses only the five reading cards. |
 
-For Batch 1, `flow.check_results["1"]["first_attempt"]` preserves `{"construction": bool, "new_read": {block: bool, block: bool}}` from the first check. Retrying after check practice updates the latest `passed` and `correct` fields without replacing this evidence. The chosen construction block is saved in `export_state()` so a resumed check replays the same cards.
+For Batch 1, `flow.check_results["1"]["first_attempt"]` preserves `{"construction": bool, "new_read": {block: bool, block: bool}}` from the first check. Retrying after check practice updates the latest `passed` and `correct` fields without replacing this evidence. The construction card appears only on the first attempt; its score field continues to describe that first card on a retry. A 5/5 retry uses `lines.decode_check_pass`, while `lines.decode_check_perfect` is reserved for a first-attempt 5/5. The chosen construction block is saved in `export_state()` so a resumed check replays the same cards.
 
 ### `milestone`
 | Field | Type | Notes |
@@ -234,5 +234,5 @@ flow.submit("", active_ms=41000) ->  # time before clock_start is ignored
 - Every event has `kind`, and every **bold** field above for its kind.
 - Every `narrator.line_id` resolves to a line in `sejong.json`, and its `text` has no unfilled `{placeholder}`.
 - No `question`, `predict` choice or `display` uses a letter outside `letters_known` (the ungraded `before_word` is shown before any letters are known).
-- Check and after results have no `line`. The after question accepts `roman_variants`, does not affect practice, and always leads to Victory 1.
+- Check and after results have no `line`. The after question accepts `roman_variants`, does not affect practice, gives the meaning on a correct answer, and always leads to Victory 1.
 - `export_state()` → `from_state()` before the clock, before the after question, or mid-batch, then the same answers, gives the same events as an uninterrupted run (same seed).
