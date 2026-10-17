@@ -38,6 +38,11 @@ def show_line(line):
     print(f"{line['speaker'].title()}: {line['text']}")
 
 
+def wait_for_enter():
+    while input("[Enter] ").strip():
+        print("Press Enter without typing to continue. Answers go at the choice or text prompt.")
+
+
 def render(events, clock):
     for event in events:
         kind = event["kind"]
@@ -84,7 +89,13 @@ def render(events, clock):
             if event["input"] == "choice":
                 for index, choice in enumerate(event["choices"], 1):
                     print(f"  {index}. {choice}")
-            raw = input("> " if event["input"] != "continue" else "[Enter] ")
+                prompt = f"Choice (1-{len(event['choices'])} or exact option): "
+                raw = input(prompt)
+            elif event["input"] == "continue":
+                wait_for_enter()
+                raw = ""
+            else:
+                raw = input("> ")
             elapsed = clock.take()
             if event["input"] == "choice" and raw.isdigit():
                 index = int(raw) - 1
@@ -92,7 +103,7 @@ def render(events, clock):
                     raw = event["choices"][index]
             return raw, elapsed
         if kind in ("narrator", "letter_intro", "reveal", "word_read", "milestone", "result"):
-            input("[Enter] ")
+            wait_for_enter()
             clock.mark()
     return None
 
