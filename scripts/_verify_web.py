@@ -1,4 +1,14 @@
-"""Phone-sized browser checks for the static Sejong renderer."""
+"""Phone-sized browser checks for the static Sejong renderer.
+
+Requires Playwright and Chromium, which are not part of the core project:
+
+    pip install -r requirements-web.txt
+    python -m playwright install chromium
+
+Screenshots default to the ignored .verify_out/shots/; pass
+--shots-dir <path> to write them elsewhere (e.g. to refresh the committed
+references under docs/tasks/2026-10-17_sejong-web-shots).
+"""
 
 import contextlib
 import json

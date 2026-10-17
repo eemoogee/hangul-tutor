@@ -1,0 +1,12 @@
+# Dependencies for the web build and browser checks.
+#
+# The browser checks in scripts/_verify_web.py need Playwright plus a
+# Chromium download; a plain interpreter without them fails with
+# ModuleNotFoundError: No module named 'playwright'.
+#
+#   pip install -r requirements-web.txt
+#   python -m playwright install chromium
+#
+# This is separate from requirements-finetune.txt (the model work).
+
+playwright==1.64.0
