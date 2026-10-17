@@ -25,16 +25,16 @@ flow   = SejongFlow.from_state(quiz, content, text)
 - `seed` makes question order repeatable for tests.
 - `answer` is the text typed, or the exact `choices` string tapped. `""` means a tap on a "continue" prompt.
 - Commands: `"/hint"` (only when the current question says `hint_available`), `"/quit"`. Anything else starting with `/` returns a `notice` and changes nothing.
-- `active_ms` is the active time since the previous call, already idle-capped by the renderer (see Timer). Python ignores time sent before the first Batch 0 `letter_intro`; it adds later time to the saved total.
+- `active_ms` is the active time since the previous call, already idle-capped by the renderer (see Timer). Python ignores time sent at the `before` continue prompt; it adds time from Batch 0 onward.
 - `resume("reopen")` after the app is reopened from saved state; `resume("pause")` after the page comes back from being hidden or idle. Each returns the right narrator line, then repeats the current screen so the renderer can redraw it.
 - Every returned list ends with exactly one `await` or one `finished` event.
 
 ## Display rules for renderers
 
 1. Show events in list order.
-2. `narrator`, `letter_intro`, `reveal`, `word_read` and `milestone` each occupy the screen until the learner taps. The tap is handled locally: **no Python call**. Then show the next event.
+2. `narrator`, `before_word`, `letter_intro`, `reveal`, `word_read` and `milestone` each occupy the screen until the learner taps. The tap is handled locally: **no Python call**. Then show the next event. The `lines.before_show` tap is the following `await` with `input: "continue"`; send `submit("")` on that tap to start Batch 0.
 3. `stage` updates the header and shows nothing by itself.
-4. `result` replaces the practice or check question card it answers (same `qid`) and waits for a local tap. Baseline and post-test answers go directly to the next question or the final `score`, without per-question feedback.
+4. `result` replaces the question card it answers (same `qid`) and waits for a local tap. The `after` result has no `line`; the next narrator line closes the before/after moment.
 5. On `await`, show the input and send the answer with `submit()`.
 6. Unknown `kind`: skip it and log it. Unknown fields: ignore them. Python may add fields without breaking older renderers.
 7. After every `submit()`, save `flow.export_state()` (browser: IndexedDB).
@@ -60,7 +60,7 @@ Header update when the batch or phase changes.
 | --- | --- | --- |
 | **batch_id** | int | 0 or 1 in the slice |
 | **batch_name** | str | "The Revelation" |
-| **phase** | str | `intro`, `baseline`, `discover`, `predict_reveal`, `recognize`, `retrieve`, `build`, `decode`, `check`, `post_test`, `done` |
+| **phase** | str | `intro`, `before`, `discover`, `predict_reveal`, `recognize`, `retrieve`, `build`, `decode`, `check`, `check_practice`, `after`, `done` |
 | **letters_known** | list[str] | Every letter taught so far, in teaching order |
 
 ### `letter_intro`
@@ -76,6 +76,13 @@ One new letter, one screen.
 | **shape_source** | str | `"haerye"` |
 | related | str | A known letter this one builds on ("ㄴ" for ㄷ). Lets the renderer show the two side by side, so the learner sees the relationship before Jeong explains it. |
 | notice_line | narrator | Jeong's observation, if the letter has one |
+
+### `before_word`
+An ungraded word shown after the intro. It occupies the screen until a local tap, like `word_read`. The event deliberately gives neither romanization nor meaning.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| **ko** | str | The word from `before_after.word` |
 
 ### `predict`
 Unscored guess before a block is revealed. Always followed by an `await` with `input: "choice"`.
@@ -105,7 +112,7 @@ One question card.
 | Field | Type | Notes |
 | --- | --- | --- |
 | **qid** | str | Unique within the run, e.g. `"b0-build-7"` |
-| **context** | `"practice"` \| `"baseline"` \| `"check"` \| `"check_practice"` \| `"post_test"` | Check and baseline cards look plainer: no streak, no hint |
+| **context** | `"practice"` \| `"check"` \| `"check_practice"` \| `"after"` | Check and after cards have no hint. The after card asks for the word shown before Batch 0 and does not count as practice. |
 | **mode** | str | Engine mode (`build_syllable`, `read_aloud`, `match_sound`, …). For logs and styling only. |
 | **prompt** | str | Instruction line, e.g. "How do you read this?" |
 | **display** | str | The big glyph, block or word. May be `""` when the prompt says it all. |
@@ -118,7 +125,7 @@ One question card.
 Build cards offer at least one distractor with the same consonant and a different vowel, and one with the same vowel and a different consonant. Batch 1 asks only blocks containing a new Batch 1 letter.
 
 ### `result`
-The grade for a practice or check question. Baseline and post-test questions emit no `result`; only their final `score` is shown. The renderer shows the useful fact first, then the line.
+The grade for a practice, check, or after question. The renderer shows the useful fact first, then the line.
 
 | Field | Type | Notes |
 | --- | --- | --- |
@@ -128,8 +135,8 @@ The grade for a practice or check question. Baseline and post-test questions emi
 | **correct_answer** | str | Display form |
 | chosen_is | str | If the wrong answer is another real letter/block, what it is ("ㅋ") |
 | tell | str | The confusion-pair tell from `sejong.json` ("ㄷ has the extra stroke on top.") |
-| line | narrator | Jeong's reaction, if any. Correct practice lines are occasional; a streak at 5/10/15 uses its streak line here instead. After three consecutive wrong practice answers in one phase, this is `lines.repeated_miss`. Absent on check cards. |
-| **streak** | int | Current streak after this answer (0 after a miss) |
+| line | narrator | Jeong's reaction, if any. Correct practice lines are occasional; a streak at 5/10/15 uses its streak line here instead. After three consecutive wrong practice answers in one phase, this is `lines.repeated_miss`. Absent on check and after cards. |
+| **streak** | int | Current practice streak; an `after` answer leaves it unchanged |
 | requeued | bool | True when a missed item will come back later this phase |
 
 ### `word_read`
@@ -151,16 +158,15 @@ The payoff after a real word is read correctly for the first time.
 The question stays open; the next `await` is for the same `qid`. A hinted correct answer counts for practice but is marked assisted (check rules: `reading_check.py`).
 
 ### `score`
-End of the baseline, the decode check, or the post-test.
+End of a decode check.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| **context** | `"baseline"` \| `"check"` \| `"post_test"` | |
+| **context** | `"check"` | |
 | **correct** | int | |
 | **size** | int | |
-| pass_score | int | Check only (4) |
-| passed | bool | Check only |
-| before | int | Post-test only: the baseline score, for the before/after screen |
+| pass_score | int | Passing threshold (4) |
+| passed | bool | |
 
 ### `milestone`
 | Field | Type | Notes |
@@ -191,7 +197,7 @@ What the renderer should ask for next. Always last in the list (unless `finished
 ## Timer
 
 - The renderer counts active milliseconds. It stops counting when the page is hidden (`visibilitychange`) or after **120 s** without input, and resumes on the next interaction.
-- It sends the elapsed active time with every `submit()`. Python starts the saved total at the first Batch 0 `letter_intro`, after the baseline or skip, and emits `lines.clock_start` immediately before Batch 0's intro line.
+- It sends the elapsed active time with every `submit()`. Python ignores time through the `before` continue tap, then starts the saved total in Batch 0. It emits `lines.clock_start` immediately before Batch 0's intro line. Time spent answering the `after` question counts.
 - The time is shown **only** on `milestone` screens, never during questions.
 - When counting resumes after a hide or idle stop, the renderer calls `resume("pause")` before anything else, so Jeong's "the clock stopped" line is true.
 
@@ -202,12 +208,13 @@ flow.start() ->
 [ {"kind":"stage","batch_id":0,"batch_name":"The Revelation","phase":"intro","letters_known":[]},
   {"kind":"narrator","speaker":"sejong","text":"My people could not write their own words. …","line_id":"lines.intro.0","source":"real, paraphrased (Sejong's preface)"},
   … the rest of the intro lines …,
-  {"kind":"narrator","speaker":"jeong","text":"First, how much can you read already? …","line_id":"lines.baseline_offer","source":"invented"},
-  {"kind":"await","input":"choice","choices":["Take the quick test","Skip"]} ]
+  {"kind":"stage","batch_id":0,"batch_name":"The Revelation","phase":"before","letters_known":[]},
+  {"kind":"before_word","ko":"나무"},
+  {"kind":"narrator","line_id":"lines.before_show", …},
+  {"kind":"await","input":"continue"} ]
 
-flow.submit("Skip", active_ms=41000) ->
-[ {"kind":"narrator","speaker":"jeong","text":"Skipping the test. Confident, or cautious? We shall see.","line_id":"lines.baseline_skip","source":"invented"},
-  {"kind":"stage","batch_id":0,"batch_name":"The Revelation","phase":"discover","letters_known":[]},
+flow.submit("", active_ms=41000) ->  # time before clock_start is ignored
+[ {"kind":"stage","batch_id":0,"batch_name":"The Revelation","phase":"discover","letters_known":[]},
   {"kind":"narrator","line_id":"lines.clock_start", …},
   {"kind":"narrator","speaker":"jeong","text":"Four letters. Two consonants, two vowels. That is enough to begin.", …},
   {"kind":"letter_intro","jamo":"ㄴ","type":"consonant","roman":"n","sound":"n, as in 'no'","shape":"Your tongue tip touching …","shape_source":"haerye"},
@@ -223,6 +230,6 @@ flow.submit("Skip", active_ms=41000) ->
 - Every list returned by `start`, `submit` and `resume` ends with exactly one `await` or `finished`.
 - Every event has `kind`, and every **bold** field above for its kind.
 - Every `narrator.line_id` resolves to a line in `sejong.json`, and its `text` has no unfilled `{placeholder}`.
-- No `question` (except `context: "baseline"`), `predict` choice or `display` uses a letter outside `letters_known`. The post-test remains strict.
-- Baseline and post-test cards emit no `result`; check results have no `line`.
-- `export_state()` → `from_state()` mid-batch, then the same answers, gives the same events as an uninterrupted run (same seed).
+- No `question`, `predict` choice or `display` uses a letter outside `letters_known` (the ungraded `before_word` is shown before any letters are known).
+- Check and after results have no `line`. The after question accepts `roman_variants`, does not affect practice, and always leads to Victory 1.
+- `export_state()` → `from_state()` before the clock, before the after question, or mid-batch, then the same answers, gives the same events as an uninterrupted run (same seed).
