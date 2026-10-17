@@ -52,7 +52,7 @@
           "source": "haerye",
           "notice_line": {
             "speaker": "jeong",
-            "text": "ㄴ, with an added stroke. His Majesty preferred a system to a collection.",
+            "text": "His Majesty preferred a system to a collection.",
             "source": "invented"
           }
         },
@@ -173,7 +173,7 @@
           "source": "haerye",
           "notice_line": {
             "speaker": "jeong",
-            "text": "Start with ㅁ; add two strokes to make ㅂ. Another letter, without another committee.",
+            "text": "Another letter, without another committee.",
             "source": "invented"
           }
         },
@@ -183,12 +183,7 @@
           "roman": "eo",
           "sound": "uh, as in 'sun'",
           "shape": "ㅏ turned around: the dot is on the left now.",
-          "source": "haerye",
-          "notice_line": {
-            "speaker": "jeong",
-            "text": "Notice: ㅏ, facing the other way.",
-            "source": "invented"
-          }
+          "source": "haerye"
         },
         {
           "jamo": "ㅜ",
@@ -199,7 +194,7 @@
           "source": "haerye",
           "notice_line": {
             "speaker": "jeong",
-            "text": "Notice: ㅗ, upside down. Yes, again.",
+            "text": "Yes, again.",
             "source": "invented"
           }
         }
@@ -367,18 +362,13 @@
       },
       {
         "speaker": "jeong",
-        "text": "Twenty-four of His Majesty's letters are still in use today. Those are your test.",
-        "source": "real (28 created, 4 no longer used)"
-      },
-      {
-        "speaker": "jeong",
         "text": "A confident claim. Let us find out how confidently I should have written it.",
         "source": "invented"
       },
       {
         "speaker": "jeong",
-        "text": "The clock starts now.",
-        "source": "invented"
+        "text": "Twenty-four of His Majesty's letters are still in use today. Those are your test.",
+        "source": "real (28 created, 4 no longer used)"
       }
     ],
     "baseline_offer": {
@@ -400,7 +390,7 @@
     },
     "predict_prompt": {
       "speaker": "jeong",
-      "text": "You know {consonant} and you know {vowel}. Put them together. What does it say?",
+      "text": "You know {consonant} and you know {vowel}. Put them together. Which block do they make?",
       "source": "invented"
     },
     "predict_reveal": {
@@ -592,6 +582,23 @@
       "speaker": "jeong",
       "text": "Not yet. Look again.",
       "source": "invented"
+    },
+    "clock_start": {
+      "speaker": "jeong",
+      "text": "The clock starts now.",
+      "source": "invented"
+    },
+    "predict_wrong": {
+      "side": {
+        "speaker": "jeong",
+        "text": "Close. A tall vowel like {vowel} stands beside the consonant.",
+        "source": "invented"
+      },
+      "stack": {
+        "speaker": "jeong",
+        "text": "Close. A flat vowel like {vowel} sits underneath the consonant.",
+        "source": "invented"
+      }
     }
   },
   "accepted_rule": "Grading uses the engine's roman_variants() only; this file does not add spellings. Engine today: ㅓ = eo only; ㅜ = u or oo; ㄷ/ㅂ = d/b only; ㅏ/ㅗ = a/o only. No alias is shared between two letters taught together.",
