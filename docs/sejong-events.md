@@ -37,7 +37,7 @@ flow   = SejongFlow.from_state(quiz, content, text)
 4. `result` replaces the question card it answers (same `qid`) and waits for a local tap. The `after` result has no `line`; a correct answer is followed by a line-free `word_read` giving the word's meaning, then the narrator closes the before/after moment. A wrong answer goes directly to the narrator line.
 5. On `await`, show the input and send the answer with `submit()`.
 6. Unknown `kind`: skip it and log it. Unknown fields: ignore them. Python may add fields without breaking older renderers.
-7. After every `submit()`, save `flow.export_state()` (browser: IndexedDB).
+7. After every `submit()`, save `flow.export_state()` with the renderer's app version (browser: one `localStorage` key). Guard storage reads and writes so unavailable storage does not stop play.
 
 ## Events
 
