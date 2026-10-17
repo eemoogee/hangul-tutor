@@ -371,11 +371,6 @@
         "source": "real (28 created, 4 no longer used)"
       }
     ],
-    "baseline_offer": {
-      "speaker": "jeong",
-      "text": "First, how much can you read already? Eight quick questions. Guess freely. Or skip, if you are confident there is nothing to measure.",
-      "source": "invented"
-    },
     "batch_intro": {
       "0": {
         "speaker": "jeong",
@@ -548,16 +543,6 @@
       "text": "도도. 'Haughty.' A word my colleagues never needed to read. They only needed to be it.",
       "source": "invented"
     },
-    "baseline_skip": {
-      "speaker": "jeong",
-      "text": "Skipping the test. Confident, or cautious? We shall see.",
-      "source": "invented"
-    },
-    "baseline_zero": {
-      "speaker": "jeong",
-      "text": "Then we begin at the beginning. A perfectly respectable place.",
-      "source": "invented"
-    },
     "return_after_pause": {
       "speaker": "jeong",
       "text": "Welcome back. The clock stopped while you were away. I am more patient than I look.",
@@ -599,6 +584,44 @@
         "text": "Close. A flat vowel like {vowel} sits underneath the consonant.",
         "source": "invented"
       }
+    },
+    "before_show": {
+      "speaker": "jeong",
+      "text": "Can you read this? No? Good. Remember that.",
+      "source": "invented"
+    },
+    "after_ask": {
+      "speaker": "jeong",
+      "text": "And now?",
+      "source": "invented"
+    },
+    "after_right": {
+      "speaker": "jeong",
+      "text": "A little while ago, that was a squiggle.",
+      "source": "invented"
+    },
+    "after_close": {
+      "speaker": "jeong",
+      "text": "Close. It reads {roman}: \"{en}.\" A little while ago, that was a squiggle.",
+      "source": "invented"
+    },
+    "baseline_offer": {
+      "speaker": "jeong",
+      "text": "First, how much can you read already? Eight quick questions. Guess freely. Or skip, if you are confident there is nothing to measure.",
+      "source": "invented",
+      "deprecated": "Remove after the before/after change is merged."
+    },
+    "baseline_skip": {
+      "speaker": "jeong",
+      "text": "Skipping the test. Confident, or cautious? We shall see.",
+      "source": "invented",
+      "deprecated": "Remove after the before/after change is merged."
+    },
+    "baseline_zero": {
+      "speaker": "jeong",
+      "text": "Then we begin at the beginning. A perfectly respectable place.",
+      "source": "invented",
+      "deprecated": "Remove after the before/after change is merged."
     }
   },
   "accepted_rule": "Grading uses the engine's roman_variants() only; this file does not add spellings. Engine today: ㅓ = eo only; ㅜ = u or oo; ㄷ/ㅂ = d/b only; ㅏ/ㅗ = a/o only. No alias is shared between two letters taught together.",
@@ -637,5 +660,11 @@
     "'Show-off' is reserved for a perfect decode check.",
     "notice_line is a visual observation; the 'shape' field is the historical (Haerye) account. Keep them distinct.",
     "return_after_pause is only true because the timer stops when the page is hidden or idle over 120 s."
-  ]
+  ],
+  "before_after": {
+    "word": "나무",
+    "roman": "namu",
+    "en": "tree",
+    "note": "Shown unscored right after the intro; asked again (typed) just before Victory 1. Replaces the 8-question baseline and post-test."
+  }
 }
