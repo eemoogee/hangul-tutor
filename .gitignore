@@ -35,6 +35,8 @@ production_probe_raw_*.jsonl
 
 # Build output
 dist/
+web/engine/
+web/pyodide/
 
 # Backup files (alternate naming convention)
 data/user_progress.json.bak-*
