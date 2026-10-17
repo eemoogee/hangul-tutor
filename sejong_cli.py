@@ -51,6 +51,8 @@ def render(events, clock):
             continue
         if kind == "narrator":
             show_line(event)
+        elif kind == "before_word":
+            print(event["ko"])
         elif kind == "letter_intro":
             print(f"{event['jamo']} = {event['roman']} — {event['sound']}\n{event['shape']}")
             if "notice_line" in event:
@@ -102,7 +104,8 @@ def render(events, clock):
                 if 0 <= index < len(event["choices"]):
                     raw = event["choices"][index]
             return raw, elapsed
-        if kind in ("narrator", "letter_intro", "reveal", "word_read", "milestone", "result"):
+        if (kind in ("narrator", "before_word", "letter_intro", "reveal", "word_read", "milestone", "result")
+                and not (kind == "narrator" and event.get("line_id") == "lines.before_show")):
             wait_for_enter()
             clock.mark()
     return None

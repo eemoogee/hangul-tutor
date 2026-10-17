@@ -23,10 +23,6 @@ class SejongFlow:
         self.batch_index = 0
         self.letters_known = []
         self.active_ms = 0
-        self.baseline_score = None
-        self.post_score = None
-        self.assessment_items = []
-        self.assessment_correct = 0
         self.remaining = []
         self.round_size = 0
         self.round_index = 0
@@ -67,7 +63,11 @@ class SejongFlow:
             last_card = next((event for event in reversed(events)
                               if event["kind"] == "narrator"), None)
         self.screen = [self._stage()]
-        if last_card is not None:
+        if self.phase == "before":
+            self.screen.extend(event for event in events
+                               if event["kind"] == "before_word" or
+                               event["kind"] == "narrator" and event["line_id"] == "lines.before_show")
+        elif last_card is not None:
             self.screen.append(last_card)
         self.screen.append(prompt)
         return events + [prompt]
@@ -109,38 +109,11 @@ class SejongFlow:
         self.phase = "intro"
         events = [self._stage()]
         events += [self._line(f"lines.intro.{i}") for i in range(len(self.content["lines"]["intro"]))]
-        events.append(self._line("lines.baseline_offer"))
-        return self._emit(events, {"kind": "await", "input": "choice",
-                                   "choices": ["Take the quick test", "Skip"]})
-
-    def _assessment(self, phase):
-        self.phase = phase
-        self.assessment_items = [x["jamo"] for b in self.content["batches"] for x in b["letters"]]
-        self.rng.shuffle(self.assessment_items)
-        self.assessment_correct = 0
-        return self._assessment_question([self._stage()])
-
-    def _assessment_question(self, events):
-        if not self.assessment_items:
-            score = self.assessment_correct
-            if self.phase == "baseline":
-                self.baseline_score = score
-                events.append({"kind": "score", "context": "baseline", "correct": score, "size": 8})
-                if score == 0:
-                    events.append(self._line("lines.baseline_zero"))
-                return self._enter_batch(events)
-            self.post_score = score
-            events.append({"kind": "score", "context": "post_test", "correct": score,
-                           "size": 8, "before": self.baseline_score})
-            return self._victory(events)
-        letter = self.assessment_items.pop(0)
-        romans = [x["roman"] for b in self.content["batches"] for x in b["letters"]]
-        answer = self._letter(letter)["roman"]
-        choices = self.rng.sample([x for x in romans if x != answer], 3) + [answer]
-        self.rng.shuffle(choices)
-        return self._question(events, letter, "match_sound", answer,
-                              "What sound does this letter make?", letter, "choice", choices,
-                              context=self.phase, hint=False)
+        self.phase = "before"
+        events.append(self._stage())
+        events.append({"kind": "before_word", "ko": self.content["before_after"]["word"]})
+        events.append(self._line("lines.before_show"))
+        return self._emit(events, {"kind": "await", "input": "continue"})
 
     def _enter_batch(self, events):
         batch = self._batch()
@@ -306,9 +279,13 @@ class SejongFlow:
         if self.batch_index == 0:
             self.batch_index = 1
             return self._enter_batch(events)
-        if self.baseline_score is None or self.baseline_score >= 6:
-            return self._victory(events)
-        return self._assessment_with(events)
+        self.phase = "after"
+        events.append(self._stage())
+        events.append(self._line("lines.after_ask"))
+        word = self.content["before_after"]
+        return self._question(events, word["word"], "read_aloud", word["roman"],
+                              "How do you read this?", word["word"], "text",
+                              context="after", hint=False)
 
     def _check_question(self, events):
         if self.check.finished:
@@ -335,14 +312,6 @@ class SejongFlow:
             seen.append(q.letter)
         return self._question(events, q.letter, "read_aloud", q.correct_answer,
                               "Read this without a hint.", q.letter, "text", context="check", hint=False)
-
-    def _assessment_with(self, events):
-        self.phase = "post_test"
-        self.assessment_items = [x["jamo"] for b in self.content["batches"] for x in b["letters"]]
-        self.rng.shuffle(self.assessment_items)
-        self.assessment_correct = 0
-        events.append(self._stage())
-        return self._assessment_question(events)
 
     def _check_practice_question(self, events):
         if not self.check_practice:
@@ -441,12 +410,8 @@ class SejongFlow:
                 return [{"kind": "hint", "qid": self.current["card"]["qid"],
                          "text": self._hint(self.current["target"])}, self.screen[-1]]
             return [{"kind": "notice", "text": "That command is unavailable here."}, self.screen[-1]]
-        if self.phase == "intro":
-            if answer not in ("Take the quick test", "Skip"):
-                return [{"kind": "notice", "text": "Choose a displayed option."}, self.screen[-1]]
-            if answer == "Skip":
-                return self._enter_batch([self._line("lines.baseline_skip")])
-            return self._assessment("baseline")
+        if self.phase == "before":
+            return self._enter_batch([])
         if self.phase == "predict_reveal":
             if answer not in self.current["choices"]:
                 return [{"kind": "notice", "text": "Choose a displayed option."}, self.screen[-1]]
@@ -470,10 +435,8 @@ class SejongFlow:
             return [{"kind": "notice", "text": "Type the sound in English letters."}, self.screen[-1]]
         target = self.current["target"]
         context = self.current["context"]
-        if context in ("baseline", "post_test"):
-            correct = answer == self.current["answer"]
-            self.assessment_correct += int(correct)
-            return self._assessment_question([])
+        if context == "after":
+            correct = normalize_roman(answer) in self.quiz.roman_variants(target)
         elif context == "check":
             correct = self.check.submit(answer)
         else:
@@ -484,6 +447,11 @@ class SejongFlow:
                   "answer": answer, "correct_answer": self.current["answer"],
                   "streak": self.streak, "requeued": False}
         events = [result]
+        if context == "after":
+            word = self.content["before_after"]
+            events.append(self._line("lines.after_right" if correct else "lines.after_close",
+                                     roman=word["roman"], en=word["en"]))
+            return self._victory(events)
         if context in ("practice", "check_practice"):
             line, chosen, tell = self._reaction(correct, target, answer)
             if line is not None:
@@ -540,8 +508,7 @@ class SejongFlow:
                      "correct": list(self.check.correct),
                      "missed": {k: asdict(v) for k, v in self.check.missed.items()},
                      "retried": list(self.check.retried)}
-        keys = ("phase", "batch_index", "letters_known", "active_ms", "baseline_score",
-                "post_score", "assessment_items", "assessment_correct", "remaining",
+        keys = ("phase", "batch_index", "letters_known", "active_ms", "remaining",
                 "round_size", "round_index", "qid_number", "current", "screen",
                 "assisted", "consecutive_wrong", "repeated_miss_index", "check_results",
                 "check_practice", "streak", "correct_line_index", "last_correct_line",

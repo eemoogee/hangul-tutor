@@ -29,24 +29,20 @@ def new_flow(seed=1):
 
 
 def answer_for(flow, events):
-    if flow.phase == "intro":
-        return "Take the quick test"
+    if flow.phase == "before":
+        return ""
     if flow.phase == "predict_reveal":
         return flow.current["target"]
-    if flow.phase == "baseline":
-        return next(x for x in flow.current["card"]["choices"] if x != flow.current["answer"])
     return flow.current["answer"]
 
 
-def run(flow, *, baseline=True, mutate=None, tick=1000, first=None):
+def run(flow, *, mutate=None, tick=1000, first=None):
     events = first if first is not None else flow.start()
     transcript = [events]
     for step in range(300):
         if events[-1]["kind"] == "finished":
             return transcript
         answer = answer_for(flow, events)
-        if flow.phase == "intro" and not baseline:
-            answer = "Skip"
         if mutate:
             answer = mutate(flow, events, answer, step)
         events = flow.submit(answer, active_ms=tick)
@@ -70,6 +66,7 @@ def contract():
         "question": ("qid", "context", "mode", "prompt", "display", "input", "hint_available"),
         "result": ("qid", "correct", "answer", "correct_answer", "streak", "requeued"),
         "word_read": ("ko", "roman", "en"),
+        "before_word": ("ko",),
         "hint": ("qid", "text"), "notice": ("text",),
         "score": ("context", "correct", "size"),
         "milestone": ("id", "seal", "active_ms", "time_text", "lines"),
@@ -86,7 +83,7 @@ def contract():
                 assert key in e, (e, key)
             if e["kind"] == "stage":
                 known = e["letters_known"]
-            if e["kind"] == "question" and e["context"] != "baseline":
+            if e["kind"] == "question":
                 for value in [e["display"], *e.get("choices", [])]:
                     for char in value:
                         if "가" <= char <= "힣":
@@ -98,10 +95,9 @@ def contract():
                 assert all(all(c in known and v in known and not final
                     for c, v, final in [flow.quiz._decompose_syllable(block)])
                     for block in e["choices"])
-            if e["kind"] == "result" and e["qid"].split("-")[1] == "check":
+            if e["kind"] == "result" and e["qid"].split("-")[1] in ("check", "after"):
                 assert "line" not in e
-            if e["kind"] == "result":
-                assert e["qid"].split("-")[1] not in ("baseline", "post_test")
+            assert e.get("context") not in ("baseline", "post_test")
             for line in ([e] if e["kind"] == "narrator" else
                          [e["line"]] if e["kind"] in ("result", "word_read") and "line" in e else
                          e["lines"] if e["kind"] == "milestone" else []):
@@ -110,18 +106,19 @@ def contract():
                     node = node[int(key)] if isinstance(node, list) else node[key]
                 assert line["source"] == node["source"]
                 assert not re.search(r"\{[^}]+\}", line["text"])
+                assert not line["line_id"].startswith("lines.baseline_")
 
 
 def order_and_scores():
     events = flattened(run(new_flow()))
     phases = [(e["batch_id"], e["phase"]) for e in events if e["kind"] == "stage"]
-    assert phases == [(0, "intro"), (0, "baseline"), (0, "discover"),
+    assert phases == [(0, "intro"), (0, "before"), (0, "discover"),
         (0, "predict_reveal"), (0, "build"), (0, "decode"), (0, "check"),
         (1, "discover"), (1, "predict_reveal"), (1, "recognize"),
         (1, "retrieve"), (1, "build"), (1, "decode"), (1, "check"),
-        (1, "post_test"), (1, "done")], phases
+        (1, "after"), (1, "done")], phases
     assert [e["context"] for e in events if e["kind"] == "score"] == [
-        "baseline", "check", "check", "post_test"]
+        "check", "check"]
     assert [e["id"] for e in events if e["kind"] == "milestone"] == [
         "first_breakthrough", "victory_1"]
     assert events[-1] == {"kind": "finished", "outcome": "victory_1"}
@@ -160,11 +157,13 @@ def narrator_and_words():
     words = [e for e in events if e["kind"] == "word_read"]
     assert len(words) == 18 and len({w["ko"] for w in words}) == 18
     assert words[0]["line"]["line_id"] == "lines.first_word_read"
-    assert next(w for w in words if w["ko"] == "바보")["line"]["line_id"] == "lines.fool_word"
-    assert next(w for w in words if w["ko"] == "도도")["line"]["line_id"] == "lines.dodo_word"
+    for word, line_id in (("바보", "lines.fool_word"), ("도도", "lines.dodo_word")):
+        payoff = next(w for w in words if w["ko"] == word)
+        assert payoff["line"]["line_id"] == ("lines.first_word_read" if payoff is words[0]
+                                                 else line_id)
 
 
-def clock_starts_after_baseline():
+def before_after_order_and_timer():
     flow = new_flow()
     events = flow.start()
     transcript = [events]
@@ -181,22 +180,34 @@ def clock_starts_after_baseline():
     clock_positions = [i for i, event in enumerate(all_events)
                        if event["kind"] == "narrator" and event["line_id"] == "lines.clock_start"]
     assert len(clock_positions) == 1
-    baseline_end = max(i for i, event in enumerate(all_events)
-                       if event["kind"] == "score" and event["context"] == "baseline")
+    before_positions = [i for i, event in enumerate(all_events) if event["kind"] == "before_word"]
+    assert len(before_positions) == 1
+    assert all_events[before_positions[0]] == {"kind": "before_word", "ko": "나무"}
+    before_show = next(i for i, event in enumerate(all_events)
+                       if event["kind"] == "narrator" and event["line_id"] == "lines.before_show")
     batch_intro = next(i for i, event in enumerate(all_events)
                        if event["kind"] == "narrator" and event["line_id"] == "lines.batch_intro.0")
-    assert baseline_end < clock_positions[0] == batch_intro - 1
+    assert before_positions[0] < before_show < clock_positions[0] == batch_intro - 1
+    after_positions = [i for i, event in enumerate(all_events)
+                       if event["kind"] == "question" and event["context"] == "after"]
+    assert len(after_positions) == 1
+    after_question = all_events[after_positions[0]]
+    assert after_question["display"] == "나무" and after_question["input"] == "text"
+    assert not after_question["hint_available"]
+    last_score = max(i for i, event in enumerate(all_events)
+                     if event["kind"] == "score" and event["context"] == "check")
+    victory_index = next(i for i, event in enumerate(all_events)
+                         if event["kind"] == "milestone" and event["id"] == "victory_1")
+    assert last_score < after_positions[0] < victory_index
     victory = next(event for event in all_events
                    if event["kind"] == "milestone" and event["id"] == "victory_1")
     assert victory["active_ms"] == expected_ms
 
 
-def assessments_have_no_feedback():
+def no_deprecated_assessments():
     events = flattened(run(new_flow()))
-    assert not any(e["kind"] == "result" and e["qid"].split("-")[1]
-                   in ("baseline", "post_test") for e in events)
-    assert [e["context"] for e in events if e["kind"] == "score"
-            and e["context"] in ("baseline", "post_test")] == ["baseline", "post_test"]
+    assert all(e.get("context") not in ("baseline", "post_test") for e in events)
+    assert not any(e.get("line_id", "").startswith("lines.baseline_") for e in events)
 
 
 def occasional_correct_lines():
@@ -353,9 +364,7 @@ def forty_failed_checks():
         if events[-1]["kind"] == "finished":
             break
         answer = answer_for(flow, events)
-        if flow.phase == "intro":
-            answer = "Skip"
-        elif flow.batch_index == 0 and flow.phase == "check":
+        if flow.batch_index == 0 and flow.phase == "check":
             fallback_seen |= flow.check.transfer_targets == []
             if failures < 40:
                 answer = "WRONG"
@@ -379,7 +388,7 @@ def unavailable_check_advances():
         for _ in range(100):
             if flow.batch_index == 1:
                 break
-            answer = "Skip" if flow.phase == "intro" else answer_for(flow, events)
+            answer = answer_for(flow, events)
             events = flow.submit(answer)
     assert flow.batch_index == 1
     assert flow.check_results["0"] == {"passed": False, "unavailable": True}
@@ -387,20 +396,22 @@ def unavailable_check_advances():
     assert events[-1]["kind"] == "await"
 
 
-def skip_cases():
-    assert not any(e["kind"] == "score" and e["context"] == "post_test"
-                   for e in flattened(run(new_flow(), baseline=False)))
-    count = 0
-    def one_wrong(flow, events, answer, step):
-        nonlocal count
-        if flow.phase == "baseline":
-            count += 1
-            if count > 1:
-                return flow.current["answer"]
-        return answer
-    events = flattened(run(new_flow(), mutate=one_wrong))
-    assert any(e["kind"] == "score" and e["context"] == "baseline" and e["correct"] == 7 for e in events)
-    assert not any(e["kind"] == "score" and e["context"] == "post_test" for e in events)
+def after_answers():
+    for answer, correct, line_id in (("namu", True, "lines.after_right"),
+                                     ("namoo", True, "lines.after_right"),
+                                     ("WRONG", False, "lines.after_close")):
+        flow = new_flow()
+        events = flow.start()
+        while flow.phase != "after":
+            events = flow.submit(answer_for(flow, events))
+        before = flow.quiz.session_total
+        events = flow.submit(answer, active_ms=777)
+        assert events[0]["kind"] == "result" and events[0]["correct"] is correct
+        assert "line" not in events[0] and not events[0]["requeued"]
+        assert events[1]["line_id"] == line_id and "{" not in events[1]["text"]
+        assert next(e for e in events if e["kind"] == "milestone")["id"] == "victory_1"
+        assert events[-1] == {"kind": "finished", "outcome": "victory_1"}
+        assert flow.quiz.session_total == before
 
 
 def replay_resume_quit():
@@ -429,6 +440,25 @@ def replay_resume_quit():
     assert flow.submit("/quit") == [{"kind": "finished", "outcome": "quit"}]
     continued = SejongFlow.from_state(HangulQuiz(persist=False), CONTENT, saved)
     assert flattened(run(continued, first=continued.resume("reopen")))[-1]["outcome"] == "victory_1"
+
+
+def before_after_resume():
+    flow = new_flow()
+    events = flow.start()
+    assert flow.phase == "before"
+    assert [e["kind"] for e in flow.screen] == ["stage", "before_word", "narrator", "await"]
+    clone = SejongFlow.from_state(HangulQuiz(persist=False), CONTENT, flow.export_state())
+    assert clone.resume("reopen")[1:] == flow.screen
+    assert clone.submit("", 60000) == flow.submit("", 60000)
+    assert flow.active_ms == clone.active_ms == 0
+    while flow.phase != "after":
+        answer = answer_for(flow, events)
+        events = flow.submit(answer, 300)
+        assert events == clone.submit(answer, 300)
+    saved = flow.export_state()
+    clone = SejongFlow.from_state(HangulQuiz(persist=False), CONTENT, saved)
+    assert clone.resume("reopen")[1:] == flow.screen
+    assert clone.submit("namu", 500) == flow.submit("namu", 500)
 
 
 def hints_and_scripts():
@@ -477,8 +507,8 @@ def timer():
 
 if __name__ == "__main__":
     for name, fn in (("event contract", contract), ("all-correct order and scores", order_and_scores),
-                     ("clock starts after baseline", clock_starts_after_baseline),
-                     ("assessment answers stay hidden", assessments_have_no_feedback),
+                     ("before/after order and clock", before_after_order_and_timer),
+                     ("no deprecated assessments", no_deprecated_assessments),
                      ("occasional correct lines", occasional_correct_lines),
                      ("streak line replaces correct line", streak_line_replaces_correct_line),
                      ("misses must be consecutive", consecutive_misses_only),
@@ -489,7 +519,9 @@ if __name__ == "__main__":
                      ("recognize reverses retrieve", recognize_reverses_retrieve),
                      ("40 failed Batch 0 checks", forty_failed_checks),
                      ("unavailable check advances", unavailable_check_advances),
-                     ("baseline skip paths", skip_cases), ("resume, replay, quit", replay_resume_quit),
+                     ("after answers and close", after_answers),
+                     ("resume at before and after", before_after_resume),
+                     ("resume, replay, quit", replay_resume_quit),
                      ("practice hints and script notices", hints_and_scripts),
                      ("file-free and silent", file_free), ("timer and verdict", timer)):
         check(name, fn)
