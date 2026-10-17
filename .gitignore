@@ -57,3 +57,7 @@ data/flash_progress.json.bak
 .env
 .env.*
 !.env.example
+
+# Editor settings and local web build copy
+.vscode/
+sejong-netlify/
