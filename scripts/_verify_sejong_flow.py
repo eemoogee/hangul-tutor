@@ -211,12 +211,16 @@ def no_deprecated_assessments():
 
 
 def occasional_correct_lines():
-    correct_results = []
+    eligible_results = []
     for seed in range(20):
-        events = flattened(run(new_flow(seed)))
+        transcript = run(new_flow(seed))
+        events = flattened(transcript)
         results = [e for e in events if e["kind"] == "result" and e["correct"]
                    and e["qid"].split("-")[1] in ("recognize", "retrieve", "build", "decode")]
-        correct_results.extend(results)
+        eligible_results.extend(e for group in transcript
+                                if not any(item["kind"] == "word_read" and "line" in item
+                                           for item in group)
+                                for e in group if e in results)
         previous_had_line = False
         line_ids = []
         for result in results:
@@ -228,7 +232,7 @@ def occasional_correct_lines():
                 line_ids.append(line_id)
         assert all(a != b for a, b in zip(line_ids, line_ids[1:]))
     share = sum(e.get("line", {}).get("line_id", "").startswith("lines.correct.")
-                for e in correct_results) / len(correct_results)
+                for e in eligible_results) / len(eligible_results)
     assert .20 <= share <= .45, share
 
 
@@ -241,7 +245,11 @@ def streak_line_replaces_correct_line():
                 continue
             if event["qid"].split("-")[1] not in ("recognize", "retrieve", "build", "decode"):
                 continue
-            assert event["line"]["line_id"] == f"lines.streak.{event['streak']}"
+            word_line = any(e["kind"] == "word_read" and "line" in e for e in group)
+            if word_line:
+                assert "line" not in event
+            else:
+                assert event["line"]["line_id"] == f"lines.streak.{event['streak']}"
             assert not any(e["kind"] == "narrator" and e["line_id"].startswith(
                 ("lines.correct.", "lines.streak.")) for e in group)
             streaks.append(event["streak"])
@@ -288,11 +296,129 @@ def batch_one_build_targets_and_choices():
             distractors = [x for x in card["choices"] if x != target]
             parts = [flow.quiz._decompose_syllable(x) for x in distractors]
             assert len(distractors) == 3 and len(set(card["choices"])) == 4
+            assert not set(card["choices"]) & {"누", "머", "버"}
             assert any(c == consonant and v != vowel for c, v, _ in parts)
             assert any(v == vowel and c != consonant for c, v, _ in parts)
         events = flow.submit(answer_for(flow, events))
-    assert len(targets) == len(set(targets)) == 12
-    assert not set(targets) & {"나", "노", "다", "도"}
+    assert len(targets) == len(set(targets)) == 9
+    assert set(targets) == {"너", "더", "두", "마", "모", "무", "바", "보", "부"}
+
+
+def held_back_before_check():
+    for seed in range(1, 11):
+        events = flattened(run(new_flow(seed)))
+        check_start = next(i for i, event in enumerate(events)
+                           if event["kind"] == "stage" and event["batch_id"] == 1
+                           and event["phase"] == "check")
+        def strings(value):
+            if isinstance(value, str):
+                yield value
+            elif isinstance(value, dict):
+                for child in value.values():
+                    yield from strings(child)
+            elif isinstance(value, list):
+                for child in value:
+                    yield from strings(child)
+        assert not any(block in value for event in events[:check_start]
+                       for value in strings(event) for block in ("누", "머", "버"))
+
+
+def construction_and_first_attempt():
+    held = {"누", "머", "버"}
+    for seed in range(1, 11):
+        flow = new_flow(seed)
+        events = flow.start()
+        while not (flow.batch_index == 1 and flow.phase == "check"):
+            events = flow.submit(answer_for(flow, events))
+        card = flow.current["card"]
+        target = flow.current["target"]
+        assert card["context"] == "check" and card["mode"] == "build_syllable"
+        assert card["input"] == "choice" and not card["hint_available"]
+        assert card["parts"] == list(flow.quiz._decompose_syllable(target)[:2])
+        assert target in held and len(set(card["choices"])) == 4
+        assert set(card["choices"]) & held == {target}
+        c, v = card["parts"]
+        distractors = [flow.quiz._decompose_syllable(x) for x in card["choices"] if x != target]
+        assert any(dc == c and dv != v for dc, dv, _ in distractors)
+        assert any(dv == v and dc != c for dc, dv, _ in distractors)
+        assert held.isdisjoint(flow.quiz.current_lesson["practice_syllables"])
+        assert held.isdisjoint(flow.quiz.current_lesson["mastery_syllables"])
+        events = flow.submit(target)
+        assert events[0]["correct"] and "line" not in events[0]
+        assert flow.quiz.progress["learner_items"].get(target)
+        assert set(flow.check.transfer_targets) == held - {target}
+        transcript = run(flow, first=events)
+        score = next(e for e in flattened(transcript) if e["kind"] == "score")
+        assert score["construction"] == {"target": target, "correct": True}
+        assert flow.check_results["1"]["first_attempt"] == {
+            "construction": True,
+            "new_read": {block: True for block in flow.check.transfer_targets}}
+
+    flow = new_flow()
+    def wrong_construction(flow, events, answer, step):
+        if flow.batch_index == 1 and flow.phase == "check":
+            if flow.current["card"]["mode"] == "build_syllable":
+                return next(x for x in flow.current["card"]["choices"] if x != answer)
+            if flow.check.index == 4:
+                return "WRONG"
+        return answer
+    scores = [e for e in flattened(run(flow, mutate=wrong_construction)) if e["kind"] == "score"]
+    assert scores[-1]["passed"] and scores[-1]["correct"] == 4
+    assert scores[-1]["construction"]["correct"] is False
+    assert flow.check_results["1"]["first_attempt"]["construction"] is False
+
+    flow = new_flow()
+    first_targets = None
+    def fail_first_reading(flow, events, answer, step):
+        nonlocal first_targets
+        if (flow.batch_index == 1 and flow.phase == "check" and flow.check is not None
+                and flow.current["card"]["mode"] == "read_aloud"):
+            if first_targets is None:
+                first_targets = list(flow.check.transfer_targets)
+            if "first_attempt" not in flow.check_results.get("1", {}) and flow.check.index >= 3:
+                return "WRONG"
+        return answer
+    events = flattened(run(flow, mutate=fail_first_reading))
+    scores = [e for e in events if e["kind"] == "score"]
+    assert [score["passed"] for score in scores[-2:]] == [False, True]
+    assert scores[-2]["correct"] == 3
+    assert any(e["kind"] == "question" and e["context"] == "check_practice" for e in events)
+    assert flow.check_results["1"]["first_attempt"] == {
+        "construction": True, "new_read": {block: False for block in first_targets}}
+
+
+def replay_mid_check():
+    flow = new_flow()
+    events = flow.start()
+    while not (flow.batch_index == 1 and flow.phase == "check"):
+        events = flow.submit(answer_for(flow, events))
+    for _ in range(2):
+        clone = SejongFlow.from_state(HangulQuiz(persist=False), CONTENT, flow.export_state())
+        assert clone.construction_target == flow.construction_target
+        answer = answer_for(flow, events)
+        assert clone.submit(answer) == flow.submit(answer)
+        events = flow.screen
+    clone = SejongFlow.from_state(HangulQuiz(persist=False), CONTENT, flow.export_state())
+    while flow.outcome is None:
+        answer = answer_for(flow, events)
+        assert clone.submit(answer) == flow.submit(answer)
+        events = flow.screen
+
+
+def one_jeong_line_per_answer():
+    for seed in range(1, 31):
+        transcript = run(new_flow(seed))
+        words = [e for group in transcript for e in group if e["kind"] == "word_read"]
+        assert words[0]["line"]["line_id"] == "lines.first_word_read"
+        for index, group in enumerate(transcript):
+            assert not (any(e["kind"] == "result" and "line" in e for e in group)
+                        and any(e["kind"] == "word_read" and "line" in e for e in group))
+            if any(e["kind"] == "word_read" and "line" in e for e in group):
+                next_result = next((e for e in transcript[index + 1]
+                                    if e["kind"] == "result"), None)
+                if next_result is not None and next_result["correct"]:
+                    assert not next_result.get("line", {}).get("line_id", "").startswith(
+                        "lines.correct.")
 
 
 def wrong_predict_reaction():
@@ -513,6 +639,10 @@ if __name__ == "__main__":
                      ("streak line replaces correct line", streak_line_replaces_correct_line),
                      ("misses must be consecutive", consecutive_misses_only),
                      ("Batch 1 build targets and distractors", batch_one_build_targets_and_choices),
+                     ("held-back blocks stay unseen before check", held_back_before_check),
+                     ("construction and first-attempt evidence", construction_and_first_attempt),
+                     ("mid-check replay", replay_mid_check),
+                     ("one Jeong line per answer", one_jeong_line_per_answer),
                      ("wrong predict reaction", wrong_predict_reaction),
                      ("misses requeued", misses_requeue), ("narrator and word payoff", narrator_and_words),
                      ("check retry and independence", check_retry_independence),

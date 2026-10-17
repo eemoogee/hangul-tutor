@@ -147,6 +147,7 @@
     {
       "id": 1,
       "name": "First Words",
+      "held_back": ["누", "머", "버"],
       "phases": [
         "discover",
         "predict_reveal",

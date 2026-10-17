@@ -36,6 +36,8 @@ class SejongFlow:
         self.check = None
         self.check_results = {}
         self.check_practice = []
+        self.construction_target = None
+        self.construction_correct = None
         self.streak = 0
         self.correct_line_index = 0
         self.last_correct_line = False
@@ -91,12 +93,17 @@ class SejongFlow:
         vowels = [x for x in self.letters_known if self._letter(x)["type"] == "vowel"]
         return [self.quiz._compose_syllable(c, v) for c in consonants for v in vowels]
 
+    def _practice_blocks(self):
+        held_back = {block for batch in self.content["batches"][:self.batch_index + 1]
+                     for block in batch.get("held_back", [])}
+        return [block for block in self._known_blocks() if block not in held_back]
+
     def _letter(self, jamo):
         return next(letter for batch in self.content["batches"]
                     for letter in batch["letters"] if letter["jamo"] == jamo)
 
     def _custom_lesson(self):
-        blocks = self._known_blocks()
+        blocks = self._practice_blocks()
         self.quiz.start_custom_lesson({"id": 0, "title": self._batch()["name"],
             "letters": list(self.letters_known), "practice_syllables": blocks,
             "mastery_syllables": blocks,
@@ -156,7 +163,7 @@ class SejongFlow:
 
     def _predict(self, events):
         p = self._batch()["predict_reveal"]
-        options = self.rng.sample([x for x in self._known_blocks() if x != p["block"]], 2) + [p["block"]]
+        options = self.rng.sample([x for x in self._practice_blocks() if x != p["block"]], 2) + [p["block"]]
         self.rng.shuffle(options)
         self.current = {"kind": "predict", "target": p["block"], "choices": options}
         events.append(self._line("lines.predict_prompt", consonant=p["consonant"], vowel=p["vowel"]))
@@ -169,7 +176,7 @@ class SejongFlow:
             self.remaining = [x["jamo"] for x in self._batch()["letters"]]
         elif self.phase == "build":
             new_letters = {x["jamo"] for x in self._batch()["letters"]}
-            self.remaining = [block for block in self._known_blocks()
+            self.remaining = [block for block in self._practice_blocks()
                               if any(part in new_letters for part in self.quiz._decompose_syllable(block)[:2])]
         elif self.phase == "decode":
             self.remaining = [x["ko"] for x in self._batch()["words"]]
@@ -183,7 +190,7 @@ class SejongFlow:
 
     def _build_choices(self, target):
         consonant, vowel, _ = self.quiz._decompose_syllable(target)
-        blocks = self._known_blocks()
+        blocks = self._practice_blocks()
         same_consonant = [block for block in blocks if block != target
                           and self.quiz._decompose_syllable(block)[0] == consonant]
         same_vowel = [block for block in blocks if block != target
@@ -250,10 +257,26 @@ class SejongFlow:
     def _start_check(self, events):
         self.phase = "check"
         self.consecutive_wrong = 0
-        events += [self._stage(), self._line("lines.decode_check_intro")]
+        events.append(self._stage())
+        if not self._batch().get("held_back"):
+            events.append(self._line("lines.decode_check_intro"))
         return self._new_check(events)
 
     def _new_check(self, events):
+        held_back = self._batch().get("held_back", [])
+        if held_back:
+            if self.construction_target is None:
+                self.construction_target = self.rng.choice(held_back)
+            self.construction_correct = None
+            target = self.construction_target
+            c, v, _ = self.quiz._decompose_syllable(target)
+            return self._question(events, target, "build_syllable", target,
+                                  "Which block do these letters build?", f"{c} + {v}",
+                                  "choice", self._build_choices(target),
+                                  context="check", hint=False, parts=[c, v])
+        return self._new_reading_check(events)
+
+    def _new_reading_check(self, events):
         self._seed_engine()
         try:
             self.check = make_reading_check(self.quiz)
@@ -291,10 +314,20 @@ class SejongFlow:
         if self.check.finished:
             score = len(self.check.correct)
             passed = self.check.passed
-            self.check_results[str(self.batch_index)] = {"passed": passed, "correct": score}
+            record = self.check_results.setdefault(str(self.batch_index), {})
+            record.update({"passed": passed, "correct": score})
+            if self.construction_target is not None and "first_attempt" not in record:
+                record["first_attempt"] = {
+                    "construction": self.construction_correct,
+                    "new_read": {target: target in self.check.correct
+                                 for target in self.check.transfer_targets}}
             save_check_result(self.quiz, self.check)
-            events.append({"kind": "score", "context": "check", "correct": score,
-                           "size": len(self.check.questions), "pass_score": PASS_SCORE, "passed": passed})
+            score_event = {"kind": "score", "context": "check", "correct": score,
+                           "size": len(self.check.questions), "pass_score": PASS_SCORE, "passed": passed}
+            if self.construction_target is not None:
+                score_event["construction"] = {"target": self.construction_target,
+                                               "correct": self.construction_correct}
+            events.append(score_event)
             if passed:
                 events.append(self._line("lines.decode_check_perfect" if score == 5
                                          else "lines.decode_check_pass"))
@@ -345,7 +378,7 @@ class SejongFlow:
         return self._finish(events)
 
     def _chosen_tell(self, answer, target):
-        known_forms = self.letters_known + self._known_blocks()
+        known_forms = self.letters_known + self._practice_blocks()
         chosen = answer if answer in known_forms else None
         if chosen is None:
             chosen = next((form for form in known_forms
@@ -358,10 +391,13 @@ class SejongFlow:
                     return chosen, pair["tell"]
         return chosen, None
 
-    def _reaction(self, correct, target, answer):
+    def _reaction(self, correct, target, answer, word_line=False):
         if correct:
             self.streak += 1
             self.consecutive_wrong = 0
+            if word_line:
+                self.last_correct_line = True
+                return None, None, None
             if str(self.streak) in self.content["lines"]["streak"]:
                 self.last_correct_line = False
                 return self._line(f"lines.streak.{self.streak}"), None, None
@@ -438,7 +474,12 @@ class SejongFlow:
         if context == "after":
             correct = normalize_roman(answer) in self.quiz.roman_variants(target)
         elif context == "check":
-            correct = self.check.submit(answer)
+            if card["mode"] == "build_syllable":
+                self._seed_engine()
+                correct = self.quiz.answer(answer, self.current_engine_question).correct
+                self.construction_correct = correct
+            else:
+                correct = self.check.submit(answer)
         else:
             self._seed_engine()
             correct = self.quiz.answer(answer, self.current_engine_question,
@@ -453,7 +494,21 @@ class SejongFlow:
                                      roman=word["roman"], en=word["en"]))
             return self._victory(events)
         if context in ("practice", "check_practice"):
-            line, chosen, tell = self._reaction(correct, target, answer)
+            payoff = None
+            if correct and self.phase == "decode" and target not in self.words_read:
+                self.words_read.append(target)
+                word = next(x for x in self._batch()["words"] if x["ko"] == target)
+                payoff = {"kind": "word_read", "ko": target, "roman": word["roman"], "en": word["en"]}
+                path = ("lines.first_word_read" if len(self.words_read) == 1 else
+                        "lines.fool_word" if target == "바보" else
+                        "lines.dodo_word" if target == "도도" else None)
+                if path:
+                    payoff["line"] = self._line(path)
+                elif "first_read_line" in word:
+                    payoff["line"] = self._line_for_inline(word["first_read_line"],
+                        f"batches.{self.batch_index}.words.{self._batch()['words'].index(word)}.first_read_line")
+            line, chosen, tell = self._reaction(correct, target, answer,
+                                                 word_line=payoff is not None and "line" in payoff)
             if line is not None:
                 result["line"] = line
             result["streak"] = self.streak
@@ -469,20 +524,13 @@ class SejongFlow:
                     self.remaining.append(target)
                 else:
                     self.check_practice.append(target)
-            if correct and self.phase == "decode" and target not in self.words_read:
-                self.words_read.append(target)
-                word = next(x for x in self._batch()["words"] if x["ko"] == target)
-                payoff = {"kind": "word_read", "ko": target, "roman": word["roman"], "en": word["en"]}
-                path = ("lines.first_word_read" if len(self.words_read) == 1 else
-                        "lines.fool_word" if target == "바보" else
-                        "lines.dodo_word" if target == "도도" else None)
-                if path:
-                    payoff["line"] = self._line(path)
-                elif "first_read_line" in word:
-                    payoff["line"] = self._line_for_inline(word["first_read_line"],
-                        f"batches.{self.batch_index}.words.{self._batch()['words'].index(word)}.first_read_line")
+            if payoff is not None:
                 events.append(payoff)
         if context == "check":
+            if card["mode"] == "build_syllable":
+                if "first_attempt" not in self.check_results.get(str(self.batch_index), {}):
+                    events.append(self._line("lines.decode_check_intro"))
+                return self._new_reading_check(events)
             return self._check_question(events)
         if context == "check_practice":
             return self._check_practice_question(events)
@@ -512,7 +560,7 @@ class SejongFlow:
                 "round_size", "round_index", "qid_number", "current", "screen",
                 "assisted", "consecutive_wrong", "repeated_miss_index", "check_results",
                 "check_practice", "streak", "correct_line_index", "last_correct_line",
-                "words_read", "outcome")
+                "words_read", "outcome", "construction_target", "construction_correct")
         state = {key: getattr(self, key) for key in keys}
         state["check"] = check
         state["rng_state"] = self.rng.getstate()

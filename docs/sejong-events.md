@@ -122,7 +122,7 @@ One question card.
 | **hint_available** | bool | |
 | round | {index, size} | Position in the current phase, for the round bar. `size` can grow if a missed item is re-queued. |
 
-Build cards offer at least one distractor with the same consonant and a different vowel, and one with the same vowel and a different consonant. Batch 1 asks only blocks containing a new Batch 1 letter.
+Build cards offer at least one distractor with the same consonant and a different vowel, and one with the same vowel and a different consonant. Batch 1 asks only blocks containing a new Batch 1 letter, excluding its held-back blocks (`누`, `머`, `버`). The Batch 1 check opens with one `build_syllable` choice card using a held-back target and practiced distractors; it has no hint. The five `read_aloud` check cards follow it.
 
 ### `result`
 The grade for a practice, check, or after question. The renderer shows the useful fact first, then the line.
@@ -135,7 +135,7 @@ The grade for a practice, check, or after question. The renderer shows the usefu
 | **correct_answer** | str | Display form |
 | chosen_is | str | If the wrong answer is another real letter/block, what it is ("ㅋ") |
 | tell | str | The confusion-pair tell from `sejong.json` ("ㄷ has the extra stroke on top.") |
-| line | narrator | Jeong's reaction, if any. Correct practice lines are occasional; a streak at 5/10/15 uses its streak line here instead. After three consecutive wrong practice answers in one phase, this is `lines.repeated_miss`. Absent on check and after cards. |
+| line | narrator | Jeong's reaction, if any. Correct practice lines are occasional; a streak at 5/10/15 uses its streak line here instead. When a `word_read` has a line for the same answer, this field is absent and any displaced streak line is dropped. After three consecutive wrong practice answers in one phase, this is `lines.repeated_miss`. Absent on check and after cards. |
 | **streak** | int | Current practice streak; an `after` answer leaves it unchanged |
 | requeued | bool | True when a missed item will come back later this phase |
 
@@ -167,6 +167,9 @@ End of a decode check.
 | **size** | int | |
 | pass_score | int | Passing threshold (4) |
 | passed | bool | |
+| construction | {target: str, correct: bool} | Batch 1 only. Records the preceding build card; the pass rule still uses only the five reading cards. |
+
+For Batch 1, `flow.check_results["1"]["first_attempt"]` preserves `{"construction": bool, "new_read": {block: bool, block: bool}}` from the first check. Retrying after check practice updates the latest `passed` and `correct` fields without replacing this evidence. The chosen construction block is saved in `export_state()` so a resumed check replays the same cards.
 
 ### `milestone`
 | Field | Type | Notes |
