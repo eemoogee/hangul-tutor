@@ -1,0 +1,370 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Hangul Key Pad</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Source+Sans+3:wght@400;600&display=swap">
+<style>
+/* Layout: one phone column — mode bar, a card (target word or discoveries), the block frames you are building, a note line, then the pad (consonants left hand, vowels right hand, as on a Korean keyboard) */
+:root{
+  --paper:#eceee6; --card:#f8f8f3; --ink:#1d2421; --muted:#5f6a64; --rule:#cfd4cb;
+  --cons:#2b4c7e; --vow:#94600f; --seal:#b3322a; --ok:#2e6b48;
+  --hangul:"Gowun Batang","Nanum Myeongjo","Batang",serif;
+  --ui:"Source Sans 3",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --paper:#151917; --card:#1d2220; --ink:#e7eae4; --muted:#9aa49e; --rule:#323a36;
+  --cons:#8fb0e6; --vow:#e2b35c; --seal:#ef6f62; --ok:#6cc18f; color-scheme:dark}}
+:root[data-theme="dark"]{--paper:#151917; --card:#1d2220; --ink:#e7eae4; --muted:#9aa49e; --rule:#323a36;
+  --cons:#8fb0e6; --vow:#e2b35c; --seal:#ef6f62; --ok:#6cc18f; color-scheme:dark}
+html,body{height:100%}
+body{background:var(--paper);color:var(--ink);font-family:var(--ui);font-size:16px;line-height:1.45;-webkit-tap-highlight-color:transparent}
+main{max-width:480px;margin:0 auto;min-height:100%;box-sizing:border-box;display:flex;flex-direction:column;gap:12px;
+  padding-block:14px 18px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+
+.bar{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.seg{display:inline-flex;border:1px solid var(--rule);border-radius:999px;overflow:hidden}
+.seg button{font:600 .8rem var(--ui);background:none;border:0;color:var(--muted);padding:7px 11px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.pill{font:600 .8rem var(--ui);background:none;border:1px solid var(--rule);color:var(--ink);border-radius:999px;padding:7px 10px;cursor:pointer;white-space:nowrap}
+.pill[aria-pressed="true"]{border-color:var(--ink)}
+.bar .sp{flex:1}
+button:focus-visible{outline:3px solid var(--seal);outline-offset:2px}
+
+.card{background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:12px 16px;display:grid;gap:2px;min-height:96px;box-sizing:border-box}
+.card .lbl{font-size:.8rem;color:var(--muted)}
+.card .word{font-family:var(--hangul);font-size:2.3rem;line-height:1.1;font-weight:700}
+.card .gloss{color:var(--muted);font-size:.95rem}
+.card.found{border-color:var(--ok);animation:glow .7s ease-out}
+.card.found .word{color:var(--ok)}
+.shelf{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.chip{font-family:var(--hangul);font-weight:700;font-size:.95rem;padding:2px 9px;border-radius:999px;border:1px solid var(--rule);color:var(--muted)}
+.chip.got{border-color:var(--ok);color:var(--ok)}
+@keyframes glow{from{box-shadow:0 0 0 6px color-mix(in srgb,var(--ok) 35%,transparent)}to{box-shadow:0 0 0 0 transparent}}
+
+/* answer: a row of block frames */
+.answer{min-height:112px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:center;padding:10px;border-bottom:2px solid var(--ink)}
+.answer.empty::before{content:"Tap a letter";color:var(--muted);font-size:.95rem}
+.blk{width:84px;height:92px;position:relative;display:grid;place-items:center;border-radius:8px}
+.blk .full{font-family:var(--hangul);font-size:4.2rem;font-weight:700;line-height:1;animation:settle .35s ease-out}
+.blk.done::after{content:"";position:absolute;inset:4px;border-radius:10px;animation:ring .5s ease-out forwards;pointer-events:none}
+.blk.open{border:2px dashed var(--rule)}
+.blk.open .c{position:absolute;left:8px;top:6px;font-family:var(--hangul);font-size:2.6rem;color:var(--cons);font-weight:700}
+.blk.open .slot{position:absolute;border:2px dashed var(--vow);border-radius:4px;opacity:.4}
+.slot.r{right:8px;top:10px;width:18px;height:52px}
+.slot.b{left:10px;bottom:7px;width:50px;height:16px}
+.blk.lone{opacity:.45;border:2px dashed var(--rule)}
+.blk.lone .v{font-family:var(--hangul);font-size:3rem;color:var(--vow);font-weight:700}
+.blk.warn{border-color:var(--seal)}
+.blk .pieces{position:absolute;inset:0;font-family:var(--hangul);font-weight:700}
+.pieces span{position:absolute;font-size:2.6rem;transition:all .28s ease-out}
+.ghost{position:fixed;font-family:var(--hangul);font-weight:700;font-size:2.6rem;pointer-events:none;animation:lift .32s ease-in forwards;z-index:5}
+@keyframes settle{from{transform:scale(.86);opacity:.2}to{transform:none;opacity:1}}
+@keyframes ring{from{box-shadow:0 0 0 0 color-mix(in srgb,var(--ink) 30%,transparent)}to{box-shadow:0 0 0 10px transparent}}
+@keyframes lift{to{transform:translateY(-34px) rotate(-8deg);opacity:0}}
+@keyframes shake{20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(3px)}}
+.shake{animation:shake .35s}
+
+.note{min-height:2.9em;margin:0;font-size:.95rem;color:var(--muted);text-align:center;text-wrap:balance}
+.note b{color:var(--ink)}
+.note.jeong{color:var(--ink);font-family:var(--hangul);font-size:1.05rem}
+.note.jeong::before{content:"Jeong — ";font-family:var(--ui);font-size:.8rem;color:var(--seal);letter-spacing:.04em;text-transform:uppercase}
+.taps{margin:0;font-size:.78rem;color:var(--muted);text-align:center;min-height:1.2em}
+
+/* pad */
+.pad{margin-top:auto;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.hand{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-content:start}
+.hand .cap{grid-column:1/-1;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:center}
+.key{font-family:var(--hangul);font-weight:700;font-size:2rem;min-height:66px;border-radius:12px;border:1px solid var(--rule);background:var(--card);
+  cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;transition:transform .08s,box-shadow .14s,background .14s;box-shadow:0 2px 0 var(--rule)}
+.key.c{color:var(--cons)} .key.v{color:var(--vow)}
+.key.hit{transform:translateY(2px);box-shadow:0 0 0 2px currentColor inset}
+.key.new{animation:unlock .6s ease-out}
+@keyframes unlock{from{background:color-mix(in srgb,currentColor 25%,var(--card))}to{background:var(--card)}}
+.actions{display:grid;grid-template-columns:1fr 2fr;gap:10px}
+.act{font:600 1.05rem var(--ui);min-height:54px;border-radius:12px;cursor:pointer;touch-action:manipulation}
+.act.back{background:var(--card);border:1px solid var(--rule);color:var(--ink)}
+.act.main{background:var(--ink);border:1px solid var(--ink);color:var(--paper)}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<main>
+  <div class="bar">
+    <div class="seg" role="group" aria-label="Mode">
+      <button type="button" id="mPractice" aria-pressed="true">Practice</button>
+      <button type="button" id="mFree" aria-pressed="false">Free play</button>
+    </div>
+    <span class="sp"></span>
+    <button type="button" class="pill" id="more" aria-pressed="false">8 letters</button>
+    <button type="button" class="pill" id="snd" aria-pressed="false" aria-label="Sound">♪ Off</button>
+  </div>
+
+  <section class="card" id="card" aria-live="polite"></section>
+
+  <div class="answer empty" id="answer" aria-label="Your answer"></div>
+  <p class="note" id="note">Tap a consonant, then a vowel.</p>
+  <p class="taps" id="taps"></p>
+
+  <div class="pad">
+    <div class="hand" id="consKeys"><span class="cap">Consonants</span></div>
+    <div class="hand" id="vowKeys"><span class="cap">Vowels</span></div>
+  </div>
+  <div class="actions">
+    <button class="act back" id="back" type="button" aria-label="Delete last letter">⌫</button>
+    <button class="act main" id="main" type="button">Check</button>
+  </div>
+</main>
+
+<script>
+const CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ";
+const JUNG = "ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ";
+const SIDE = "ㅏㅐㅑㅒㅓㅔㅕㅖㅣ"; // tall vowels sit beside the consonant; flat ones sit below
+const ROMAN = {"ㄴ":"n","ㄷ":"d","ㅁ":"m","ㅂ":"b","ㅏ":"a","ㅗ":"o","ㅓ":"eo","ㅜ":"u"};
+const compose = (c, v) => String.fromCharCode(0xAC00 + (CHO.indexOf(c) * 21 + JUNG.indexOf(v)) * 28);
+
+const W0 = [["나","na","I, me"],["도","do","as in do-re-mi"],["다","da","all"],["노","no","oar"],["나도","nado","me too"],["도도","dodo","haughty"]];
+const W1 = [["무","mu","radish"],["너","neo","you (informal)"],["두","du","two (before a counter)"],["바다","bada","sea"],["나무","namu","tree"],["두부","dubu","tofu"],
+            ["바보","babo","fool"],["모두","modu","everyone"],["부모","bumo","parents"],["너무","neomu","too, very"],["도마","doma","cutting board"],["바나나","banana","banana"]];
+const SETS = {
+  0: { cons: ["ㄴ","ㄷ"], vows: ["ㅏ","ㅗ"], words: W0 },
+  1: { cons: ["ㄴ","ㄷ","ㅁ","ㅂ"], vows: ["ㅏ","ㅗ","ㅓ","ㅜ"], words: [...W0, ...W1] },
+};
+const PRAISE = ["좋아요. Good.","Not bad.","Hm. Correct.","The king would nod. Briefly."];
+const FOUND_LINE = { "바보":"\"Fool.\" Reading it does not make you one.", "도도":"\"Haughty.\" A word my colleagues never needed to read.", "모두":"\"Everyone.\" Which is exactly who these letters were for." };
+
+let level = 0, mode = "practice", ti = 0, blocks = [], taps = [], seen = new Set(), praiseI = 0, found = new Set(), busy = false;
+const $ = id => document.getElementById(id);
+const reduce = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ── sound and touch feedback (optional; silent and still complete without them) ── */
+let ac = null, soundOn = false;
+function tone(freqs, dur = .07, type = "triangle", gain = .05){
+  if (!soundOn || !ac) return;
+  let t = ac.currentTime;
+  for (const f of freqs){
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type; o.frequency.value = f;
+    g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+    o.connect(g).connect(ac.destination); o.start(t); o.stop(t + dur + .02); t += dur * .8;
+  }
+}
+const sfx = {
+  tap:    () => tone([1400], .03, "triangle", .03),
+  block:  () => tone([660, 990], .09, "sine", .06),
+  refuse: () => tone([170], .1, "square", .03),
+  lift:   () => tone([900, 600], .04, "triangle", .025),
+  word:   () => tone([660, 880, 1320], .1, "sine", .06),
+};
+function buzz(ms){ try { navigator.vibrate && navigator.vibrate(ms); } catch {} }
+
+/* ── setup ── */
+function buildKeys(prevLevel){
+  const s = SETS[level], prev = prevLevel == null ? null : SETS[prevLevel];
+  for (const [box, list, cls] of [[$("consKeys"), s.cons, "c"], [$("vowKeys"), s.vows, "v"]]){
+    box.querySelectorAll(".key").forEach(k => k.remove());
+    for (const j of list){
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "key " + cls; b.textContent = j;
+      if (prev && !prev.cons.includes(j) && !prev.vows.includes(j)) b.classList.add("new");
+      b.setAttribute("aria-label", (cls === "c" ? "consonant " : "vowel ") + j);
+      b.addEventListener("pointerdown", () => { b.classList.add("hit"); setTimeout(() => b.classList.remove("hit"), 140); });
+      b.addEventListener("click", () => press(j));
+      box.appendChild(b);
+    }
+  }
+  $("more").setAttribute("aria-pressed", String(level === 1));
+}
+
+function drawCard(hit){
+  const c = $("card"); c.className = "card";
+  if (mode === "practice"){
+    const [w, r, g] = SETS[level].words[ti % SETS[level].words.length];
+    c.innerHTML = `<span class="lbl">Type this word</span><span class="word">${w}</span><span class="gloss">${r} · ${g}</span>`;
+    return;
+  }
+  const ws = SETS[level].words;
+  const shelf = ws.map(([w]) => `<span class="chip${found.has(w) ? " got" : ""}">${found.has(w) ? w : "?".repeat(w.length)}</span>`).join("");
+  if (hit){
+    const [w, r, g] = hit;
+    c.classList.add("found");
+    c.innerHTML = `<span class="lbl">You found a word · ${ws.filter(x => found.has(x[0])).length} of ${ws.length}</span><span class="word">${w}</span><span class="gloss">${r} · ${g}</span><div class="shelf">${shelf}</div>`;
+  } else {
+    c.innerHTML = `<span class="lbl">Free play · words found ${[...found].filter(w => ws.some(x => x[0] === w)).length} of ${ws.length}</span><span class="gloss">Tap anything. Real words light up.</span><div class="shelf">${shelf}</div>`;
+  }
+}
+
+// Explain each rule the first time it fires; after that stay quiet, except refusals.
+function say(key, html, always = false){
+  const n = $("note"); n.className = "note";
+  if (always || !seen.has(key)){ seen.add(key); n.innerHTML = html; }
+  else n.innerHTML = "";
+}
+
+/* ── composing ── */
+function press(j){
+  if (busy) return;
+  taps.push(j); sfx.tap(); buzz(6);
+  const last = blocks[blocks.length - 1];
+  if (CHO.includes(j)){
+    if (last && last.c && !last.v){
+      blocks.push({ c: j });
+      say("doublecons", `<b>${last.c}</b> is still waiting for a vowel. <b>${j}</b> starts a new block.`, true);
+      render(blocks.length - 2); return afterChange();
+    }
+    blocks.push({ c: j });
+    if (last && last.c && last.v) say("newblock", `<b>${j}</b> starts a new block. Nothing sits underneath a block yet.`);
+    else say("firstcons", `<b>${j}</b> goes in the top-left. The dashed spaces show where a vowel can go.`);
+  } else {
+    if (last && last.c && !last.v){
+      last.v = j; last.fresh = true; sfx.block(); buzz([8, 30, 14]);
+      say(SIDE.includes(j) ? "side" : "stack", SIDE.includes(j)
+        ? `<b>${j}</b> is tall, so it sits <b>beside</b> the consonant.`
+        : `<b>${j}</b> is flat, so it sits <b>under</b> the consonant.`);
+    } else if (last && last.c && last.v){
+      taps.pop(); sfx.refuse(); render(); shake(blocks.length - 1);
+      say("compound", `This block already has a vowel. Two vowels in one block come later. Start with a consonant.`, true);
+      return;
+    } else {
+      blocks.push({ v: j });
+      say("lonevowel", `A block can't start with a vowel. You'll learn the fix soon. For now, put a consonant first.`, true);
+    }
+  }
+  render(); afterChange();
+}
+
+function backspace(){
+  const last = blocks[blocks.length - 1];
+  if (!last || busy) return;
+  taps.push("⌫"); sfx.lift(); buzz(5);
+  const el = $("answer").lastElementChild;
+  // Lift the removed piece out of its spot, then redraw.
+  let piece, color, spot;
+  if (last.c && last.v){ piece = last.v; color = "--vow"; spot = SIDE.includes(last.v) ? [56, 22] : [28, 52]; }
+  else if (last.c){ piece = last.c; color = "--cons"; spot = [8, 6]; }
+  else { piece = last.v; color = "--vow"; spot = [26, 18]; }
+  if (el && !reduce()){
+    const r = el.getBoundingClientRect(), g = document.createElement("span");
+    g.className = "ghost"; g.textContent = piece; g.style.color = `var(${color})`;
+    g.style.left = (r.left + spot[0]) + "px"; g.style.top = (r.top + spot[1]) + "px";
+    document.body.appendChild(g); setTimeout(() => g.remove(), 340);
+  }
+  if (last.c && last.v){ delete last.v; say("back", "Backspace lifts off the last letter, not the whole block."); }
+  else blocks.pop();
+  render(); afterChange();
+}
+
+function shake(i){
+  const el = $("answer").children[i];
+  if (!el) return;
+  el.classList.remove("shake"); void el.offsetWidth; el.classList.add("shake");
+}
+
+function render(warnIndex = -1){
+  const a = $("answer"); a.innerHTML = "";
+  a.classList.toggle("empty", blocks.length === 0);
+  blocks.forEach((b, i) => {
+    const el = document.createElement("div");
+    el.className = "blk";
+    if (b.c && b.v){
+      const full = `<span class="full">${compose(b.c, b.v)}</span>`;
+      if (b.fresh && !reduce()){
+        // the two pieces slide into place, then become the finished block
+        const side = SIDE.includes(b.v);
+        el.innerHTML = `<div class="pieces"><span style="left:8px;top:6px;color:var(--cons)">${b.c}</span><span style="${side ? "right:8px;top:18px" : "left:26px;bottom:2px"};color:var(--vow);opacity:0">${b.v}</span></div>`;
+        const [pc, pv] = el.querySelectorAll(".pieces span");
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          pv.style.opacity = 1;
+          if (side){ pc.style.left = "14px"; pc.style.top = "18px"; } else { pc.style.left = "26px"; pc.style.top = "4px"; }
+        }));
+        setTimeout(() => { if (el.isConnected){ el.innerHTML = full; el.classList.add("done"); } }, 320);
+      } else el.innerHTML = full;
+      b.fresh = false;
+      el.setAttribute("aria-label", compose(b.c, b.v));
+    } else if (b.c){
+      el.classList.add("open"); if (i === warnIndex) el.classList.add("warn");
+      el.innerHTML = `<span class="c">${b.c}</span><span class="slot r"></span><span class="slot b"></span>`;
+      el.setAttribute("aria-label", `${b.c}, waiting for a vowel`);
+    } else {
+      el.classList.add("lone");
+      el.innerHTML = `<span class="v">${b.v}</span>`;
+      el.setAttribute("aria-label", `${b.v} without a consonant`);
+    }
+    a.appendChild(el);
+  });
+  $("taps").textContent = taps.length ? "Taps: " + taps.join(" ") : "";
+}
+
+/* In free play, every change is checked against the word list. */
+function afterChange(){
+  if (mode !== "free") return;
+  const complete = blocks.length && blocks.every(b => b.c && b.v);
+  if (!complete){ drawCard(); return; }
+  const typed = blocks.map(b => compose(b.c, b.v)).join("");
+  const hit = SETS[level].words.find(([w]) => w === typed);
+  if (hit){
+    const isNew = !found.has(typed); found.add(typed);
+    drawCard(hit);
+    if (isNew){ sfx.word(); buzz([10, 40, 10, 40, 18]); }
+    const n = $("note");
+    if (FOUND_LINE[typed]){ n.className = "note jeong"; n.textContent = FOUND_LINE[typed]; }
+    else { n.className = "note"; n.innerHTML = isNew ? "A real word. Clear it and try another." : "Found it again."; }
+  } else {
+    drawCard();
+    const read = blocks.map(b => ROMAN[b.c] + ROMAN[b.v]).join("·");
+    const n = $("note"); n.className = "note";
+    n.innerHTML = `Not a word, but you can read it: <b>${read}</b>`;
+  }
+}
+
+function check(){
+  const [w] = SETS[level].words[ti % SETS[level].words.length];
+  const open = blocks.findIndex(b => !(b.c && b.v));
+  if (!blocks.length){ say("emptycheck", "Nothing typed yet.", true); return; }
+  if (open >= 0){
+    const b = blocks[open]; sfx.refuse(); shake(open);
+    say("unfinished", b.c ? `Finish the block first: <b>${b.c}</b> needs a vowel.` : `<b>${b.v}</b> needs a consonant in front of it.`, true);
+    return;
+  }
+  const typed = blocks.map(b => compose(b.c, b.v)).join("");
+  const n = $("note");
+  if (typed === w){
+    sfx.word(); buzz([10, 40, 18]); busy = true;
+    n.className = "note jeong"; n.textContent = PRAISE[praiseI++ % PRAISE.length];
+    setTimeout(() => { busy = false; ti++; clearAll(); drawCard(); }, 1300);
+  } else {
+    n.className = "note";
+    n.innerHTML = `You typed <b>${typed}</b>. Not yet. Look at the target again.`;
+  }
+}
+
+function clearAll(){ blocks = []; taps = []; render(); const n = $("note"); n.className = "note"; n.textContent = ""; if (mode === "free") drawCard(); }
+
+function setMode(m){
+  mode = m;
+  $("mPractice").setAttribute("aria-pressed", String(m === "practice"));
+  $("mFree").setAttribute("aria-pressed", String(m === "free"));
+  $("main").textContent = m === "practice" ? "Check" : "Clear";
+  clearAll(); drawCard();
+}
+
+$("back").addEventListener("click", backspace);
+$("main").addEventListener("click", () => mode === "practice" ? check() : clearAll());
+$("mPractice").addEventListener("click", () => setMode("practice"));
+$("mFree").addEventListener("click", () => setMode("free"));
+$("more").addEventListener("click", () => { const p = level; level = level ? 0 : 1; ti = 0; buildKeys(p); clearAll(); drawCard();
+  if (level) say("unlock", "Four new letters. Each one looks like a letter you already know.", true); });
+$("snd").addEventListener("click", () => {
+  soundOn = !soundOn;
+  if (soundOn && !ac){ try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch { soundOn = false; } }
+  if (ac && ac.state === "suspended") ac.resume();
+  $("snd").setAttribute("aria-pressed", String(soundOn)); $("snd").textContent = soundOn ? "♪ On" : "♪ Off";
+  sfx.tap();
+});
+document.addEventListener("keydown", e => {
+  if (e.key === "Backspace"){ e.preventDefault(); backspace(); }
+  if (e.key === "Enter") $("main").click();
+});
+
+buildKeys(); drawCard(); render();
+</script>
+
+</body></html>
