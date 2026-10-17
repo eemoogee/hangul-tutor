@@ -47,13 +47,13 @@
           "jamo": "ㄷ",
           "type": "consonant",
           "roman": "d",
-          "sound": "a soft d, between the d in 'do' and the t in 'stop'",
+          "sound": "d, as in 'do'",
           "shape": "ㄴ with a lid on top. One more stroke, a firmer sound.",
           "source": "haerye",
           "notice_line": {
             "speaker": "jeong",
-            "text": "His Majesty preferred a system to a collection.",
-            "source": "invented"
+            "text": "A few shapes, a few extra strokes, a whole alphabet. Chinese needed rather more.",
+            "source": "invented (rests on the Haerye fact: consonants built from base shapes plus strokes)"
           }
         },
         {
@@ -115,10 +115,10 @@
         {
           "ko": "도",
           "roman": "do",
-          "en": "do (as in do-re-mi)",
+          "en": "also, too (attaches after a word, as in 나도 'me too')",
           "first_read_line": {
             "speaker": "jeong",
-            "text": "Do, as in do-re-mi. A musical education, at no extra charge.",
+            "text": "\"Also.\" Small, but it attaches itself to everything.",
             "source": "invented"
           }
         },
@@ -147,7 +147,11 @@
     {
       "id": 1,
       "name": "First Words",
-      "held_back": ["누", "머", "버"],
+      "held_back": [
+        "누",
+        "머",
+        "버"
+      ],
       "phases": [
         "discover",
         "predict_reveal",
@@ -169,7 +173,7 @@
           "jamo": "ㅂ",
           "type": "consonant",
           "roman": "b",
-          "sound": "a soft b, between the b in 'bus' and the p in 'spin'",
+          "sound": "b, as in 'bus'",
           "shape": "ㅁ with two strokes added. Lips again, with a small burst.",
           "source": "haerye",
           "notice_line": {
@@ -537,6 +541,12 @@
         "text": "I said you would learn the letters in a morning. I never said Korean.",
         "use": "Right after Victory 2, before the next layer (spec 7.7).",
         "source": "invented"
+      },
+      "five_shapes_reveal": {
+        "speaker": "jeong",
+        "text": "Remember my few shapes? Here they are: ㄱ ㄴ ㅁ ㅅ ㅇ. Everything else is these, plus strokes.",
+        "source": "invented (Haerye: 5 base consonants; ㄹ ㆁ ㅿ are special shapes)",
+        "use": "Victory 2, alongside the Complexity Reveal: show the five-base-shape table (base, what it pictures, letters built from it)."
       }
     },
     "dodo_word": {
