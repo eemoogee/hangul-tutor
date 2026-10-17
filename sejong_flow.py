@@ -208,12 +208,13 @@ class SejongFlow:
             return self._next_phase(events)
         target = self.remaining.pop(0)
         if self.phase == "recognize":
+            letter = self._letter(target)
             options = [x["jamo"] for x in self.content["batches"][:self.batch_index + 1]
-                       for x in x["letters"]]
+                       for x in x["letters"] if x["type"] == letter["type"]]
             choices = self.rng.sample([x for x in options if x != target], 3) + [target]
             self.rng.shuffle(choices)
             return self._question(events, target, "match_sound", target,
-                "Which letter makes this sound?", self._letter(target)["sound"], "choice", choices)
+                "Which letter makes this sound?", letter["roman"], "choice", choices)
         if self.phase == "retrieve":
             return self._question(events, target, "read_aloud", self._letter(target)["roman"],
                                   "Type this letter's sound.", target, "text")
@@ -257,9 +258,37 @@ class SejongFlow:
     def _start_check(self, events):
         self.phase = "check"
         events += [self._stage(), self._line("lines.decode_check_intro")]
+        return self._new_check(events)
+
+    def _new_check(self, events):
         self._seed_engine()
-        self.check = make_reading_check(self.quiz)
+        try:
+            self.check = make_reading_check(self.quiz)
+        except ValueError:
+            familiar = list(dict.fromkeys(word["ko"] for word in self._batch()["words"]))
+            if len(familiar) < 5:
+                self.check = None
+                self.check_results[str(self.batch_index)] = {"passed": False, "unavailable": True}
+                events.append({"kind": "notice", "text": "No reading check is available; continuing."})
+                return self._advance_after_check(events)
+            targets = self.rng.sample(familiar, 5)
+            questions = [QuizQuestion(
+                mode="read_aloud", letter=target, lesson_id=0,
+                prompt=f"How does {target} sound? Type it in English letters.",
+                correct_answer=self.quiz._word_romanization(target),
+                accepted=sorted(self.quiz.roman_variants(target)),
+                hint=" / ".join(self.quiz._piece_hint(block) for block in target),
+            ) for target in targets]
+            self.check = ReadingCheck(0, questions, [])
         return self._check_question(events)
+
+    def _advance_after_check(self, events):
+        if self.batch_index == 0:
+            self.batch_index = 1
+            return self._enter_batch(events)
+        if self.baseline_score is None or self.baseline_score >= 6:
+            return self._victory(events)
+        return self._assessment_with(events)
 
     def _check_question(self, events):
         if self.check.finished:
@@ -272,12 +301,7 @@ class SejongFlow:
             if passed:
                 events.append(self._line("lines.decode_check_perfect" if score == 5
                                          else "lines.decode_check_pass"))
-                if self.batch_index == 0:
-                    self.batch_index = 1
-                    return self._enter_batch(events)
-                if self.baseline_score is None or self.baseline_score >= 6:
-                    return self._victory(events)
-                return self._assessment_with(events)
+                return self._advance_after_check(events)
             events.append(self._line("lines.decode_check_fail"))
             self.phase = "check_practice"
             self.check_practice = [q.letter for q in list(self.check.missed.values())[:3]]
@@ -285,6 +309,9 @@ class SejongFlow:
             self.round_index = 0
             return self._check_practice_question(events)
         q = self.check.current
+        seen = self.quiz.progress.setdefault("reading_check_seen", [])
+        if q.letter not in seen:
+            seen.append(q.letter)
         return self._question(events, q.letter, "read_aloud", q.correct_answer,
                               "Read this without a hint.", q.letter, "text", context="check", hint=False)
 
@@ -299,10 +326,8 @@ class SejongFlow:
     def _check_practice_question(self, events):
         if not self.check_practice:
             self.phase = "check"
-            self._seed_engine()
-            self.check = make_reading_check(self.quiz)
             events.append(self._stage())
-            return self._check_question(events)
+            return self._new_check(events)
         target = self.check_practice.pop(0)
         return self._question(events, target, "read_aloud", self.quiz._word_romanization(target),
                               "Practice this reading.", target, "text", context="check_practice")

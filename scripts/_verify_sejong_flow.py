@@ -181,6 +181,70 @@ def check_retry_independence():
     assert flow.check_results["0"]["passed"] and flow.check_results["1"]["passed"]
 
 
+def recognize_reverses_retrieve():
+    flow = new_flow()
+    events = flow.start()
+    while flow.phase != "recognize":
+        events = flow.submit(answer_for(flow, events))
+    for _ in range(4):
+        card = flow.current["card"]
+        target = flow.current["target"]
+        letter = flow._letter(target)
+        assert card["mode"] == "match_sound" and card["input"] == "choice"
+        assert card["display"] == letter["roman"] and flow.current["answer"] == target
+        assert len(card["choices"]) == len(set(card["choices"])) == 4
+        assert target in card["choices"]
+        assert all(flow._letter(choice)["type"] == letter["type"]
+                   for choice in card["choices"])
+        events = flow.submit(target)
+    assert flow.phase == "retrieve"
+    assert flow.current["card"]["display"] == flow.current["target"]
+    assert flow.current["card"]["input"] == "text"
+
+
+def forty_failed_checks():
+    flow = new_flow()
+    events = flow.start()
+    failures = 0
+    fallback_seen = False
+    for _ in range(1000):
+        if events[-1]["kind"] == "finished":
+            break
+        answer = answer_for(flow, events)
+        if flow.phase == "intro":
+            answer = "Skip"
+        elif flow.batch_index == 0 and flow.phase == "check":
+            fallback_seen |= flow.check.transfer_targets == []
+            if failures < 40:
+                answer = "WRONG"
+        events = flow.submit(answer)
+        assert events[-1]["kind"] in ("await", "finished")
+        assert json.loads(json.dumps(events, ensure_ascii=False)) == events
+        failures += sum(e["kind"] == "score" and e["context"] == "check"
+                        and not e["passed"] and flow.batch_index == 0 for e in events)
+    assert failures == 40, failures
+    assert fallback_seen, "retry pool never exercised familiar-only fallback"
+    assert flow.check_results["0"]["passed"]
+    assert events[-1] == {"kind": "finished", "outcome": "victory_1"}
+
+
+def unavailable_check_advances():
+    content = json.loads(json.dumps(CONTENT, ensure_ascii=False))
+    content["batches"][0]["words"] = content["batches"][0]["words"][:4]
+    flow = SejongFlow(HangulQuiz(persist=False), content, seed=1)
+    events = flow.start()
+    with patch("sejong_flow.make_reading_check", side_effect=ValueError("No new safe combinations remain")):
+        for _ in range(100):
+            if flow.batch_index == 1:
+                break
+            answer = "Skip" if flow.phase == "intro" else answer_for(flow, events)
+            events = flow.submit(answer)
+    assert flow.batch_index == 1
+    assert flow.check_results["0"] == {"passed": False, "unavailable": True}
+    assert any(e["kind"] == "notice" for e in events)
+    assert events[-1]["kind"] == "await"
+
+
 def skip_cases():
     assert not any(e["kind"] == "score" and e["context"] == "post_test"
                    for e in flattened(run(new_flow(), baseline=False)))
@@ -271,6 +335,9 @@ if __name__ == "__main__":
     for name, fn in (("event contract", contract), ("all-correct order and scores", order_and_scores),
                      ("misses requeued", misses_requeue), ("narrator and word payoff", narrator_and_words),
                      ("check retry and independence", check_retry_independence),
+                     ("recognize reverses retrieve", recognize_reverses_retrieve),
+                     ("40 failed Batch 0 checks", forty_failed_checks),
+                     ("unavailable check advances", unavailable_check_advances),
                      ("baseline skip paths", skip_cases), ("resume, replay, quit", replay_resume_quit),
                      ("practice hints and script notices", hints_and_scripts),
                      ("file-free and silent", file_free), ("timer and verdict", timer)):
