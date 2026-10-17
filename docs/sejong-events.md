@@ -219,6 +219,6 @@ flow.submit("Skip", active_ms=41000) ->
 - Every list returned by `start`, `submit` and `resume` ends with exactly one `await` or `finished`.
 - Every event has `kind`, and every **bold** field above for its kind.
 - Every `narrator.line_id` resolves to a line in `sejong.json`, and its `text` has no unfilled `{placeholder}`.
-- No `question`, `predict` choice or `display` uses a letter outside `letters_known`.
+- No `question` (except `context: "baseline"`), `predict` choice or `display` uses a letter outside `letters_known`. The post-test remains strict.
 - `result.line` never appears on baseline, check or post-test cards.
 - `export_state()` → `from_state()` mid-batch, then the same answers, gives the same events as an uninterrupted run (same seed).

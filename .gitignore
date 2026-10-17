@@ -1,6 +1,7 @@
 ﻿__pycache__/
 *.pyc
 data/user_progress.json
+data/sejong_state.json
 commit_message.txt
 .venv_finetune/
 hangul_expert_model/
