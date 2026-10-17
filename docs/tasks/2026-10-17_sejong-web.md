@@ -3,6 +3,8 @@
 **For:** Codex · **Written:** 2026-10-17 · **Verifier:** Claude (in the owner's session)
 **Read first:** `docs/sejong-events.md` (the contract this page draws), `sejong_flow.py` and `sejong_cli.py` (the terminal renderer of the same events), `archive/Hangul Key Pad.html` (the look to follow). Background: the owner's phone speed test already showed the Python engine runs in a phone browser through Pyodide, and the owner chose to keep Python rather than port to JavaScript.
 
+**Future design reference:** `docs/hangul-workshop-brief.md`. It informs the small compatibility choices below; it does not add workshop gameplay to this task.
+
 ## Goal
 
 A page that plays the whole Sejong slice on a phone: it loads Pyodide, runs `sejong_flow.py` unchanged, and draws its events. One link, no install, playable by a beginner on their own phone. **Python decides; the page draws** (contract, "The rule"): the page never grades, never picks text, never decides what comes next.
@@ -27,6 +29,14 @@ A page that plays the whole Sejong slice on a phone: it loads Pyodide, runs `sej
 | W8 | **Playtest results, local only:** a small menu (corner button) with **Copy results** and **Start over** (in-page confirm, never `alert`/`confirm`). Copy results puts JSON on the clipboard, falling back to selecting it on screen: `app_version`, user agent, start and finish times, `active_ms`, the latest `export_state()`, and a log with one entry per answered card (`qid`, `context`, `mode`, input type choice/text, the answer, `correct`, hint used, ms from card shown to answer). The same button appears on the finished screen. Nothing is sent anywhere. |
 | W9 | **Loading screen:** title, then steps with timings (download Python ~14 MB, load the lessons, start), as on the speed-test page. On failure, show the error and a Retry button. |
 | W10 | **No audio** in this version. |
+
+## Hangul Workshop compatibility in this slice
+
+Keep the first web slice focused on rendering the existing Sejong events. The Key Pad's practice/free-play state, 2×2 and 4×4 boards, surgery, repair, ㅇ discovery interaction, spoken audio, and native Hangul input are later work. Their rules and assessment would need their own event/content contract; do not infer them from this page or copy the prototype's JavaScript grading into the renderer.
+
+- Reuse the prototype's visual language and make the `reveal` block assembly a small, isolated view driven by the event's `parts` and `layout`. Keep its consonant and vowel visually identifiable through the animation, and leave the finished syllable readable when motion is reduced. This is a useful seam for later component editing without building a workshop composition model now.
+- Preserve the current **Python decides; the page draws** boundary. The W6 text field collects the Sejong slice's romanized reading answers. A later pad or native Korean input path will need an explicit way to turn its input into an answer for Python; this task does not define or implement that path.
+- Keep W4's saved Sejong flow state scoped to this flow. Future workshop discoveries and unfinished edits are different state from Sejong assessment; do not mix them into `flow.export_state()` just to prepare for a later feature.
 
 ## How each event is drawn
 
