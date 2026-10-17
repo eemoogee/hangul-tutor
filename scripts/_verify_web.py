@@ -2,6 +2,7 @@
 
 import contextlib
 import json
+import sys
 import threading
 import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -14,7 +15,7 @@ from build_web import build
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "web"
-SHOTS = ROOT / "docs/tasks/2026-10-17_sejong-web-shots"
+SHOTS = ROOT / ".verify_out" / "shots"
 PASS = 0
 
 
@@ -111,6 +112,9 @@ def normalized(groups):
 
 
 def main():
+    global SHOTS
+    if len(sys.argv) > 2 and sys.argv[1] == "--shots-dir":
+        SHOTS = Path(sys.argv[2]).resolve()
     if not (WEB / "pyodide/pyodide.js").exists():
         raise SystemExit("Run scripts/fetch_pyodide.py first")
     build()

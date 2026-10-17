@@ -38,6 +38,9 @@ dist/
 web/engine/
 web/pyodide/
 
+# Verifier output (screenshots); pass --shots-dir to write elsewhere
+.verify_out/
+
 # Backup files (alternate naming convention)
 data/user_progress.json.bak-*
 
