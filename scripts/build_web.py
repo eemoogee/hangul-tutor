@@ -1,4 +1,4 @@
-"""Copy the Python Sejong slice into a static, hash-listed web bundle."""
+"""Copy both Python lesson flows into a static, hash-listed web bundle."""
 
 import hashlib
 import json
@@ -8,7 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "web" / "engine"
-SOURCES = (
+SEJONG_SOURCES = (
     "hangul_quiz_engine.py",
     "reading_check.py",
     "sejong_flow.py",
@@ -19,6 +19,7 @@ SOURCES = (
     "data/tatoeba_kor_sentences.tsv",
     "data/sejong.json",
 )
+SOURCES = SEJONG_SOURCES + ("lesson_flow.py", "curriculum_flow.py")
 
 
 def build():
@@ -32,11 +33,15 @@ def build():
         content = destination.read_bytes()
         files.append({"path": name, "sha256": hashlib.sha256(content).hexdigest(),
                       "bytes": len(content)})
-    version = hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()[:16]
-    manifest = {"app_version": version, "files": files}
+    def version(entries):
+        return hashlib.sha256(json.dumps(entries, sort_keys=True).encode()).hexdigest()[:16]
+
+    manifest = {"app_version": version(files),
+                "sejong_version": version(files[:len(SEJONG_SOURCES)]),
+                "files": files}
     (OUT / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(f"Built {len(files)} files; APP_VERSION={version}")
+    print(f"Built {len(files)} files; APP_VERSION={manifest['app_version']}")
 
 
 if __name__ == "__main__":
