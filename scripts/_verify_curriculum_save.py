@@ -233,6 +233,35 @@ def run():
             assert stored(BACKUP) == json.dumps(broken, ensure_ascii=False)
             assert stored(SEJONG_KEY) == "sejong-sentinel"
             print("PASS fresh start requires explicit choice and retains the original backup")
+
+            first_lesson_save = json.loads(stored())
+            first_lesson_state = json.loads(first_lesson_save["state"])
+            for phase, expected in (("intro", "teaching_intro"),
+                                    ("predict", "teaching_pair_predict"),
+                                    ("feedback", "teaching_pair_predict"),
+                                    ("explore", "teaching_explore")):
+                old_guide = {"phase": phase,
+                             "choice": "ㅇ" if phase in ("feedback", "explore") else None,
+                             "selected": "ㅜ" if phase == "explore" else None}
+                candidate = dict(first_lesson_save,
+                                 teaching={"kind": "lesson1", "lesson_id": 1,
+                                           "state": json.dumps(old_guide, ensure_ascii=False),
+                                           "message": ""})
+                raw_candidate = json.dumps(candidate, ensure_ascii=False)
+                load(raw_candidate)
+                page.wait_for_function("window.__curriculumTest?.ready()", timeout=120000)
+                assert page.locator("#screen").get_attribute("data-step") == expected
+                assert stored(BACKUP) == raw_candidate
+                normalized = json.loads(stored())
+                assert json.loads(normalized["teaching"]["state"])["version"] == 2
+                state = page.evaluate("__curriculumTest.state()")
+                assert state["current_question"] == first_lesson_state["current_question"]
+                assert state["round_asked"] == first_lesson_state["round_asked"]
+                page.reload()
+                page.wait_for_function("window.__curriculumTest?.ready()", timeout=120000)
+                assert page.locator("#screen").get_attribute("data-step") == expected
+            assert stored(SEJONG_KEY) == "sejong-sentinel"
+            print("PASS actual old Lesson 1 teaching states normalize with backup and held question")
             browser.close()
     finally:
         server.shutdown()

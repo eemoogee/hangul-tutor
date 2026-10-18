@@ -333,6 +333,25 @@ def main():
                                 page.wait_for_timeout(1200)
                             page.screenshot(path=str(SHOTS / f"{scheme}-{name}.png"))
                             seen.add(name)
+                        if scheme == "light" and name == "milestone" and kind == "milestone":
+                            page.set_viewport_size({"width": 390, "height": 744})
+                            page.locator(".milestone-lines").evaluate("""box => {
+                                const text = box.querySelector('.line-text');
+                                if (text) text.textContent += ' ' + text.textContent.repeat(12);
+                            }""")
+                            page.evaluate("document.documentElement.style.fontSize = '200%'")
+                            dimensions = page.evaluate("""() => ({width:document.documentElement.scrollWidth,
+                              viewport:innerWidth, height:document.documentElement.scrollHeight,
+                              action:document.querySelector('#controls button').getBoundingClientRect().bottom + scrollY})""")
+                            assert dimensions["width"] <= dimensions["viewport"] + 1, dimensions
+                            assert dimensions["action"] <= dimensions["height"] + 1, dimensions
+                            assert page.locator("#screen .seal").evaluate(
+                                "x => getComputedStyle(x).overflow === 'hidden'")
+                            page.locator("#controls button").scroll_into_view_if_needed()
+                            assert page.locator("#controls button").is_visible()
+                            page.screenshot(path=str(SHOTS / "light-long-milestone-200pct.png"), full_page=True)
+                            page.evaluate("document.documentElement.style.fontSize = ''")
+                            page.set_viewport_size({"width": 390, "height": 844})
                         if kind == "finished":
                             break
                         wrong = (kind == "question" and card.get("context") == "practice" and

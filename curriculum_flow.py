@@ -406,7 +406,7 @@ class CurriculumFlow:
 
 
 class LessonOneTeaching:
-    """Small, ungraded Lesson 1 guide. Python owns its steps and content.
+    """Ungraded Lesson 1 guide. Python owns its steps and content.
 
     The ordinary CurriculumFlow has already selected the first practice
     question. The web view holds that question while this guide is active.
@@ -422,36 +422,73 @@ class LessonOneTeaching:
         if len(self.letters) != 6 or len(self.syllables) != 6:
             raise ValueError("Lesson 1 must have six vowel examples.")
         self.phase = "intro"
-        self.choice = None
+        self.choice_a = None
+        self.choice_o = None
         self.selected = None
+        self.construction_step = 0
+
+    def _pair(self, first, second, axis):
+        return {"first": first, "second": second, "axis": axis,
+                "first_roman": ROMANIZATION[first],
+                "second_roman": ROMANIZATION[second],
+                "first_sound": self.lesson["pronunciation"][first],
+                "second_sound": self.lesson["pronunciation"][second]}
 
     def current(self):
         base = {"speaker": "jeong", "pose": "hello", "lesson_id": 1}
         if self.phase == "intro":
             return {**base, "kind": "teaching_intro",
-                    "dialogue": "I’m Jeong—roughly “juhng.” The eo in my name represents one vowel sound, not “ee-oh.” We’ll learn it in this lesson."}
-        if self.phase == "predict":
-            return {**base, "kind": "teaching_predict",
-                    "dialogue": "Look at these two blocks. They share one shape.",
-                    "blocks": [self.syllables["ㅏ"], self.syllables["ㅓ"]],
-                    "prompt": "Which shape appears in both blocks?",
-                    "choices": [{"value": "ㅇ", "label": "ㅇ"},
-                                {"value": "different", "label": "ㅏ and ㅓ"}]}
-        if self.phase == "feedback":
-            return {**base, "kind": "teaching_feedback",
-                    "correct": self.choice == "ㅇ",
-                    "dialogue": "The shared ㅇ is silent at the start. The vowel gives each block its sound.",
-                    "blocks": [self.syllables["ㅏ"], self.syllables["ㅓ"]],
-                    "explanation": "아 sounds like ‘ah’. 어 sounds like ‘uh’."}
+                    "dialogue": "I’m Jeong—roughly ‘juhng.’ We’ll begin with six vowels and the patterns between them.",
+                    "letters": self.letters}
+        if self.phase == "pair_a_predict":
+            return {**base, "kind": "teaching_pair_predict",
+                    "dialogue": "Look at the short stroke beside the stem.",
+                    "pair": self._pair("ㅏ", "ㅓ", "vertical"),
+                    "prompt": "Move the short stroke to the left. Which shape will you make?",
+                    "choices": [{"value": "ㅏ", "label": "ㅏ"},
+                                {"value": "ㅓ", "label": "ㅓ"}]}
+        if self.phase == "pair_a_result":
+            correct = self.choice_a == "ㅓ"
+            return {**base, "kind": "teaching_pair_result", "correct": correct,
+                    "dialogue": "The short stroke moved left. Now it’s ㅓ." if correct
+                    else "The short stroke moves left: ㅏ becomes ㅓ.",
+                    "pair": self._pair("ㅏ", "ㅓ", "vertical"),
+                    "note": "Type eo for this sound—one vowel, two English letters."}
+        if self.phase == "pair_o_predict":
+            return {**base, "kind": "teaching_pair_predict",
+                    "dialogue": "Keep the long line in place.",
+                    "pair": self._pair("ㅗ", "ㅜ", "horizontal"),
+                    "prompt": "Move the short stroke below the line. Which shape will you make?",
+                    "choices": [{"value": "ㅗ", "label": "ㅗ"},
+                                {"value": "ㅜ", "label": "ㅜ"}]}
+        if self.phase == "pair_o_result":
+            correct = self.choice_o == "ㅜ"
+            return {**base, "kind": "teaching_pair_result", "correct": correct,
+                    "dialogue": "Below the line: ㅜ." if correct
+                    else "Below the line gives you ㅜ.",
+                    "pair": self._pair("ㅗ", "ㅜ", "horizontal")}
         if self.phase == "explore":
             letters = [{"jamo": letter, "syllable": self.syllables[letter],
                         "roman": ROMANIZATION[letter],
                         "sound": self.lesson["pronunciation"][letter],
-                        "memory": self.mnemonics.get(letter, "")}
+                        "memory": self.mnemonics.get(letter, ""),
+                        "shape": {"ㅏ": "Short stroke right of a vertical stem.",
+                                  "ㅓ": "Short stroke left of a vertical stem.",
+                                  "ㅗ": "Short stroke above a horizontal line.",
+                                  "ㅜ": "Short stroke below a horizontal line.",
+                                  "ㅡ": "One horizontal line.",
+                                  "ㅣ": "One vertical line."}[letter]}
                        for letter in self.letters]
             return {**base, "kind": "teaching_explore",
-                    "dialogue": "Meet six vowels. Tap one for a memory cue, then start practice.",
+                    "dialogue": "Meet the other two: ㅡ and ㅣ. Explore any vowel, then build your first block.",
                     "letters": letters, "selected": self.selected}
+        if self.phase == "construct":
+            choices = [{"value": "ㅇ", "label": "ㅇ"}] if self.construction_step == 0 else (
+                [{"value": "ㅏ", "label": "ㅏ"}] if self.construction_step == 1 else [])
+            return {**base, "kind": "teaching_construct",
+                    "dialogue": "In Korean writing, a vowel needs an initial consonant. Here, ㅇ is silent.",
+                    "prompt": "Tap ㅇ, then ㅏ.", "step": self.construction_step,
+                    "choices": choices, "result": "ㅇ + ㅏ = 아. Read it as a." if self.construction_step == 2 else None}
         return {"kind": "teaching_done", "lesson_id": 1}
 
     def submit(self, action):
@@ -460,37 +497,81 @@ class LessonOneTeaching:
             raise ValueError("Lesson 1 teaching is finished.")
         if action == "/skip":
             self.phase = "done"
-        elif self.phase == "intro" and action == "/continue":
-            self.phase = "predict"
-        elif self.phase == "predict" and action in ("ㅇ", "different"):
-            self.choice = action
-            self.phase = "feedback"
-        elif self.phase == "feedback" and action == "/continue":
-            self.phase = "explore"
             self.selected = None
+            self.construction_step = 0
+        elif self.phase == "intro" and action == "/continue":
+            self.phase = "pair_a_predict"
+        elif self.phase == "pair_a_predict" and action in ("ㅏ", "ㅓ"):
+            self.choice_a = action
+            self.phase = "pair_a_result"
+        elif self.phase == "pair_a_result" and action == "/continue":
+            self.phase = "pair_o_predict"
+        elif self.phase == "pair_o_predict" and action in ("ㅗ", "ㅜ"):
+            self.choice_o = action
+            self.phase = "pair_o_result"
+        elif self.phase == "pair_o_result" and action == "/continue":
+            self.phase = "explore"
         elif self.phase == "explore" and action in self.letters:
             self.selected = action
-        elif self.phase == "explore" and action == "/practice":
+        elif self.phase == "explore" and action == "/continue":
+            self.phase = "construct"
+            self.selected = None
+            self.construction_step = 0
+        elif self.phase == "construct" and self.construction_step == 0 and action == "ㅇ":
+            self.construction_step = 1
+        elif self.phase == "construct" and self.construction_step == 1 and action == "ㅏ":
+            self.construction_step = 2
+        elif self.phase == "construct" and self.construction_step == 2 and action == "/practice":
             self.phase = "done"
+            self.construction_step = 0
         else:
             raise ValueError("Invalid Lesson 1 teaching action.")
         return self.current()
 
     def export_state(self):
-        return json.dumps({"phase": self.phase, "choice": self.choice,
-                           "selected": self.selected}, ensure_ascii=False)
+        return json.dumps({"version": 2, "phase": self.phase,
+                           "choice_a": self.choice_a, "choice_o": self.choice_o,
+                           "selected": self.selected,
+                           "construction_step": self.construction_step}, ensure_ascii=False)
 
     @classmethod
     def from_state(cls, lesson, mnemonics, text):
         state = json.loads(text)
         guide = cls(lesson, mnemonics)
-        phase, choice, selected = state["phase"], state["choice"], state["selected"]
-        if (phase not in ("intro", "predict", "feedback", "explore", "done")
-                or choice not in (None, "ㅇ", "different")
-                or selected not in (None, *guide.letters)
-                or phase in ("intro", "predict") and (choice is not None or selected is not None)
-                or phase == "feedback" and (choice is None or selected is not None)
-                or phase == "explore" and choice is None):
+        if not isinstance(state, dict):
             raise ValueError("Invalid Lesson 1 teaching state.")
-        guide.phase, guide.choice, guide.selected = phase, choice, selected
+        if "version" not in state:
+            phase, choice, selected = state.get("phase"), state.get("choice"), state.get("selected")
+            if (phase not in ("intro", "predict", "feedback", "explore", "done")
+                    or choice not in (None, "ㅇ", "different")
+                    or selected not in (None, *guide.letters)):
+                raise ValueError("Invalid legacy Lesson 1 teaching state.")
+            guide.phase = {"intro": "intro", "predict": "pair_a_predict",
+                           "feedback": "pair_a_predict", "explore": "explore",
+                           "done": "done"}[phase]
+            guide.selected = selected if phase == "explore" else None
+            if phase == "explore":
+                guide.choice_a, guide.choice_o = "ㅓ", "ㅜ"
+            return guide
+        phase = state.get("phase")
+        choice_a, choice_o = state.get("choice_a"), state.get("choice_o")
+        selected, step = state.get("selected"), state.get("construction_step")
+        if (state.get("version") != 2
+                or phase not in ("intro", "pair_a_predict", "pair_a_result",
+                                 "pair_o_predict", "pair_o_result", "explore",
+                                 "construct", "done")
+                or choice_a not in (None, "ㅏ", "ㅓ")
+                or choice_o not in (None, "ㅗ", "ㅜ")
+                or selected not in (None, *guide.letters)
+                or type(step) is not int or step not in (0, 1, 2)
+                or phase in ("intro", "pair_a_predict") and (choice_a is not None or choice_o is not None)
+                or phase == "pair_a_result" and choice_a is None
+                or phase in ("pair_o_predict", "pair_o_result", "explore", "construct") and choice_a is None
+                or phase == "pair_o_result" and choice_o is None
+                or phase in ("explore", "construct") and choice_o is None
+                or phase != "construct" and step != 0
+                or phase != "explore" and selected is not None):
+            raise ValueError("Invalid Lesson 1 teaching state.")
+        guide.phase, guide.choice_a, guide.choice_o = phase, choice_a, choice_o
+        guide.selected, guide.construction_step = selected, step
         return guide

@@ -18,3 +18,51 @@
 @media(max-width:350px){.shell.lesson-one-active .letters{display:none}.lesson-one-active .character-stage{height:60px;min-height:60px}.lesson-one-active .screen{gap:5px}}
 .character-stage .character-portrait{min-height:0}
 .screen[data-kind="save_recovery"]{justify-content:flex-start;min-height:0;overflow:auto}.recovery-data{width:100%;min-height:100px;max-height:140px;resize:vertical;border:1px solid var(--rule);border-radius:10px;background:var(--paper);color:var(--ink);font:12px/1.4 monospace;padding:10px}
+
+/* Lesson 1's selected character-led layout uses natural page height. */
+.shell.lesson-one-active,.shell.compact-curriculum,.shell.sejong-ending{height:auto;min-height:100dvh}
+.lesson-one-active .screen,.compact-curriculum .screen,.sejong-ending .screen{flex:none;min-height:0;overflow:visible;justify-content:flex-start}
+.lesson-one-active .screen{gap:12px;padding:16px}
+.lesson-one-active .controls{gap:8px}
+.lesson-one-active .character-stage{height:108px;min-height:0;overflow:hidden}
+.lesson-one-active .character-stage .character-portrait{height:100px;width:auto;max-width:100%;object-fit:contain}
+.lesson-one-active .screen[data-step="teaching_intro"] .character-stage{height:190px}
+.lesson-one-active .screen[data-step="teaching_intro"] .character-portrait{height:180px}
+.lesson-one-active .dialogue-panel{padding:10px 12px;gap:4px}
+.speaker-label{color:var(--seal);font-size:.72rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
+.lesson-one-active .dialogue-text{font-size:1rem;line-height:1.35}
+.lesson-one-active .teaching-exercise{gap:9px}
+.lesson-vowel-strip{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:5px}
+.lesson-vowel-strip span{min-height:42px;display:grid;place-items:center;border:1px solid var(--rule);border-radius:9px;background:var(--paper);font:700 1.6rem/1 var(--hangul)}
+.teaching-skip{align-self:center;min-height:40px;border:0;background:transparent;color:var(--cons);text-decoration:underline;text-underline-offset:3px;font-size:.9rem}
+.pair-target{display:grid;grid-template-columns:90px 1fr;gap:12px;align-items:center}
+.pair-glyph{font:700 5rem/1 var(--hangul);text-align:center}
+.pair-meta{display:grid;gap:2px;min-width:0}
+.pair-roman{font-size:1.3rem;font-weight:800;color:var(--vow)}
+.pair-sound{font-size:.93rem;line-height:1.25;color:var(--muted)}
+.pair-stroke{font-size:.85rem;font-weight:700;color:var(--cons)}
+.lesson-one-active .prompt{font-size:1.08rem}
+.lesson-one-active .choice{min-height:60px;font-size:2.4rem}
+.pair-comparison{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.pair-example{min-width:0;display:grid;justify-items:center;align-content:start;gap:3px;padding:8px;border:1px solid var(--rule);border-radius:12px;background:var(--paper);text-align:center}
+.pair-example .pair-glyph{font-size:4.5rem}
+.pair-example .pair-sound{font-size:.83rem}
+.pair-relationship,.pair-note,.reference-intro{margin:0;font-size:.93rem;line-height:1.3}
+.pair-relationship{font-weight:650}.pair-note{color:var(--muted)}
+.lesson-one-active .vowel-grid{gap:6px}.lesson-one-active .vowel-tile{min-height:69px}
+.lesson-one-active .vowel-detail{font-size:.93rem;line-height:1.3;padding:10px}
+.memory-cue summary{color:var(--cons);cursor:pointer;font-weight:700}.memory-cue p{margin:6px 0 0}
+.construction-view{display:flex;align-items:center;justify-content:center;gap:12px;min-height:100px;padding:8px;border-radius:12px;background:var(--paper)}
+.construction-piece{font:700 4rem/1 var(--hangul);color:var(--ink)}.construction-plus{color:var(--muted);font-size:1.5rem}
+.construction-result{margin:0;font:700 1.35rem/1.35 var(--hangul);text-align:center}
+.construction-choices{display:grid;grid-template-columns:1fr;gap:8px}
+.compact-curriculum .screen{gap:12px}.compact-curriculum .controls{flex:none}
+.sejong-ending .screen{gap:14px}.sejong-ending .controls{flex:none}
+.sejong-ending .milestone-lines .character-line{display:grid;grid-template-columns:42px minmax(0,1fr);gap:5px 8px}
+.sejong-ending .milestone-lines .character-portrait{grid-column:1;grid-row:1;width:42px;height:42px}
+.sejong-ending .milestone-lines .character-words{display:contents}
+.sejong-ending .milestone-lines .name-tag{grid-column:2;grid-row:1;align-self:center}
+.sejong-ending .milestone-lines .line-text{grid-column:1/-1;grid-row:2}
+.sejong-ending .seal{font-size:clamp(20px,5vw,29px);transform:none;overflow:hidden}
+@media(max-height:650px){.lesson-one-active .screen[data-step="teaching_intro"] .character-stage{height:132px}.lesson-one-active .screen[data-step="teaching_intro"] .character-portrait{height:125px}.lesson-one-active .character-stage{height:72px}.lesson-one-active .character-stage .character-portrait{height:67px}.lesson-one-active .screen{padding:11px;gap:8px}.lesson-one-active .dialogue-panel{padding:8px 10px}.lesson-one-active .vowel-tile{min-height:52px}.pair-glyph{font-size:4.3rem}.pair-example .pair-glyph{font-size:3.8rem}}
+@media(max-width:350px){.lesson-one-active .screen[data-step="teaching_intro"] .character-stage{height:132px}.lesson-one-active .screen[data-step="teaching_intro"] .character-portrait{height:125px}.lesson-one-active .screen{padding:11px;gap:8px}.pair-target{grid-template-columns:75px 1fr;gap:8px}.pair-glyph{font-size:4.2rem}.pair-example .pair-glyph{font-size:3.7rem}}

@@ -41,7 +41,13 @@ const button = (label, className, action) => {
 function clear(kind) {
   screen.replaceChildren();
   screen.dataset.kind = kind;
-  document.querySelector(".shell").classList.toggle("lesson-one-active", kind === "lesson1_teaching");
+  const shell = document.querySelector(".shell");
+  shell.classList.toggle("lesson-one-active", kind === "lesson1_teaching");
+  shell.classList.toggle("compact-curriculum", COURSE === "curriculum" &&
+    ["question", "result", "check_question", "check_feedback", "check_practice_question",
+      "check_practice_feedback"].includes(kind));
+  shell.classList.toggle("sejong-ending", COURSE === "sejong" &&
+    ["milestone", "finished"].includes(kind));
   controls.replaceChildren();
   status.textContent = "";
 }
@@ -260,34 +266,53 @@ function renderLessonOne(event = null) {
   event ||= JSON.parse(python("json.dumps(teaching_flow.current(), ensure_ascii=False)"));
   if (event.kind === "teaching_done") { finishTeaching(); return; }
   clear("lesson1_teaching");
+  screen.dataset.step = event.kind;
   visibleEvent = event;
   curriculumHeader(teaching.lesson);
   const stage = add(screen, "div", "character-stage");
   character(stage, event.speaker, event.pose);
   const dialogue = add(screen, "div", "dialogue-panel");
-  add(dialogue, "span", "name-tag", "Jeong · your guide");
+  add(dialogue, "span", "speaker-label", "Jeong");
   add(dialogue, "p", "dialogue-text", event.dialogue);
   const exercise = add(screen, "div", "teaching-exercise");
   if (event.kind === "teaching_intro") {
-    add(exercise, "span", "eyebrow", "Lesson 1 · Your first vowels");
-    controls.appendChild(button("Look at two blocks", "primary", () => lessonOneAction("/continue")));
-    controls.appendChild(button("Go straight to practice", "secondary", () => lessonOneAction("/skip")));
-  } else if (event.kind === "teaching_predict") {
-    add(exercise, "span", "eyebrow", "Notice a pattern");
-    add(exercise, "div", "teaching-blocks", event.blocks.join("   "));
+    add(exercise, "span", "eyebrow", "This lesson");
+    const strip = add(exercise, "div", "lesson-vowel-strip");
+    for (const letter of event.letters) add(strip, "span", "", letter);
+    controls.appendChild(button("Try the first pair", "primary", () => lessonOneAction("/continue")));
+  } else if (event.kind === "teaching_pair_predict") {
+    add(exercise, "span", "eyebrow", event.pair.axis === "vertical" ? "First relationship" : "Second relationship");
+    const target = add(exercise, "div", "pair-target");
+    add(target, "strong", "pair-glyph", event.pair.first);
+    const meta = add(target, "div", "pair-meta");
+    add(meta, "strong", "pair-roman", event.pair.first_roman);
+    add(meta, "span", "pair-sound", event.pair.first_sound);
+    add(meta, "span", "pair-stroke", event.pair.axis === "vertical" ? "Short stroke → right" : "Short stroke ↑ above");
     add(exercise, "p", "prompt", event.prompt);
     const choices = add(controls, "div", "choices");
     for (const choice of event.choices)
       choices.appendChild(button(choice.label, "choice", () => lessonOneAction(choice.value)));
-    controls.appendChild(button("Go straight to practice", "secondary", () => lessonOneAction("/skip")));
-  } else if (event.kind === "teaching_feedback") {
-    add(exercise, "span", "eyebrow", event.correct ? "You found it" : "Look again");
-    add(exercise, "div", "teaching-blocks", event.blocks.join("   "));
-    add(exercise, "p", "support", event.explanation);
-    controls.appendChild(button("Meet the six vowels", "primary", () => lessonOneAction("/continue")));
-    controls.appendChild(button("Go straight to practice", "secondary", () => lessonOneAction("/skip")));
+  } else if (event.kind === "teaching_pair_result") {
+    add(exercise, "span", "eyebrow", "Compare the shapes");
+    const comparison = add(exercise, "div", "pair-comparison");
+    for (const [letter, roman, sound] of [
+      [event.pair.first, event.pair.first_roman, event.pair.first_sound],
+      [event.pair.second, event.pair.second_roman, event.pair.second_sound]]) {
+      const item = add(comparison, "div", "pair-example");
+      add(item, "strong", "pair-glyph", letter);
+      add(item, "strong", "pair-roman", roman);
+      add(item, "span", "pair-sound", sound);
+    }
+    add(exercise, "p", "pair-relationship", event.pair.axis === "vertical"
+      ? "Same vertical stem; the short stroke is on the left in ㅓ."
+      : "Same horizontal line; the short stroke is below in ㅜ.");
+    if (event.note) add(exercise, "p", "pair-note", event.note);
+    controls.appendChild(button(event.pair.axis === "vertical" ? "Try the next pair" : "Meet the other two",
+      "primary", () => lessonOneAction("/continue")));
   } else if (event.kind === "teaching_explore") {
-    add(exercise, "span", "eyebrow", "Your first vowels");
+    add(exercise, "span", "eyebrow", "Six-vowel reference");
+    add(exercise, "p", "reference-intro", `ㅡ · eu — ${event.letters.find(item => item.jamo === "ㅡ").sound}`);
+    add(exercise, "p", "reference-intro", `ㅣ · i — ${event.letters.find(item => item.jamo === "ㅣ").sound}`);
     const grid = add(exercise, "div", "vowel-grid");
     for (const item of event.letters) {
       const tile = button("",
@@ -303,12 +328,36 @@ function renderLessonOne(event = null) {
     const selected = event.letters.find(item => item.jamo === event.selected);
     if (selected) {
       const detail = add(exercise, "div", "vowel-detail");
-      add(detail, "strong", "", `${selected.jamo} → ${selected.syllable} · ${selected.roman}`);
+      add(detail, "strong", "", `${selected.jamo} · ${selected.roman}`);
       add(detail, "p", "", selected.sound);
-      if (selected.memory) add(detail, "p", "", selected.memory);
+      add(detail, "p", "", selected.shape);
+      if (selected.memory) {
+        const optional = add(detail, "details", "memory-cue");
+        add(optional, "summary", "", "Memory cue");
+        add(optional, "p", "", selected.memory);
+      }
     }
-    controls.appendChild(button("Start practice", "primary", () => lessonOneAction("/practice")));
+    controls.appendChild(button("Build your first block", "primary", () => lessonOneAction("/continue")));
+  } else if (event.kind === "teaching_construct") {
+    add(exercise, "span", "eyebrow", "Build a block");
+    add(exercise, "p", "prompt", event.prompt);
+    const build = add(exercise, "div", "construction-view");
+    add(build, "span", "construction-piece", event.step >= 1 ? "ㅇ" : "□");
+    add(build, "span", "construction-plus", "+");
+    add(build, "span", "construction-piece", event.step >= 2 ? "ㅏ" : "□");
+    if (event.step === 2) {
+      add(exercise, "p", "construction-result", event.result);
+      controls.appendChild(button("Start practice", "primary", () => lessonOneAction("/practice")));
+    } else {
+      const pieces = add(controls, "div", "construction-choices");
+      for (const choice of event.choices)
+        pieces.appendChild(button(choice.label, "choice", () => lessonOneAction(choice.value)));
+    }
   }
+  if (event.kind === "teaching_intro" || event.kind === "teaching_pair_predict" ||
+      event.kind === "teaching_pair_result" || event.kind === "teaching_explore" ||
+      event.kind === "teaching_construct")
+    controls.appendChild(button("Go straight to practice", "teaching-skip", () => lessonOneAction("/skip")));
   saveState();
 }
 function renderTeaching() {
@@ -843,6 +892,10 @@ async function restoreCurriculum() {
   try {
     const {saved, legacy} = curriculumEnvelope(JSON.parse(raw));
     if (legacy) backupCurriculumSave(raw);
+    const oldTeaching = saved.teaching?.kind === "lesson1" &&
+      typeof saved.teaching.state === "string" &&
+      JSON.parse(saved.teaching.state).version === undefined;
+    if (oldTeaching) backupCurriculumSave(raw);
     pyodide.globals.set("web_state", saved.state);
     python("quiz = HangulQuiz(persist=False); flow = CurriculumFlow.from_state(quiz, web_state)");
     const events = JSON.parse(python("json.dumps(flow.resume('reopen'), ensure_ascii=False)"));
@@ -892,6 +945,7 @@ async function restoreCurriculum() {
       }
     }
     saveBlocked = false;
+    if (oldTeaching) saveState();
   } catch (error) { showSaveRecovery(raw, error); }
 }
 async function bootstrap() {
