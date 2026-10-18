@@ -492,6 +492,17 @@ class SejongFlow:
             return self._letter(target)["sound"]
         return " / ".join(self.quiz._piece_hint(block) for block in target)
 
+    def _result_reading(self, target):
+        if target in self.letters_known:
+            roman = self._letter(target)["roman"]
+        else:
+            roman = self.quiz._word_romanization(target)
+        words = [word for batch in self.content["batches"] for word in batch["words"]]
+        words.append(self.content["before_after"])
+        meaning = next((word["en"] for word in words
+                        if word.get("ko", word.get("word")) == target), None)
+        return roman, meaning
+
     def submit(self, answer: str, active_ms: int = 0):
         if self.outcome is not None:
             raise ValueError("The Sejong Test has ended.")
@@ -552,6 +563,10 @@ class SejongFlow:
         result = {"kind": "result", "qid": card["qid"], "correct": correct,
                   "answer": answer, "correct_answer": self.current["answer"],
                   "streak": self.streak, "requeued": False}
+        roman, meaning = self._result_reading(target)
+        result.update(target=target, roman=roman, meaning=meaning,
+                      prompt=card["prompt"], display=card["display"],
+                      parts=card.get("parts"), context=context)
         events = [result]
         if context == "after":
             word = self.content["before_after"]

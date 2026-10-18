@@ -66,3 +66,55 @@
 .sejong-ending .seal{font-size:clamp(20px,5vw,29px);transform:none;overflow:hidden}
 @media(max-height:650px){.lesson-one-active .screen[data-step="teaching_intro"] .character-stage{height:132px}.lesson-one-active .screen[data-step="teaching_intro"] .character-portrait{height:125px}.lesson-one-active .character-stage{height:72px}.lesson-one-active .character-stage .character-portrait{height:67px}.lesson-one-active .screen{padding:11px;gap:8px}.lesson-one-active .dialogue-panel{padding:8px 10px}.lesson-one-active .vowel-tile{min-height:52px}.pair-glyph{font-size:4.3rem}.pair-example .pair-glyph{font-size:3.8rem}}
 @media(max-width:350px){.lesson-one-active .screen[data-step="teaching_intro"] .character-stage{height:132px}.lesson-one-active .screen[data-step="teaching_intro"] .character-portrait{height:125px}.lesson-one-active .screen{padding:11px;gap:8px}.pair-target{grid-template-columns:75px 1fr;gap:8px}.pair-glyph{font-size:4.2rem}.pair-example .pair-glyph{font-size:3.7rem}}
+.shell.sejong-feedback{height:auto;min-height:100dvh}
+.sejong-feedback .screen{flex:none;min-height:0;justify-content:flex-start;gap:13px;padding:20px}
+.sejong-feedback .controls{flex:none}
+.sejong-feedback .assembly .whole{font-size:clamp(64px,24vw,96px)}
+.sejong-target{font:700 clamp(64px,24vw,96px)/1.04 var(--hangul);letter-spacing:-.05em;overflow-wrap:anywhere}
+.sejong-target.word{font-size:clamp(64px,20vw,88px)}
+.sejong-reading{display:grid;gap:1px;font-family:var(--hangul)}
+.sejong-roman{font-size:1.45rem;line-height:1.2}
+.sejong-meaning{font-size:1.1rem;line-height:1.3;color:var(--muted)}
+.sejong-question{display:grid;gap:4px;padding-bottom:10px;border-bottom:1px solid var(--rule)}
+.sejong-question-text{margin:0;font-size:1rem;font-weight:600;line-height:1.3}
+.sejong-question-parts{font:700 2rem/1.1 var(--hangul)}
+.sejong-comparison{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.sejong-answer{display:grid;align-content:start;gap:4px;min-width:0;padding:11px 10px;border:1px solid var(--rule);border-radius:13px;background:var(--paper)}
+.sejong-answer.correct-answer{border-color:var(--ok)}
+.sejong-answer-label{font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700}
+.sejong-target.answer{font-size:clamp(56px,19vw,78px);overflow-wrap:anywhere}
+.sejong-target.answer.word{font-size:clamp(46px,15vw,64px)}
+.sejong-target.answer.latin{font:700 clamp(24px,7vw,34px)/1.15 var(--ui);letter-spacing:0}
+.sejong-correction-reading{padding:2px 0 4px}
+.sejong-components{display:flex;align-items:center;gap:5px;font:700 1.25rem/1.2 var(--hangul)}
+.sejong-components span:not(:nth-child(2)){padding:1px 4px;border-radius:5px}
+.sejong-components .wrong-part{outline:2px solid var(--seal)}
+.sejong-components .right-part{outline:2px solid var(--ok)}
+.sejong-target.answer.wrong-whole{text-decoration:underline;text-decoration-color:var(--seal);text-decoration-thickness:3px;text-underline-offset:5px}
+.sejong-target.answer.right-whole{text-decoration:underline;text-decoration-color:var(--ok);text-decoration-thickness:3px;text-underline-offset:5px}
+.sejong-target .wrong-letter,.sejong-roman .wrong-letter{text-decoration:underline;text-decoration-color:var(--seal);text-decoration-thickness:3px;text-underline-offset:5px}
+.sejong-target .right-letter,.sejong-roman .right-letter{text-decoration:underline;text-decoration-color:var(--ok);text-decoration-thickness:3px;text-underline-offset:5px}
+.sejong-feedback .character-line{display:grid;grid-template-columns:40px minmax(0,1fr);gap:8px;padding-top:9px;border-top:1px solid var(--rule)}
+.sejong-feedback .character-portrait{width:40px;height:44px;background:transparent;border-radius:0}
+.sejong-feedback .character-words{gap:3px}
+.sejong-feedback .name-tag{padding:0;background:transparent}
+.sejong-feedback .line-text{font-size:1rem;line-height:1.35;text-wrap:wrap}
+.shell.sejong-dialogue{height:auto;min-height:100dvh}
+.sejong-dialogue .screen{flex:none;min-height:0;justify-content:flex-start;gap:12px;padding:20px}
+.sejong-dialogue .controls{flex:none}
+.sejong-dialogue .character-line{display:grid;gap:12px}
+.sejong-dialogue .character-portrait{justify-self:center;width:180px;height:180px;max-width:100%;object-fit:contain;background:transparent;border-radius:16px}
+.sejong-dialogue .character-words{display:grid;gap:5px;padding:13px 15px;border:1px solid var(--rule);border-radius:14px;background:var(--card)}
+.sejong-dialogue .line-text{font-size:clamp(1.15rem,5vw,1.45rem);line-height:1.4;text-wrap:balance}
+.shell.sejong-intro-panel{height:auto;min-height:100dvh}
+.sejong-intro-panel .screen{flex:none;min-height:0;justify-content:flex-start}
+.sejong-intro-panel .controls{flex:none}
+.shell.sejong-construction{height:auto;min-height:100dvh}
+.sejong-construction .screen{flex:none;min-height:0;justify-content:flex-start;gap:12px;padding:20px}
+.sejong-construction .controls{flex:none}
+@media(max-height:650px){.sejong-feedback .screen{padding:15px;gap:10px}.sejong-feedback .sejong-target:not(.answer){font-size:76px}.sejong-feedback .sejong-target.word:not(.answer){font-size:70px}.sejong-feedback .line-text{font-size:.95rem}}
+@media(max-height:650px){.sejong-dialogue .screen{padding:15px;gap:9px}.sejong-dialogue .character-line{gap:9px}.sejong-dialogue .character-portrait{width:150px;height:150px}.sejong-dialogue .character-words{padding:10px 12px}.sejong-dialogue .line-text{font-size:1.12rem;line-height:1.32}}
+@media(max-height:650px){.sejong-construction .screen{padding:15px;gap:9px}}
+@media(prefers-color-scheme:dark){.sejong-meaning{color:#cbd5cd}}
+@media(prefers-reduced-motion:reduce){.sejong-feedback .assembly .whole{opacity:1}.sejong-feedback .assembly .part{opacity:.28}}
+@media(max-width:350px){.sejong-feedback .screen{padding:15px}.sejong-comparison{gap:6px}.sejong-answer{padding:8px}.sejong-target.answer{font-size:56px}}

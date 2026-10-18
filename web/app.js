@@ -48,6 +48,12 @@ function clear(kind) {
       "check_practice_feedback"].includes(kind));
   shell.classList.toggle("sejong-ending", COURSE === "sejong" &&
     ["milestone", "finished"].includes(kind));
+  shell.classList.toggle("sejong-feedback", COURSE === "sejong" &&
+    ["result", "word_read", "reveal"].includes(kind));
+  shell.classList.toggle("sejong-dialogue", COURSE === "sejong" && kind === "narrator");
+  shell.classList.toggle("sejong-intro-panel", COURSE === "sejong" &&
+    ["letter_intro", "before_word"].includes(kind));
+  shell.classList.remove("sejong-construction");
   controls.replaceChildren();
   status.textContent = "";
 }
@@ -105,6 +111,8 @@ function setCard(event, isNew = true) {
 }
 function renderCard(event, overlay = null) {
   clear(event.kind);
+  document.querySelector(".shell").classList.toggle("sejong-construction", COURSE === "sejong" &&
+    (event.kind === "predict" || (event.kind === "question" && Boolean(event.parts))));
   if (event.kind === "predict") {
     add(screen, "span", "eyebrow", "Put them together");
     add(screen, "div", "big-hangul word", `${event.consonant} + ${event.vowel} = ?`);
@@ -146,6 +154,59 @@ function renderCard(event, overlay = null) {
     await callFlow("submit", "/hint", 0);
   }));
 }
+function sejongReading(parent, roman, meaning) {
+  if (!roman && !meaning) return;
+  const reading = add(parent, "div", "sejong-reading");
+  if (roman) add(reading, "strong", "sejong-roman", roman);
+  if (meaning) add(reading, "span", "sejong-meaning", meaning);
+  return reading;
+}
+function sejongTarget(parent, target, roman, meaning, extra = "") {
+  add(parent, "div", `sejong-target${target.length > 1 ? " word" : ""} ${extra}`, target);
+  sejongReading(parent, roman, meaning);
+}
+function sejongSyllableParts(block) {
+  if (block.length !== 1 || block < "가" || block > "힣") return null;
+  const value = block.charCodeAt(0) - 0xac00;
+  return [CONSONANTS[Math.floor(value / 588)], VOWELS[Math.floor(value % 588 / 28)]];
+}
+function sejongDifference(parent, chosen, correct, isCorrect) {
+  if (!chosen || !correct || chosen.length !== correct.length) return false;
+  const at = [...chosen].findIndex((part, index) => part !== [...correct][index]);
+  if (at < 0) return false;
+  const chosenParts = sejongSyllableParts([...chosen][at]);
+  const correctParts = sejongSyllableParts([...correct][at]);
+  if (!chosenParts || !correctParts) return false;
+  const changed = chosenParts.findIndex((part, index) => part !== correctParts[index]);
+  if (changed < 0) return false;
+  const parts = isCorrect ? correctParts : chosenParts;
+  const row = add(parent, "div", "sejong-components");
+  parts.forEach((part, index) => {
+    if (index) add(row, "span", "", "+");
+    add(row, "span", index === changed ? (isCorrect ? "right-part" : "wrong-part") : "", part);
+  });
+  return true;
+}
+function sejongRomanDifference(chosenBox, reading, chosen, roman) {
+  if (!/^[a-z]+$/i.test(chosen) || !roman) return false;
+  const letters = [...chosen], expected = [...roman];
+  const at = letters.findIndex((letter, index) => letter.toLowerCase() !== expected[index]?.toLowerCase());
+  const index = at < 0 ? Math.min(letters.length, expected.length) - 1 : at;
+  if (index < 0) return false;
+  for (const [element, value, className] of [
+    [chosenBox.querySelector(".sejong-target"), chosen, "wrong-letter"],
+    [reading?.querySelector(".sejong-roman"), roman, "right-letter"],
+  ]) {
+    if (!element) continue;
+    element.replaceChildren();
+    [...value].forEach((letter, position) => add(element, "span", position === index ? className : "", letter));
+  }
+  return true;
+}
+function sejongExerciseLine(parent, event) {
+  if (!event) return;
+  line(parent, event);
+}
 function renderEvent(event) {
   clear(event.kind);
   if (event.kind === "narrator") line(screen, event);
@@ -167,19 +228,44 @@ function renderEvent(event) {
     add(view, "span", "part-labels", `${event.parts[0]} + ${event.parts[1]}`);
     add(screen, "p", "fact", `${event.roman}${event.meaning ? ` · ${event.meaning}` : ""}`);
   } else if (event.kind === "result") {
-    const context = openCard?.context;
+    const context = event.context || openCard?.context;
     add(screen, "span", `eyebrow ${event.correct ? "correct" : "incorrect"}`, event.correct ? "Correct" : "Not yet");
-    if (!event.correct) {
-      const label = context === "check" || context === "after" ? "It reads" : "The answer is";
-      add(screen, "p", "fact", `${label} ${event.correct_answer}.`);
-    } else add(screen, "p", "fact correct", event.correct_answer);
-    if (event.chosen_is) add(screen, "p", "support", `You chose ${event.chosen_is}.`);
+    if (event.correct) {
+      sejongTarget(screen, event.target || event.correct_answer,
+        event.roman, event.meaning);
+    } else {
+      const question = add(screen, "div", "sejong-question");
+      add(question, "p", "sejong-question-text", event.prompt || openCard?.prompt || "");
+      const parts = event.parts || openCard?.parts;
+      const display = event.display || openCard?.display;
+      if (parts) add(question, "div", "sejong-question-parts", parts.join(" + "));
+      else if (display) add(question, "div", "sejong-question-parts", display);
+      const comparison = add(screen, "div", "sejong-comparison");
+      const chosen = event.chosen_is || event.answer;
+      const chosenBox = add(comparison, "div", "sejong-answer");
+      add(chosenBox, "span", "sejong-answer-label", "You chose");
+      add(chosenBox, "div", `sejong-target answer${/[가-힣ㄱ-ㅎㅏ-ㅣ]/.test(chosen) ? "" : " latin"}`, chosen || "—");
+      const correctBox = add(comparison, "div", "sejong-answer correct-answer");
+      add(correctBox, "span", "sejong-answer-label",
+        context === "check" || context === "after" ? "It reads" : "The answer is");
+      add(correctBox, "div", `sejong-target answer${(event.target || "").length > 1 ? " word" : ""}`,
+        event.target || event.correct_answer);
+      const componentShown = sejongDifference(chosenBox, chosen, event.target, false);
+      sejongDifference(correctBox, chosen, event.target, true);
+      const reading = sejongReading(screen, event.roman, event.meaning);
+      if (reading) reading.classList.add("sejong-correction-reading");
+      if (!componentShown) {
+        if (!sejongRomanDifference(chosenBox, reading, chosen, event.roman)) {
+          chosenBox.querySelector(".sejong-target").classList.add("wrong-whole");
+          correctBox.querySelector(".sejong-target").classList.add("right-whole");
+        }
+      }
+    }
     if (event.tell && !event.line?.text?.includes(event.tell)) add(screen, "p", "support", event.tell);
-    if (event.line) line(screen, event.line);
+    sejongExerciseLine(screen, event.line);
   } else if (event.kind === "word_read") {
-    add(screen, "div", "big-hangul word", event.ko);
-    add(screen, "p", "fact", `${event.roman} · ${event.en}`);
-    if (event.line) line(screen, event.line);
+    sejongTarget(screen, event.ko, event.roman, event.en);
+    sejongExerciseLine(screen, event.line);
   } else if (event.kind === "score") {
     add(screen, "span", `eyebrow ${event.passed ? "correct" : "incorrect"}`, event.passed ? "Reading check passed" : "Keep practicing");
     add(screen, "p", "score-number", `${event.correct} of ${event.size}`);
