@@ -1,5 +1,6 @@
 """Copy both Python lesson flows into a static, hash-listed web bundle."""
 
+import ast
 import hashlib
 import json
 import shutil
@@ -41,6 +42,19 @@ def build():
                 "files": files}
     (OUT / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    # Reuse the terminal's authored teaching text without importing its CLI.
+    tree = ast.parse((ROOT / "hangul_cli.py").read_text(encoding="utf-8"))
+    names = {"ALPHABET_MNEMONICS": "mnemonics", "POSITIONAL_QUIRKS": "quirks"}
+    teaching = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id in names:
+                    teaching[names[target.id]] = ast.literal_eval(node.value)
+    if set(teaching) != set(names.values()):
+        raise ValueError("Terminal letter teaching data is missing")
+    (ROOT / "web" / "teaching.json").write_text(
+        json.dumps(teaching, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"Built {len(files)} files; APP_VERSION={manifest['app_version']}")
 
 

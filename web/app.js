@@ -4,6 +4,8 @@
 const PARAMS = new URLSearchParams(location.search);
 const COURSE = PARAMS.get("course") === "curriculum" ? "curriculum" : "sejong";
 const STORAGE_KEY = COURSE === "curriculum" ? "hangul.curriculum.v1" : "sejong.slice.v1";
+const CURRICULUM_SAVE_KIND = "curriculum-controller";
+const CURRICULUM_SAVE_VERSION = 1;
 const TEST = PARAMS.get("test") === "1";
 const TEST_SEED = TEST ? Number(PARAMS.get("seed") || 1) : null;
 const $ = id => document.getElementById(id);
@@ -20,6 +22,8 @@ let startedAt = null, finishedAt = null, answerLog = [], eventHistory = [];
 let submissionMs = [];
 let activeBucket = 0, lastTick = performance.now(), paused = false, busy = false;
 let loadingTimes = {}, storageWorked = true;
+let teachingData = {mnemonics: {}, quirks: {}}, teaching = null;
+let saveBlocked = false;
 
 const node = (tag, className, value) => {
   const element = document.createElement(tag);
@@ -37,13 +41,39 @@ const button = (label, className, action) => {
 function clear(kind) {
   screen.replaceChildren();
   screen.dataset.kind = kind;
+  document.querySelector(".shell").classList.toggle("lesson-one-active", kind === "lesson1_teaching");
   controls.replaceChildren();
   status.textContent = "";
 }
 function line(parent, event) {
-  const tag = add(parent, "span", "name-tag", event.speaker === "sejong" ? "King Sejong" : "Jeong");
+  const row = add(parent, "div", "character-line");
+  character(row, event.speaker);
+  const words = add(row, "div", "character-words");
+  const tag = add(words, "span", "name-tag", event.speaker === "sejong" ? "King Sejong" : "Jeong");
   if (String(event.source || "").startsWith("real")) add(tag, "span", "historical", "historical");
-  add(parent, "p", "line-text", event.text);
+  add(words, "p", "line-text", event.text);
+}
+const CHARACTER_ASSETS = {
+  jeong: {
+    hello: "./assets/jeong_hello.png",
+    curious: "./assets/jeong_curious.png",
+    delighted: "./assets/jeong_delighted.png",
+  },
+  sejong: {
+    hello: "./assets/sejong_hello.png",
+    curious: "./assets/sejong_curious.png",
+    delighted: "./assets/sejong_delighted.png",
+  },
+};
+function character(parent, speaker, pose = "hello") {
+  const mascot = speaker === "sejong" ? "sejong" : "jeong";
+  const selectedPose = CHARACTER_ASSETS[mascot][pose] ? pose : "hello";
+  const image = add(parent, "img", "character-portrait");
+  image.src = CHARACTER_ASSETS[mascot][selectedPose];
+  image.dataset.pose = selectedPose;
+  image.alt = `${mascot === "sejong" ? "King Sejong" : "Jeong"} mascot, ${selectedPose} pose`;
+  image.width = 72; image.height = 72;
+  return image;
 }
 function continueButton(label = "Continue") {
   controls.appendChild(button(label, "primary", async () => {
@@ -166,6 +196,194 @@ function renderEvent(event) {
 }
 
 function plainPrompt(value) { return String(value || "").replaceAll("**", ""); }
+const CONSONANTS = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ";
+const VOWELS = "ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ";
+const BATCHIM_EXAMPLES = {"ㄱ":"각", "ㄴ":"간", "ㄷ":"갇", "ㄹ":"갈", "ㅁ":"감", "ㅂ":"갑", "ㅇ":"강"};
+function letterExample(letter) {
+  const vowel = VOWELS.indexOf(letter);
+  if (vowel >= 0) return `ㅇ + ${letter} = ${String.fromCodePoint(0xac00 + (11 * 21 + vowel) * 28)}`;
+  const consonant = CONSONANTS.indexOf(letter);
+  return consonant >= 0 ? `${letter} + ㅏ = ${String.fromCodePoint(0xac00 + consonant * 21 * 28)}` : "";
+}
+function teachingCards(lesson) {
+  const cards = [{kind: "overview"}];
+  if (lesson.id === 1) cards.push({kind: "discovery"});
+  for (const letter of lesson.letters || []) cards.push({kind: "letter", letter});
+  if ((lesson.letters || []).length || (lesson.words || []).length ||
+      (lesson.vocabulary || []).length || Object.keys(lesson.block_rules || {}).length)
+    cards.push({kind: "reference"});
+  return cards;
+}
+function curriculumHeader(lesson) {
+  $("batch-name").textContent = `Lesson ${lesson.id}: ${lesson.title}`;
+  const chips = $("letters"); chips.replaceChildren();
+  for (const letter of lesson.letters || []) add(chips, "span", "letter-chip", letter);
+}
+function startTeaching(lesson, index = 0, message = "") {
+  if (openCard) pending.unshift(openCard);
+  openCard = null; awaitInput = null;
+  if (lesson.id === 1) {
+    const savedState = typeof index === "string" ? index : null;
+    teaching = {lesson, kind: "lesson1", message};
+    pyodide.globals.set("lesson_one_mnemonics", JSON.stringify(teachingData.mnemonics || {}));
+    if (savedState) {
+      pyodide.globals.set("lesson_one_saved", savedState);
+      python("teaching_flow = LessonOneTeaching.from_state(quiz.current_lesson, json.loads(lesson_one_mnemonics), lesson_one_saved)");
+    } else python("teaching_flow = LessonOneTeaching(quiz.current_lesson, json.loads(lesson_one_mnemonics))");
+    renderLessonOne();
+    return;
+  }
+  teaching = {lesson, cards: teachingCards(lesson), index, message};
+  renderTeaching();
+}
+function finishTeaching() {
+  teaching = null;
+  if (COURSE === "curriculum") python("teaching_flow = None");
+  saveState();
+  showCurriculumNext();
+}
+function nextTeaching() {
+  if (!teaching) return;
+  if (teaching.kind === "lesson1") return;
+  if (++teaching.index >= teaching.cards.length) finishTeaching();
+  else renderTeaching();
+}
+function lessonOneAction(action) {
+  if (!teaching || teaching.kind !== "lesson1") return;
+  pyodide.globals.set("lesson_one_action", action);
+  const event = JSON.parse(python("json.dumps(teaching_flow.submit(lesson_one_action), ensure_ascii=False)"));
+  if (event.kind === "teaching_done") finishTeaching();
+  else { renderLessonOne(event); saveState(); }
+}
+function renderLessonOne(event = null) {
+  if (!teaching || teaching.kind !== "lesson1") return;
+  event ||= JSON.parse(python("json.dumps(teaching_flow.current(), ensure_ascii=False)"));
+  if (event.kind === "teaching_done") { finishTeaching(); return; }
+  clear("lesson1_teaching");
+  visibleEvent = event;
+  curriculumHeader(teaching.lesson);
+  const stage = add(screen, "div", "character-stage");
+  character(stage, event.speaker, event.pose);
+  const dialogue = add(screen, "div", "dialogue-panel");
+  add(dialogue, "span", "name-tag", "Jeong · your guide");
+  add(dialogue, "p", "dialogue-text", event.dialogue);
+  const exercise = add(screen, "div", "teaching-exercise");
+  if (event.kind === "teaching_intro") {
+    add(exercise, "span", "eyebrow", "Lesson 1 · Your first vowels");
+    controls.appendChild(button("Look at two blocks", "primary", () => lessonOneAction("/continue")));
+    controls.appendChild(button("Go straight to practice", "secondary", () => lessonOneAction("/skip")));
+  } else if (event.kind === "teaching_predict") {
+    add(exercise, "span", "eyebrow", "Notice a pattern");
+    add(exercise, "div", "teaching-blocks", event.blocks.join("   "));
+    add(exercise, "p", "prompt", event.prompt);
+    const choices = add(controls, "div", "choices");
+    for (const choice of event.choices)
+      choices.appendChild(button(choice.label, "choice", () => lessonOneAction(choice.value)));
+    controls.appendChild(button("Go straight to practice", "secondary", () => lessonOneAction("/skip")));
+  } else if (event.kind === "teaching_feedback") {
+    add(exercise, "span", "eyebrow", event.correct ? "You found it" : "Look again");
+    add(exercise, "div", "teaching-blocks", event.blocks.join("   "));
+    add(exercise, "p", "support", event.explanation);
+    controls.appendChild(button("Meet the six vowels", "primary", () => lessonOneAction("/continue")));
+    controls.appendChild(button("Go straight to practice", "secondary", () => lessonOneAction("/skip")));
+  } else if (event.kind === "teaching_explore") {
+    add(exercise, "span", "eyebrow", "Your first vowels");
+    const grid = add(exercise, "div", "vowel-grid");
+    for (const item of event.letters) {
+      const tile = button("",
+        "vowel-tile" + (item.jamo === event.selected ? " selected" : ""),
+        () => lessonOneAction(item.jamo));
+      add(tile, "strong", "vowel-glyph", item.jamo);
+      add(tile, "span", "vowel-roman", item.roman);
+      add(tile, "span", "vowel-block", item.syllable);
+      tile.setAttribute("aria-label", `${item.jamo}, ${item.roman}, ${item.syllable}`);
+      tile.setAttribute("aria-pressed", item.jamo === event.selected ? "true" : "false");
+      grid.appendChild(tile);
+    }
+    const selected = event.letters.find(item => item.jamo === event.selected);
+    if (selected) {
+      const detail = add(exercise, "div", "vowel-detail");
+      add(detail, "strong", "", `${selected.jamo} → ${selected.syllable} · ${selected.roman}`);
+      add(detail, "p", "", selected.sound);
+      if (selected.memory) add(detail, "p", "", selected.memory);
+    }
+    controls.appendChild(button("Start practice", "primary", () => lessonOneAction("/practice")));
+  }
+  saveState();
+}
+function renderTeaching() {
+  if (!teaching) return;
+  const {lesson, cards, index} = teaching;
+  const card = cards[index];
+  clear(index === 0 ? "lesson_started" : "lesson_teaching");
+  visibleEvent = {kind: "lesson_started", lesson};
+  curriculumHeader(lesson);
+  const guide = add(screen, "div", "teaching-head");
+  character(guide, "jeong");
+  add(guide, "span", "name-tag", "Jeong · your guide");
+  if (card.kind === "overview") {
+    add(screen, "span", "eyebrow", `Lesson ${lesson.id} of 12`);
+    add(screen, "h1", "line-text", lesson.title);
+    if (teaching.message) add(screen, "p", "support", teaching.message);
+    if (lesson.description) add(screen, "p", "support", plainPrompt(lesson.description));
+    if (lesson.introduction) add(screen, "p", "curriculum-prompt", plainPrompt(lesson.introduction));
+    if (lesson.note && lesson.id !== 1) add(screen, "p", "support", plainPrompt(lesson.note));
+  } else if (card.kind === "discovery") {
+    add(screen, "span", "eyebrow", "Notice the pattern");
+    add(screen, "div", "teaching-equation", "ㅇ + ㅏ = 아");
+    add(screen, "div", "teaching-equation", "ㅇ + ㅓ = 어");
+    add(screen, "div", "teaching-equation", "ㅇ + ㅗ = 오");
+    add(screen, "p", "support", "Each block begins with the same silent ㅇ. The vowel supplies its sound.");
+    if (lesson.note) add(screen, "p", "support", plainPrompt(lesson.note));
+  } else if (card.kind === "letter") {
+    const letter = card.letter;
+    const finalSound = lesson.batchim_pronunciation?.[letter];
+    add(screen, "span", "eyebrow", `${finalSound ? "Bottom sound" : "Letter"} ${index - (lesson.id === 1 ? 1 : 0)} of ${lesson.letters.length}`);
+    add(screen, "div", "teaching-letter", letter);
+    const roman = lesson.letter_romanization?.[letter];
+    if (finalSound) {
+      add(screen, "p", "fact", `At the bottom: ${finalSound}`);
+      if (BATCHIM_EXAMPLES[letter]) add(screen, "p", "teaching-equation", `${letter} at the bottom → ${BATCHIM_EXAMPLES[letter]}`);
+    } else {
+      if (roman) add(screen, "p", "fact", `Written in English letters: ${roman}`);
+      if (lesson.pronunciation?.[letter]) add(screen, "p", "support", `Sounds like ${lesson.pronunciation[letter]}`);
+      const example = letterExample(letter);
+      if (example) add(screen, "p", "teaching-equation", example);
+      if (lesson.formation?.[letter]) add(screen, "p", "support", `Built from ${lesson.formation[letter]}`);
+      if (teachingData.mnemonics?.[letter]) add(screen, "p", "teaching-memory", teachingData.mnemonics[letter]);
+      if (teachingData.quirks?.[letter]) add(screen, "p", "notice", teachingData.quirks[letter]);
+    }
+  } else if (card.kind === "reference") {
+    add(screen, "span", "eyebrow", "Keep this handy");
+    add(screen, "h2", "teaching-title", "Lesson reference");
+    if (lesson.letters?.length) {
+      const list = add(screen, "div", "teaching-reference");
+      for (const letter of lesson.letters) {
+        const row = add(list, "div", "teaching-reference-row");
+        add(row, "strong", "reference-jamo", letter);
+        add(row, "span", "", lesson.batchim_pronunciation?.[letter] ||
+          `${lesson.letter_romanization?.[letter] || ""} · ${lesson.pronunciation?.[letter] || ""}`);
+      }
+    }
+    for (const [group, rule] of Object.entries(lesson.batchim_pronunciation_rules || {}))
+      add(screen, "p", "support", `${group}: ${rule}`);
+    for (const pair of (lesson.confusion_pairs || []).slice(0, 4))
+      add(screen, "p", "support", `Look closely: ${pair.join(" vs ")}`);
+    const words = (lesson.words?.length ? lesson.words : lesson.vocabulary || []).slice(0, 3);
+    if (words.length) add(screen, "p", "support", `Words to look forward to: ${words.map(w => `${w.word} (${w.meaning})`).join(" · ")}`);
+    const rules = lesson.block_rules || {};
+    for (const key of ["vertical_layout", "horizontal_layout"])
+      if (rules[key]) add(screen, "p", "support", plainPrompt(rules[key]));
+  }
+  const nextLabel = index + 1 >= cards.length ? "Start practice" :
+    index === 0 ? lesson.batchim_pronunciation ? "Explore bottom sounds" :
+      lesson.letters?.length ? "Meet the letters" : "Explore this lesson" : "Continue";
+  controls.appendChild(button(nextLabel, "primary", nextTeaching));
+  if (index > 0) controls.appendChild(button("Back", "secondary", () => { teaching.index--; renderTeaching(); }));
+  if (index + 1 < cards.length)
+    controls.appendChild(button("Go straight to practice", "secondary", finishTeaching));
+  saveState();
+}
 function curriculumClear(kind) {
   clear(kind);
   openCard = null;
@@ -201,6 +419,7 @@ function curriculumQuestion(card, overlay = null) {
   if (card.kind === "question") {
     add(screen, "span", "eyebrow", card.mode.replaceAll("_", " "));
     add(screen, "p", "prompt curriculum-prompt", plainPrompt(card.prompt));
+    if (card.display) add(screen, "div", "big-hangul", card.display);
     if (card.round) add(screen, "p", "support", `${card.round.index} of ${card.round.size} in this round`);
   } else {
     add(screen, "span", "eyebrow", card.kind === "check_question"
@@ -255,18 +474,7 @@ function curriculumEvent(event) {
   }
   curriculumClear(event.kind);
   if (event.kind === "lesson_started") {
-    const lesson = event.lesson;
-    $("batch-name").textContent = `Lesson ${lesson.id}: ${lesson.title}`;
-    const chips = $("letters");
-    chips.replaceChildren();
-    for (const letter of lesson.letters) add(chips, "span", "letter-chip", letter);
-    add(screen, "span", "eyebrow", `Lesson ${lesson.id} of 12`);
-    add(screen, "h1", "line-text", lesson.title);
-    if (event.message) add(screen, "p", "support", event.message);
-    if (lesson.description) add(screen, "p", "support", plainPrompt(lesson.description));
-    if (lesson.introduction) add(screen, "p", "curriculum-prompt", plainPrompt(lesson.introduction));
-    if (lesson.note) add(screen, "p", "support", plainPrompt(lesson.note));
-    continueButton("Start practice");
+    startTeaching(event.lesson, 0, event.message || "");
   } else if (event.kind === "result") {
     add(screen, "span", `eyebrow ${event.correct ? "correct" : "incorrect"}`,
       event.skipped ? "Skipped" : event.correct ? "Correct" : "Not yet");
@@ -319,6 +527,9 @@ function curriculumEvent(event) {
     add(screen, "p", "support", "Practice the tricky items, then try the check again.");
     continueButton();
   } else if (event.kind === "lesson_mastered") {
+    const guide = add(screen, "div", "teaching-head");
+    character(guide, "sejong");
+    add(guide, "span", "name-tag", "King Sejong");
     add(screen, "span", "eyebrow correct", "Lesson mastered");
     add(screen, "p", "fact", `${event.mastered_count} of ${event.pool_size} items solid`);
     if (event.words.length) add(screen, "p", "support",
@@ -373,7 +584,7 @@ async function showCurriculumNext() {
   }
 }
 async function showNext() {
-  if (COURSE === "curriculum") return showCurriculumNext();
+  if (COURSE === "curriculum") return teaching ? nextTeaching() : showCurriculumNext();
   while (pending.length) {
     const event = pending.shift();
     visibleEvent = event;
@@ -425,11 +636,49 @@ function readStored() {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "null"); }
   catch (error) { storageWorked = false; console.warn("Storage unavailable", error); return null; }
 }
+function backupCurriculumSave(raw) {
+  const base = `${STORAGE_KEY}.backup`;
+  for (let index = 0; index < 100; index++) {
+    const key = index ? `${base}.${index}` : base;
+    const previous = localStorage.getItem(key);
+    if (previous === raw) return key;
+    if (previous === null) {
+      localStorage.setItem(key, raw);
+      if (localStorage.getItem(key) !== raw) throw new Error("The save backup could not be verified.");
+      return key;
+    }
+  }
+  throw new Error("No free save backup slot is available.");
+}
+function curriculumEnvelope(saved) {
+  if (!saved || typeof saved !== "object" || Array.isArray(saved))
+    throw new Error("The saved lesson is not a save envelope.");
+  const current = saved.save_kind === CURRICULUM_SAVE_KIND &&
+    saved.save_version === CURRICULUM_SAVE_VERSION;
+  const legacy = saved.save_kind === undefined && saved.save_version === undefined &&
+    /^curriculum-web-1:[0-9a-f]{16}$/.test(saved.app_version);
+  if (!current && !legacy) throw new Error("The saved lesson format is unsupported.");
+  if (typeof saved.state !== "string" || !saved.state)
+    throw new Error("The saved controller state is missing.");
+  if (saved.teaching != null &&
+      (typeof saved.teaching !== "object" || Array.isArray(saved.teaching)))
+    throw new Error("The saved teaching state is invalid.");
+  return {saved, legacy};
+}
 function saveState() {
-  if (!flowReady) return;
+  if (!flowReady || COURSE === "curriculum" && saveBlocked) return;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({app_version: appVersion, state: exportState(),
-      started_at: startedAt, finished_at: finishedAt, log: answerLog}));
+    const teachingState = teaching?.kind === "lesson1"
+      ? {kind: "lesson1", lesson_id: 1, state: python("teaching_flow.export_state()"),
+        message: teaching.message}
+      : teaching ? {lesson_id: teaching.lesson.id, index: teaching.index,
+        message: teaching.message} : null;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      ...(COURSE === "curriculum" ? {save_kind: CURRICULUM_SAVE_KIND,
+        save_version: CURRICULUM_SAVE_VERSION} : {}),
+      app_version: appVersion, state: exportState(),
+      started_at: startedAt, finished_at: finishedAt, log: answerLog,
+      teaching: teachingState}));
   } catch (error) { storageWorked = false; console.warn("Storage unavailable", error); }
 }
 async function callFlow(method, value, ms = 0) {
@@ -494,6 +743,11 @@ function showLoading(step = 0, error = null) {
 }
 function showFailure(error) { console.error(error); showLoading(0, error?.message || error); }
 async function fetchEngineFiles() {
+  if (COURSE === "curriculum") {
+    const teachingReply = await fetch("./teaching.json");
+    if (!teachingReply.ok) throw new Error(`Letter guide: HTTP ${teachingReply.status}`);
+    teachingData = await teachingReply.json();
+  }
   const response = await fetch("./engine/manifest.json");
   if (!response.ok) throw new Error(`Lesson manifest: HTTP ${response.status}`);
   const manifest = await response.json();
@@ -509,9 +763,10 @@ async function fetchEngineFiles() {
   }));
   pyodide.FS.mkdirTree("/app/data");
   for (const file of files) pyodide.FS.writeFile(`/app/${file.path}`, file.bytes);
-  python("import os, sys, json; os.chdir('/app'); sys.path.insert(0, '/app'); from hangul_quiz_engine import HangulQuiz; from sejong_flow import SejongFlow; from curriculum_flow import CurriculumFlow; content = json.load(open('/app/data/sejong.json', encoding='utf-8'))");
+  python("import os, sys, json; os.chdir('/app'); sys.path.insert(0, '/app'); from hangul_quiz_engine import HangulQuiz; from sejong_flow import SejongFlow; from curriculum_flow import CurriculumFlow, LessonOneTeaching; content = json.load(open('/app/data/sejong.json', encoding='utf-8'))");
 }
 async function startFresh(message = "") {
+  teaching = null;
   pyodide.globals.set("web_seed", TEST_SEED);
   if (COURSE === "curriculum") {
     python("import random; random.seed(web_seed) if web_seed is not None else None; quiz = HangulQuiz(persist=False); flow = CurriculumFlow(quiz)");
@@ -526,6 +781,119 @@ async function startFresh(message = "") {
   await showNext();
   if (message) status.textContent = message;
 }
+function showSaveRecovery(raw, error) {
+  saveBlocked = true; flowReady = false; teaching = null; pending = [];
+  $("menu-button").hidden = true;
+  let backupKey = null;
+  if (raw !== null) {
+    try { backupKey = backupCurriculumSave(raw); }
+    catch (backupError) { console.warn("Save backup unavailable", backupError); }
+  }
+  clear("save_recovery");
+  add(screen, "span", "eyebrow", "SAVED LESSON");
+  add(screen, "h1", "line-text", raw === null ? "The lesson could not load." : "Your saved place is still here.");
+  add(screen, "p", "support", raw === null
+    ? "Storage could not be read. Try loading again before starting fresh."
+    : "This version could not open it. Your original save has not been replaced.");
+  add(screen, "p", "notice", String(error?.message || error));
+  if (backupKey) add(screen, "p", "support", "A separate copy is kept on this device.");
+  if (raw !== null) {
+    const area = add(screen, "textarea", "recovery-data");
+    area.readOnly = true; area.value = raw;
+    controls.appendChild(button("Copy original save", "primary", async () => {
+      try { await navigator.clipboard.writeText(raw); }
+      catch (_) { area.focus(); area.select(); }
+    }));
+    controls.appendChild(button("Download original save", "secondary", () => {
+      const url = URL.createObjectURL(new Blob([raw], {type: "application/json"}));
+      const link = document.createElement("a");
+      link.href = url; link.download = "hangul-curriculum-recovery.json";
+      link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }));
+  }
+  controls.appendChild(button("Try loading again", "secondary", bootstrap));
+  controls.appendChild(button("Start fresh instead", "secondary", () => {
+    const box = dialog("Start a fresh curriculum?");
+    add(box, "p", "support", "Your saved place will be kept as a separate backup before a new lesson begins.");
+    const actions = add(box, "div", "dialog-buttons");
+    actions.appendChild(button("Keep my save", "secondary", closeDialog));
+    actions.appendChild(button("Start fresh", "primary", async () => {
+      try {
+        if (raw !== null) backupCurriculumSave(raw);
+        localStorage.removeItem(STORAGE_KEY);
+        if (localStorage.getItem(STORAGE_KEY) !== null) throw new Error("The old save could not be cleared.");
+        closeDialog(); saveBlocked = false;
+        await startFresh();
+      } catch (freshError) {
+        if (raw !== null) {
+          try { localStorage.setItem(STORAGE_KEY, raw); }
+          catch (restoreError) { console.warn("Original save is in the separate backup", restoreError); }
+        }
+        closeDialog(); showSaveRecovery(raw, freshError);
+      }
+    }));
+  }));
+}
+async function restoreCurriculum() {
+  saveBlocked = true;
+  let raw;
+  try { raw = localStorage.getItem(STORAGE_KEY); }
+  catch (error) { storageWorked = false; showSaveRecovery(null, error); return; }
+  if (raw === null) { saveBlocked = false; await startFresh(); return; }
+  try {
+    const {saved, legacy} = curriculumEnvelope(JSON.parse(raw));
+    if (legacy) backupCurriculumSave(raw);
+    pyodide.globals.set("web_state", saved.state);
+    python("quiz = HangulQuiz(persist=False); flow = CurriculumFlow.from_state(quiz, web_state)");
+    const events = JSON.parse(python("json.dumps(flow.resume('reopen'), ensure_ascii=False)"));
+    if (!Array.isArray(events) || !events.length) throw new Error("The saved screen could not be restored.");
+    const validatedState = exportState();
+    pyodide.globals.set("web_validated_state", validatedState);
+    python("CurriculumFlow.from_state(HangulQuiz(persist=False), web_validated_state)");
+    if (saved.teaching != null) {
+      const lessonId = Number(python("quiz.current_lesson['id']"));
+      if (String(python("flow.phase")) !== "practice" || saved.teaching.lesson_id !== lessonId)
+        throw new Error("The saved teaching step does not match this lesson.");
+      if (saved.teaching.kind === "lesson1") {
+        if (lessonId !== 1 || typeof saved.teaching.state !== "string")
+          throw new Error("The saved Lesson 1 guide is invalid.");
+        pyodide.globals.set("web_teaching_state", saved.teaching.state);
+        python("LessonOneTeaching.from_state(quiz.current_lesson, {}, web_teaching_state)");
+      } else if (!Number.isInteger(saved.teaching.index) ||
+                 saved.teaching.index < 0 ||
+                 saved.teaching.index >= teachingCards(JSON.parse(python("json.dumps(quiz._lesson_info(), ensure_ascii=False)"))).length) {
+        throw new Error("The saved teaching card is invalid.");
+      }
+    }
+    startedAt = saved.started_at || new Date().toISOString();
+    finishedAt = saved.finished_at || null;
+    answerLog = Array.isArray(saved.log) ? saved.log : [];
+    if (!events.some(event => event.kind === "finished")) finishedAt = null;
+    eventHistory = [structuredClone(events)]; pending = events.slice();
+    flowReady = true;
+    $("menu-button").hidden = false;
+    const lesson = JSON.parse(python("json.dumps(quiz._lesson_info(), ensure_ascii=False)"));
+    curriculumHeader(lesson);
+    if (saved.teaching != null) {
+      startTeaching(lesson, saved.teaching.kind === "lesson1"
+        ? saved.teaching.state : saved.teaching.index, saved.teaching.message || "");
+    } else await showNext();
+    if (legacy) {
+      const migrated = JSON.stringify({...saved, save_kind: CURRICULUM_SAVE_KIND,
+        save_version: CURRICULUM_SAVE_VERSION, app_version: appVersion,
+        state: validatedState, teaching: saved.teaching ?? null});
+      try {
+        localStorage.setItem(STORAGE_KEY, migrated);
+        if (localStorage.getItem(STORAGE_KEY) !== migrated)
+          throw new Error("The migrated save could not be verified.");
+      } catch (error) {
+        if (localStorage.getItem(STORAGE_KEY) !== raw) localStorage.setItem(STORAGE_KEY, raw);
+        throw error;
+      }
+    }
+    saveBlocked = false;
+  } catch (error) { showSaveRecovery(raw, error); }
+}
 async function bootstrap() {
   if (busy) return;
   busy = true; flowReady = false; loadingTimes = {};
@@ -539,33 +907,37 @@ async function bootstrap() {
     await fetchEngineFiles();
     loadingTimes[1] = (performance.now() - started) / 1000; showLoading(2);
     started = performance.now();
-    const saved = readStored();
-    let message = "";
-    if (saved?.state && saved.app_version === appVersion) {
-      try {
-        pyodide.globals.set("web_state", saved.state);
-        python(COURSE === "curriculum"
-          ? "quiz = HangulQuiz(persist=False); flow = CurriculumFlow.from_state(quiz, web_state)"
-          : "quiz = HangulQuiz(persist=False); flow = SejongFlow.from_state(quiz, content, web_state)");
-        startedAt = saved.started_at || new Date().toISOString();
-        finishedAt = saved.finished_at || null;
-        answerLog = Array.isArray(saved.log) ? saved.log : [];
-        flowReady = true;
-        const events = JSON.parse(python("json.dumps(flow.resume('reopen'), ensure_ascii=False)"));
-        if (COURSE === "curriculum" && !events.some(event => event.kind === "finished")) {
-          finishedAt = null;
-          saveState();
-        }
-        eventHistory = [structuredClone(events)]; pending = events.slice();
-        $("menu-button").hidden = false;
-        await showNext();
-      } catch (error) { message = "Saved place could not be read. Starting fresh."; await startFresh(message); }
-    } else {
-      if (saved?.state) message = "The lesson changed. Starting fresh.";
-      await startFresh(message);
+    if (COURSE === "curriculum") await restoreCurriculum();
+    else {
+      const saved = readStored();
+      let message = "";
+      if (saved?.state && saved.app_version === appVersion) {
+        try {
+          pyodide.globals.set("web_state", saved.state);
+          python("quiz = HangulQuiz(persist=False); flow = SejongFlow.from_state(quiz, content, web_state)");
+          startedAt = saved.started_at || new Date().toISOString();
+          finishedAt = saved.finished_at || null;
+          answerLog = Array.isArray(saved.log) ? saved.log : [];
+          flowReady = true;
+          const events = JSON.parse(python("json.dumps(flow.resume('reopen'), ensure_ascii=False)"));
+          eventHistory = [structuredClone(events)]; pending = events.slice();
+          $("menu-button").hidden = false;
+          await showNext();
+        } catch (error) { message = "Saved place could not be read. Starting fresh."; await startFresh(message); }
+      } else {
+        if (saved?.state) message = "The lesson changed. Starting fresh.";
+        await startFresh(message);
+      }
     }
     loadingTimes[2] = (performance.now() - started) / 1000;
-  } catch (error) { showFailure(error); }
+  } catch (error) {
+    if (COURSE === "curriculum") {
+      let raw = null;
+      try { raw = localStorage.getItem(STORAGE_KEY); } catch (_) { storageWorked = false; }
+      if (raw !== null) showSaveRecovery(raw, error);
+      else showFailure(error);
+    } else showFailure(error);
+  }
   finally { busy = false; }
 }
 
@@ -581,6 +953,12 @@ function showMenu() {
   const box = dialog("Your lesson");
   const actions = add(box, "div", "menu-actions");
   actions.appendChild(button("Copy results", "secondary", showResults));
+  if (COURSE === "curriculum" && openCard?.kind === "question")
+    actions.appendChild(button("Review this lesson", "secondary", () => {
+      closeDialog();
+      const lesson = JSON.parse(python("json.dumps(quiz._lesson_info(), ensure_ascii=False)"));
+      startTeaching(lesson);
+    }));
   actions.appendChild(button(COURSE === "curriculum" ? "Sejong Test" : "Full lessons", "secondary", () => {
     location.href = COURSE === "curriculum" ? "./" : "./?course=curriculum";
   }));
@@ -615,7 +993,9 @@ function showResults() {
 }
 function confirmReset() {
   const box = dialog("Start over?");
-  add(box, "p", "support", "This clears the saved place and the local answer log.");
+  add(box, "p", "support", COURSE === "curriculum"
+    ? "This clears the active saved place and local answer log. A migration backup may remain on this device."
+    : "This clears the saved place and the local answer log.");
   const actions = add(box, "div", "dialog-buttons");
   actions.appendChild(button("Keep my place", "secondary", closeDialog));
   actions.appendChild(button("Start over", "primary", async () => {

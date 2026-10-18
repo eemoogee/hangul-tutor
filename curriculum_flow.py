@@ -9,7 +9,7 @@ import json
 import random
 from dataclasses import asdict
 
-from hangul_quiz_engine import QuizQuestion
+from hangul_quiz_engine import QuizQuestion, ROMANIZATION
 from lesson_flow import (AdvanceFlow, ReadingCheckFlow, round_card_choice,
                          round_card_events)
 from reading_check import CHECK_SIZE, ReadingCheck
@@ -365,11 +365,21 @@ class CurriculumFlow:
 
     def _question_event(self):
         q = self.current_question
-        return {"kind": "question", "mode": q.mode, "prompt": q.prompt,
+        event = {"kind": "question", "mode": q.mode, "prompt": q.prompt,
                  "choices": list(q.choices),
                  "input": "choice" if q.choices else "text",
                  "hint_available": bool(q.hint),
                  "round": {"index": self.round_asked + 1, "size": ROUND_SIZE}}
+        lesson_one_reading_prompts = {
+            "read_aloud": "How does this block sound? Type it in English letters.",
+            "real_word": "A real Korean word! How does it sound? Type it in English letters.",
+            "nonword_decode": "These blocks are not a real word. Read them in English letters.",
+            "sequence_decode": "Read this whole sequence in English letters.",
+        }
+        if q.lesson_id == 1 and q.mode in lesson_one_reading_prompts:
+            event["prompt"] = lesson_one_reading_prompts[q.mode]
+            event["display"] = q.letter
+        return event
 
     def _reset_round(self):
         self.current_question = None
@@ -393,3 +403,94 @@ class CurriculumFlow:
         self._reset_round()
         return [{"kind": "lesson_started", "lesson": info,
                  "message": message, "rich": True}, *self._next()]
+
+
+class LessonOneTeaching:
+    """Small, ungraded Lesson 1 guide. Python owns its steps and content.
+
+    The ordinary CurriculumFlow has already selected the first practice
+    question. The web view holds that question while this guide is active.
+    """
+
+    def __init__(self, lesson, mnemonics=None):
+        if lesson.get("id") != 1:
+            raise ValueError("This guide is only for Lesson 1.")
+        self.lesson = lesson
+        self.mnemonics = mnemonics or {}
+        self.letters = list(lesson["letters"])
+        self.syllables = dict(zip(self.letters, lesson["mastery_syllables"]))
+        if len(self.letters) != 6 or len(self.syllables) != 6:
+            raise ValueError("Lesson 1 must have six vowel examples.")
+        self.phase = "intro"
+        self.choice = None
+        self.selected = None
+
+    def current(self):
+        base = {"speaker": "jeong", "pose": "hello", "lesson_id": 1}
+        if self.phase == "intro":
+            return {**base, "kind": "teaching_intro",
+                    "dialogue": "I’m Jeong—roughly “juhng.” The eo in my name represents one vowel sound, not “ee-oh.” We’ll learn it in this lesson."}
+        if self.phase == "predict":
+            return {**base, "kind": "teaching_predict",
+                    "dialogue": "Look at these two blocks. They share one shape.",
+                    "blocks": [self.syllables["ㅏ"], self.syllables["ㅓ"]],
+                    "prompt": "Which shape appears in both blocks?",
+                    "choices": [{"value": "ㅇ", "label": "ㅇ"},
+                                {"value": "different", "label": "ㅏ and ㅓ"}]}
+        if self.phase == "feedback":
+            return {**base, "kind": "teaching_feedback",
+                    "correct": self.choice == "ㅇ",
+                    "dialogue": "The shared ㅇ is silent at the start. The vowel gives each block its sound.",
+                    "blocks": [self.syllables["ㅏ"], self.syllables["ㅓ"]],
+                    "explanation": "아 sounds like ‘ah’. 어 sounds like ‘uh’."}
+        if self.phase == "explore":
+            letters = [{"jamo": letter, "syllable": self.syllables[letter],
+                        "roman": ROMANIZATION[letter],
+                        "sound": self.lesson["pronunciation"][letter],
+                        "memory": self.mnemonics.get(letter, "")}
+                       for letter in self.letters]
+            return {**base, "kind": "teaching_explore",
+                    "dialogue": "Meet six vowels. Tap one for a memory cue, then start practice.",
+                    "letters": letters, "selected": self.selected}
+        return {"kind": "teaching_done", "lesson_id": 1}
+
+    def submit(self, action):
+        action = str(action)
+        if self.phase == "done":
+            raise ValueError("Lesson 1 teaching is finished.")
+        if action == "/skip":
+            self.phase = "done"
+        elif self.phase == "intro" and action == "/continue":
+            self.phase = "predict"
+        elif self.phase == "predict" and action in ("ㅇ", "different"):
+            self.choice = action
+            self.phase = "feedback"
+        elif self.phase == "feedback" and action == "/continue":
+            self.phase = "explore"
+            self.selected = None
+        elif self.phase == "explore" and action in self.letters:
+            self.selected = action
+        elif self.phase == "explore" and action == "/practice":
+            self.phase = "done"
+        else:
+            raise ValueError("Invalid Lesson 1 teaching action.")
+        return self.current()
+
+    def export_state(self):
+        return json.dumps({"phase": self.phase, "choice": self.choice,
+                           "selected": self.selected}, ensure_ascii=False)
+
+    @classmethod
+    def from_state(cls, lesson, mnemonics, text):
+        state = json.loads(text)
+        guide = cls(lesson, mnemonics)
+        phase, choice, selected = state["phase"], state["choice"], state["selected"]
+        if (phase not in ("intro", "predict", "feedback", "explore", "done")
+                or choice not in (None, "ㅇ", "different")
+                or selected not in (None, *guide.letters)
+                or phase in ("intro", "predict") and (choice is not None or selected is not None)
+                or phase == "feedback" and (choice is None or selected is not None)
+                or phase == "explore" and choice is None):
+            raise ValueError("Invalid Lesson 1 teaching state.")
+        guide.phase, guide.choice, guide.selected = phase, choice, selected
+        return guide

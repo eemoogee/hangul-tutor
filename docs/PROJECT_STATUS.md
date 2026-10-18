@@ -1,0 +1,168 @@
+# Hangul Tutor project status
+
+Updated 2026-10-17. This is the coordination record for current state; historical handovers remain design and implementation context. Verify Git and deployment state again before acting.
+
+## Current milestone
+
+Deliver Lesson 1 as one coherent phone lesson that teaches before practice, uses the agreed character-stage layout, resumes correctly, and gets the learner into practice quickly. Acceptance requires:
+
+- A first visit teaches Lesson 1 vowels before the first question; repeat visits have a quick path to practice and a way to review teaching. Final-consonant teaching in later batchim lessons remains outside this bounded slice.
+- The character has a fixed-size stage above separate dialogue, with the exercise beneath. Pose names describe meaning, such as `hello`, `curious`, and `delighted`; the original selected mascot package now supplies separate PNGs for those poses without changing layout or content.
+- Lesson 1 reaches a meaningful learner interaction after at most two passive Continue taps. The current local path has four teaching screens: introduction, prediction, feedback, and six-vowel reference. It takes one passive tap before the prediction, one required teaching interaction, and four taps total to the first practice question (intro Continue, prediction answer, feedback Continue, Start practice). Repeat visit to saved practice takes zero taps; menu → Review this lesson → Skip takes three. Current normal-size Lesson 1 introduction, prediction, and vowel-reference screens fit at 390×844 and 320×568 without routine scrolling. At 390×844 with simulated 200% root text, the vowel-reference panel scrolls internally (547px content in 491px visible panel) while controls remain visible; this is an acceptable enlarged-text fallback if the content remains reachable. **Phone-fit acceptance remains open**, because actual phone browser chrome, system text enlargement, keyboard behavior, and zoomed pointer access have not been checked. No exact current Lesson 1 screen/viewport/text setting has a confirmed clipping failure. The earlier seven-of-nine overflow finding at normal-size 390×844 belongs to the superseded nine-slide teaching implementation, not this four-screen Lesson 1 path.
+- Reload resumes teaching, practice, and reading checks. Sejong paths continue to pass. Python owns lesson flow, content selection, and grading. Audio is not required.
+- Returning curriculum learners with the deployed save envelope resume their held lesson and question across the teaching build. Save compatibility is versioned separately from the build hash; failed loads preserve the original and offer recovery.
+
+## Decisions and design references
+
+| Decision | Source |
+| --- | --- |
+| Mascot-style Jeong and Sejong are the selected companions; generated portraits are replaceable drafts and final art is deferred. Reserve character slots and use semantic pose names. One speaker facing the learner is the normal scene. | [Companion-character note](notes/2026-10-17-companion-characters.md); `Hangul-Tutor-Design-Handover-2026-10-17.md` (external file in `C:/Users/jefej/Downloads/`); user coordination request of 2026-10-17. |
+| The selected screen order is character stage, separate dialogue, then exercise. Phone fit, keyboard access, and enlarged text all matter. | External design handover above; user coordination request of 2026-10-17. |
+| Jeong introduces how to pronounce the name at first appearance; later display Jeong as 정 and Sejong as 세종 only when each name is decodable, including required final consonants. The exact pronunciation wording still needs Korean review. | External design handover above; user coordination request of 2026-10-17. |
+| Python chooses lesson flow, content, and grading; the web screen renders events. | [Sejong event contract](sejong-events.md); user coordination request of 2026-10-17. |
+| Do not imply listening instruction without audio. | [Workshop brief](hangul-workshop-brief.md); user coordination request of 2026-10-17. |
+| Preserve Sejong's guided discovery, prediction before visible syllable assembly, and the distinction between practice, independent reading, and retention. Do not add untaught material to questions or distractors. | External design handover above. |
+| “Small, static, mascot-style Jeong and Sejong placeholders in replaceable, fixed-size slots are approved. Final artwork and character animation can wait.” One pose per character is sufficient for the Lesson 1 prototype. | Owner approval, 2026-10-17. |
+| Prototype copy at Jeong's first appearance: “I’m Jeong—roughly ‘juhng.’ The eo in my name represents one vowel sound, not ‘ee-oh.’ We’ll learn it in this lesson.” This is an English approximation and coordinator-approved prototype copy, pending human Korean review; the displayed name stays Jeong until a later decodable-name reveal. | Coordinator reply, 2026-10-17. |
+
+Lesson 1 now uses the selected stage → dialogue → exercise order, a Python teaching state machine, and Jeong's prototype pronunciation cue. Other lessons and Sejong still use older layouts; their JavaScript teaching-card selection is outside this slice. The owner supplied `C:/Users/jefej/Downloads/hangul_mascot_pose_assets.zip`; it contains six original selected PNGs, one for each `hello`, `curious`, and `delighted` pose of Jeong and Sejong. The renderer uses these files directly in the same fixed-size slots. The earlier generated portraits were removed from the working web assets after matching their hashes to the verified external backup; no new artwork was generated. The Korean-name Easter eggs remain locked. The external handover's suggested Sejong-opening-first slice is a **proposal**, while the owner bounded this task to Lesson 1. Its animation and background ideas are design direction, not verification that the current build delivers them. Older [controller](session_handover_2026-10-17_controller.md) and [web](session_handover_2026-10-16_web-app.md) handovers contain superseded Git and deployment statements; use the snapshot below for current state.
+
+## Git and deployment snapshot
+
+- Branch: `codex/lesson1-teaching`; HEAD: `eee9950f2646796ee98413ccaba9aa13b2eaafee` (`Merge web controller into master`). Relative to local `origin/master`: 0 ahead, 0 behind. No fetch was performed, so remote freshness was not independently checked. The owner verified the external backup at `C:/Users/jefej/hangul-tutor-backups/pre-lesson1-2026-10-17`; this session confirmed the directory, patch stat, and that both backed-up portrait hashes matched the pre-replacement portrait files. The patch and every backed-up file were not independently restored or compared.
+- Baseline curriculum controller, web app, and Sejong flow are committed at HEAD. Pending changes are local only: modified `.gitignore`, `curriculum_flow.py`, `scripts/build_web.py`, `web/app.js`, `web/style.css`; new `scripts/_verify_curriculum_save.py`, `scripts/_verify_lesson1_teaching.py`, `scripts/package_web.py`, and six `web/assets/{jeong,sejong}_{hello,curious,delighted}.png` files. `AGENTS.md` and this status file are untracked coordination files. Generated `web/engine/`, `web/teaching.json`, `web/pyodide/`, the local `dist/` package, and verification screenshots are ignored. These pending changes have not been committed or deployed.
+- Netlify production deployment: `6ad4057f61de1a16310c5536`, [deployment details](https://app.netlify.com/projects/hangul-tutor/deploys/6ad4057f61de1a16310c5536), [public site](https://hangul-tutor.netlify.app/), marked Published on 2026-10-17 at 4:32 PM PDT. It was uploaded through Netlify Drop from a clean `eee9950` checkout according to the prior packaging record. Netlify Drop does not expose a Git commit SHA, so an independently attested source commit is unknown. The pending teaching changes are not in this deployment.
+- Deployment is on hold for coordinator review. The prior attempt to upload the pending build was denied by browser-use permission; no new deployment resulted.
+
+## Work and ownership
+
+| Work | Owner | Dependency | Status |
+| --- | --- | --- | --- |
+| Committed curriculum and Sejong web baseline | Codex | None | deployed |
+| Pending teaching screens, lesson 1 letters and batchim introduction | Codex | Existing controller and build | verified locally |
+| Bounded Lesson 1 teaching revision with at most two passive Continue taps before learner interaction | Codex | Owner approval and existing pending teaching work | verified locally |
+| Reconcile the design handover with the current milestone and set the first-visit tap budget | Coordinator | Design handover and original mascot package available; other referenced visual artifacts unavailable | verified locally |
+| Align Lesson 1 stage/dialogue/exercise layout, semantic poses, and Python-owned teaching content | Codex | Coordinator's reconciled design | verified locally |
+| Curriculum save compatibility and recoverable migration from the deployed envelope | Codex | Committed `eee9950` save format; current controller state import | verified locally |
+| Independent save-compatibility QA with deployed-format fixtures | Hyojangi | Current local build and authentic committed-format fixtures | verified locally; owner reports no functional defect confirmed; QA file hashes were not supplied here |
+| Migration check with an actual learner production-browser save | Hyojangi / owner | A copied real save/export and consent to inspect it | planned |
+| Independent teaching and phone QA | Hyojangi | Next scoped build | planned |
+| Real-device keyboard, enlarged-text, and learner review | Owner / coordinator | Next scoped build | planned |
+| Publish an accepted teaching build | Owner / Codex | Milestone acceptance | planned |
+
+## Verification evidence
+
+The following initial verification table is **historical evidence from earlier on 2026-10-17**, against `eee9950` plus the then-uncommitted teaching files. Later subsections record successive source hashes. The current snapshot and focused rerun appear at the end of this section. Status-document edits occurred **after testing** and do not alter executable code.
+
+| Command or check | Result |
+| --- | --- |
+| `& 'C:\Program Files\Blender Foundation\Blender 5.0\5.0\python\bin\python.exe' -B scripts/build_web.py` | Exit 0; built 11 files; `APP_VERSION=1e29fdd8c303bb03`. |
+| Same Python with `PYTHONPATH=C:\Users\jefej\hermes-env\Lib\site-packages`, `-B scripts/_verify_web.py` | 9 web checks passed, including Sejong, replay, mid-check reload, light/dark phone screenshots. Initial sandbox run could not launch Chromium (`spawn EPERM`); elevated rerun passed. This verifier does not cover new curriculum teaching. |
+| `-B scripts/_verify_curriculum_flow.py` | 17 tests passed. |
+| `-B scripts/_verify_reading_check.py` | 21 tests passed. |
+| `-B scripts/_verify_sejong_flow.py` | 31 checks passed. |
+| `-B scripts/_verify_gameplay_fixes.py`, `_verify_decompose_syllable.py`, `_verify_missing_vowel_batchim_guard.py` | All passed after setting `PYTHONIOENCODING=utf-8`; default cp1252 console had caused output encoding errors. Missing-vowel/batchim leaks: zero. |
+| Ad hoc Playwright run at mobile `390×844`, seed 7, on the pending build | First visit: nine taps to first practice question; reload on teaching retains the screen. Reload in practice retains the question; reload in reading check retains its prompt. Lesson 10 displayed a final-consonant card. Direct repeat visit to saved practice: zero extra taps. Menu → Review this lesson → Skip teaching: three taps to the same unanswered question. A full manual review replays nine teaching slides, so menu plus review plus nine Next taps totals 11 taps. |
+| Same ad hoc phone check | Seven of nine lesson-1 teaching screens exceeded the 844px viewport (document heights 915–1125px). At simulated keyboard height 500px, the answer button remained visible but the document height was 581px. Actual device keyboard and enlarged text were not tested. |
+
+The earlier ad hoc browser run used the test hook to open a mastered reading check; it did not prove the full natural mastery-to-check path in the browser. The curriculum-flow verifier covers that logic in Python. These nine-slide phone measurements predate the bounded Lesson 1 redesign. No independent Hyojangi QA result for teaching-screen phone acceptance is recorded here.
+
+### Lesson 1 implementation check (later on 2026-10-17)
+
+The final local code is still at HEAD `eee9950`, with uncommitted source. Relevant SHA-256 hashes at the time of testing: `curriculum_flow.py` `5D5EF93355B866FAE47E26752819003EE821E808E06638C0D6236491AC5DBE77`; `web/app.js` `63878E38BA867C2CFFDC7EED638EE3A1F37DB924C04EAE1246AEF8A397EE5F24`; `web/style.css` `D9AA79718B1E771A11D29F1BE3DB019EA913839C11D8361B3074C97971C5A1BA`; `scripts/_verify_lesson1_teaching.py` `B5AAB539E0DFFA962ED53A083BBDD69673A9F1D5E3C9B4A5F1F5F0ED7AE40CEA`. Engine manifest version: `10953e331dab0ae5` (the manifest does not hash CSS or JavaScript). This status edit happened **after** those checks.
+
+| Command or check | Result |
+| --- | --- |
+| `PYTHONPATH=C:\Users\jefej\hermes-env\Lib\site-packages; PYTHONIOENCODING=utf-8; Blender Python -B scripts/_verify_lesson1_teaching.py` | Python guide content/state and all Lesson 1 reading-mode display-contract checks passed; spelling mode does not expose its answer. Playwright passed one-tap-to-prediction pacing, stage → dialogue → exercise order, teaching/practice/check reload, review/skip retaining the question, prominent separate Hangul target, keyboard navigation and visible focus. Initial restricted run could not spawn Chromium (`EPERM`); elevated rerun passed. Check mastery was set with a test hook rather than reached naturally. |
+| Playwright mobile measurements in that verifier | At 390×844, introduction, prediction, and vowel-reference screens fit without routine scrolling. At 320×568, introduction (331/331px), prediction (327/327px), and vowel reference (395/395px) fit; controls bottom was 529px. At 200% root text size on 390×844, the panel was 547px tall within 491px and scrolled internally; controls remained visible at bottom 784px. Simulated 390×500 keyboard viewport, with input focused, kept practice Answer button bottom at 452px. Chromium page-scale emulation reached 200% and keyboard activation worked; Playwright pointer targeting at that emulated scale hit the panel, so zoomed pointer behavior is unverified. Actual device keyboard, system text setting, and browser UI zoom were not tested. |
+| `Blender Python -B scripts/_verify_web.py` | 9 Sejong web checks passed, including light/dark screenshots and mid-check reload. |
+| `Blender Python -B scripts/_verify_curriculum_flow.py`, `_verify_reading_check.py`, `_verify_sejong_flow.py` | 17 tests, 21 tests, and 31 checks passed, respectively. |
+| `Blender Python -B scripts/_verify_gameplay_fixes.py`, `_verify_decompose_syllable.py`, `_verify_missing_vowel_batchim_guard.py` with UTF-8 output | All passed; zero missing-vowel/batchim leaks. |
+| `node --check web/app.js`; `git diff --check` | Both passed. |
+
+The Lesson 1 guide uses a Python `LessonOneTeaching` state machine for its content, prediction feedback, and step selection, while the browser renders it and holds the already-selected ordinary practice question. It shows all six vowels and their first blocks in one optional exploration view. The selected package now supplies Jeong and Sejong with semantic `hello`, `curious`, and `delighted` mappings. Final art and animation remain deferred. Jeong's prototype wording is coordinator-approved and still needs human Korean review. This implementation does not resolve overflow across the whole curriculum, live-device keyboard behavior, or independent beginner comprehension. Local screenshots are in ignored `.verify_out/lesson1/`: intro, prediction (390×844 and 320×568), vowel reference, practice, enlarged text, and revisit. Reload/resume within the teaching build was tested here; deployed-format migration is covered separately below.
+
+### Selected mascot asset replacement (later on 2026-10-17)
+
+This section records the **superseded interim sprite-sheet implementation**. Its hashes and test results are historical evidence for that earlier working state; the original-package implementation and its verification are recorded below.
+
+The unchanged source attachment and then-installed `web/assets/mascot-pose-sheet.png` had the same SHA-256, `77B24924460916467FA53D9C74F91608C1727088DAD20BFC2DE0B6B9E8516629`. That earlier working state was on `codex/lesson1-teaching` at `eee9950`; its asset and renderer changes were uncommitted and undeployed. Tested source hashes then: `web/app.js` `EB9CD34A527AC3D8D19B4131DD13512A7BCDC44CC6658429E52405D13E537BB3`, `web/style.css` `5428C2E1B78B2DA8C1E807469072C909630FBF26B11C643C2D353E8511B4D9B4`, and `scripts/_verify_lesson1_teaching.py` `BED771858B966120C73B680811E5AE75D98E71245D137E638FDB3C75907B9AF2`. This paragraph was written after testing and does not affect executable code.
+
+| Command or check | Result |
+| --- | --- |
+| `node --check web/app.js`; `git diff --check` | Both passed. |
+| `PYTHONPATH=C:\Users\jefej\hermes-env\Lib\site-packages; PYTHONIOENCODING=utf-8; Blender Python -B scripts/_verify_lesson1_teaching.py` | Python checks and all Lesson 1 browser checks passed. The image-load assertion now verifies the selected CSS sprite source decodes at 1536×1024; this replaces the previous `<img>` load assertion because the same sheet is displayed as a CSS background. The 390×844 intro screenshot was inspected and shows the selected Jeong mascot in the existing stage. Initial sandbox Chromium launch failed with `spawn EPERM`; elevated rerun passed. |
+| Same environment, `Blender Python -B scripts/_verify_web.py` | All 9 web checks passed, including Sejong paths and phone screenshots. A local HTTP `ConnectionResetError` occurred for an abandoned request during the run; the verifier exited 0. |
+| Ad hoc Chromium screenshot of Sejong's opening at 390×844 | At that **historical** working state, the opening rendered the interim pose sheet in Sejong's existing small character slot. The screenshot was later replaced by the current original-PNG screenshot; this row is not current asset or screenshot evidence. |
+
+### Original package assets (current local implementation, 2026-10-17)
+
+The supplied ZIP has SHA-256 `5A8109BCAD032D50F1A6222B3911A1752FFBF51D871157EB1D286235D51501F8` and contains exactly six pose PNGs. A fresh byte comparison on 2026-10-17 confirmed **all six** installed `web/assets/{jeong,sejong}_{hello,curious,delighted}.png` files match their ZIP entries exactly. The renderer uses each PNG directly through an `<img>` in the existing slot. A 390×844 screenshot revealed that the image grid item initially exceeded the stage height; `min-height:0` now lets the original file fit fully within that stage. No teaching content or lesson-flow rules changed. Branch remains `codex/lesson1-teaching` at `eee9950`; these changes are uncommitted and undeployed.
+
+Tested source hashes: `web/app.js` `9874E6952AE465399DA4C0C7C33BB7DF69B44091444DCC38DAEA9719B981BF93`, `web/style.css` `D0AC294410F43489D25E52AFE2C5A754F1A68E32A86556B8F343F60B698C82B0`, and `scripts/_verify_lesson1_teaching.py` `2A8E2BD1A9D39C9DDC5B6AB0F489438792465DEF5A57CC3FD0BB91A220F8B10A`. This status edit was made after testing.
+
+| Command or check | Result |
+| --- | --- |
+| `Blender Python -B scripts/_verify_lesson1_teaching.py` with the Playwright environment above | Python guide checks and all Lesson 1 browser checks passed after the final image-fit fix. The image assertion confirms `jeong_hello.png` loads at its packaged 340×448 size. The 390×844 intro screenshot was inspected and shows Jeong fully within the stage. |
+| `Blender Python -B scripts/_verify_web.py` with the same environment | All 9 web checks passed after the final image-fit fix. |
+| Ad hoc Chromium check of Sejong's opening at 390×844 | `sejong_hello.png` loaded at its packaged 434×486 size and was visually inspected in the existing small slot; ignored screenshot `.verify_out/lesson1/sejong-390x844.png`. |
+| `node --check web/app.js`; `git diff --check` | Both passed. |
+
+### Curriculum save compatibility (current local implementation, 2026-10-17)
+
+The curriculum browser envelope now has `save_kind: "curriculum-controller"` and `save_version: 1`; `app_version` remains the build identity. The inner `CurriculumFlow` state remains version 1, and the engine progress `schema_version` and its migrations were not changed. Legacy `curriculum-web-1:<hash>` envelopes from the committed deployed-format code are accepted without a `teaching` key. Valid saves reopen the held lesson, question or round card directly; Review is still available from practice. Migration first copies the exact original raw save to `hangul.curriculum.v1.backup`, restores and round-trips the Python controller state, renders the pending screen while autosave is blocked, then replaces the primary envelope. A failed parse, import, build-resource load, or unsupported future envelope shows a recovery screen with the raw original, copy/download, retry, and a separately confirmed fresh start. The original primary value is protected from autosave on that screen. Curriculum and Sejong keep separate storage keys; Sejong's save format and build version rule were not changed.
+
+`web/teaching.json` is now ignored generated output. `scripts/build_web.py` still creates it; `scripts/package_web.py` runs that build and packages the complete `web/` tree as `dist/hangul-tutor-web.zip` for Netlify Drop. The ZIP contains `teaching.json` and the current `app.js`. The fresh-build check removed `web/teaching.json` first, regenerated it, and compared the ZIP member byte for byte with the generated file. The generated file and ZIP are local ignored artifacts, not committed or deployed.
+
+Tested branch/HEAD: `codex/lesson1-teaching` at `eee9950f2646796ee98413ccaba9aa13b2eaafee`, plus uncommitted files. The source hashes for this save-compatibility run are `web/app.js` `FF2183EC81722B006817DF004CBA58ED8371685B8C329E7A186696B6E67798A8`, `web/style.css` `D85B06AE656057624846782449DB1DE18DB5189863D12F353D0C12022ED79E8D`, `scripts/_verify_curriculum_save.py` `B02454A5F1DF6F47B9CD19685EEDADE520D392EE05E4E37B8EC059BDD764F3A9`, and `scripts/package_web.py` `B678B2230916BE8DBC184A8B833ABF1DDDFB025D6739CFF0E2A9C31E79690A64`. The engine manifest hash is `10953e331dab0ae5`; it does not hash JS or CSS. This status edit followed testing and does not change executable code.
+
+| Command or check | Result |
+| --- | --- |
+| Fresh `teaching.json` removal, then `Blender Python -B scripts/package_web.py` and ZIP member comparison | Passed; built 11 engine files, regenerated `teaching.json`, and packaged the current web files. `git check-ignore -v web/teaching.json` confirms `.gitignore`. |
+| `Blender Python -B scripts/_verify_curriculum_save.py` with Playwright environment | Passed: a seeded Lesson 3 fixture generated by `git show eee9950:curriculum_flow.py` and the committed `web/app.js` envelope resumed progress, held question, round counters, and a round card; repeat load, absent teaching key, mismatched build hash with supported save version, malformed JSON, future save version, failed controller import, failed migration write, blocked autosaves, resource-load failure, recovery/retry, explicit fresh start, and untouched Sejong storage were checked. The reconstructed legacy app version is `curriculum-web-1:1e29fdd8c303bb03`. |
+| `Blender Python -B scripts/_verify_lesson1_teaching.py` and `scripts/_verify_web.py` with Playwright environment | Lesson 1 guide, reload, keyboard, and phone checks passed; 9 shared web/Sejong checks passed. |
+| `Blender Python -B scripts/_verify_curriculum_flow.py`, `_verify_reading_check.py`, `_verify_sejong_flow.py` | 17 tests, 21 tests, and 31 checks passed. |
+| `Blender Python -B scripts/_verify_engine_web.py`, `_verify_lesson_flow.py` | 11 engine/browser-boundary checks and 18 lesson-flow tests passed. |
+| `Blender Python -B scripts/_verify_gameplay_fixes.py`, `_verify_decompose_syllable.py`, `_verify_missing_vowel_batchim_guard.py` with UTF-8 output | All passed; missing-vowel/batchim leaks: zero. |
+| `node --check web/app.js`; `git diff --check` | Both passed. |
+
+The legacy fixture is derived from the committed `eee9950` controller and save writer, consistent with the recorded Netlify Drop packaging source; it represents the **authentic deployed envelope format**, including the missing teaching key, rather than a new-format save with an old hash. Netlify does not independently attest a source SHA. **No actual learner production-browser save has been imported or inspected.** The owner reports that Hyojangi's independent save-compatibility QA found no confirmed functional defect; its detailed output and file hashes were not supplied in this session. Storage-quota failure and actual phone keyboard behavior remain untested. A copied real save should still be checked before deployment. Phone-fit acceptance remains open as described above; reachable panel scrolling at enlarged text is not itself a failure.
+
+### Current snapshot and visual preparation (2026-10-17, after save QA report)
+
+These hashes were **computed from the current working tree by Codex**, not copied from Hyojangi's unsupplied QA report. HEAD is still `eee9950f2646796ee98413ccaba9aa13b2eaafee` on `codex/lesson1-teaching`; all implementation changes remain uncommitted and undeployed. The dated hashes in earlier subsections remain historical evidence of those earlier working states.
+
+| Current file | SHA-256 |
+| --- | --- |
+| `curriculum_flow.py` | `5D5EF93355B866FAE47E26752819003EE821E808E06638C0D6236491AC5DBE77` |
+| `web/app.js` | `FF2183EC81722B006817DF004CBA58ED8371685B8C329E7A186696B6E67798A8` |
+| `web/style.css` | `D85B06AE656057624846782449DB1DE18DB5189863D12F353D0C12022ED79E8D` |
+| `scripts/build_web.py` | `851B7EF9486988DC89FE99EBFA15AD00612D7257196DB37A988237CD1CE8ED9A` |
+| `scripts/_verify_curriculum_save.py` | `B02454A5F1DF6F47B9CD19685EEDADE520D392EE05E4E37B8EC059BDD764F3A9` |
+| `scripts/_verify_lesson1_teaching.py` | `2A8E2BD1A9D39C9DDC5B6AB0F489438792465DEF5A57CC3FD0BB91A220F8B10A` |
+| Generated `web/engine/manifest.json` | `9E54F526E834BE0EB9E07D48C1A4C3CF583913A15B5F8579FFB192B711E727E1`; embedded `app_version=10953e331dab0ae5` |
+| Generated `web/teaching.json` | `501B7461315FADFFDA433307CEA5F1AB41E09AF45A362D690249256B5D7474A9` |
+
+The current six PNG SHA-256 values are: Jeong `hello` `A2AC16ADFED47658F44876CBA663D776CB74406A5DB9142095A948BD377039D3`, `curious` `A14B7F0727C4A7F8CEDE9E05EA00CD19DB48171A3B626EDB7A62E48EBFC9F0F5`, `delighted` `3B061E87E647FA7FBE3F2073007B4A10C9703411BD1D118083CC75C6F1EDAA8C`; Sejong `hello` `C00608A60D8B647768FA65B34F4D39ACD4094CC383306E25308F424AFC2E3C20`, `curious` `027C162A9E9B15C7D55F5344A5E298AA778C62F293FED0B0059063A7D19A4548`, `delighted` `8F94EF9DE010640655935A17AD355BD4A5FA783EB1F01230EC1760F01482F214`.
+
+The focused `scripts/_verify_lesson1_teaching.py` rerun passed against this snapshot, rebuilding 11 engine files at `APP_VERSION=10953e331dab0ae5`. It refreshed `.verify_out/lesson1/intro-390x844.png` (SHA-256 `6D011522822B32FDEA3B5386FEA0925EA481AD3E82E9AB876E318937EE4EC726`). A separate current-build Chromium run refreshed `.verify_out/lesson1/sejong-390x844.png` (SHA-256 `31B1F27DC000A8F03582F00C0A584E6240B6132AF089AE62C54F2C687CA1D18B`): `sejong_hello.png` decoded at 434×486 and the opening fit the 390×844 viewport (610/610px panel, 844/844px page). Both screenshots were visually inspected and show the selected mascot PNGs. The focused Lesson 1 run measured introduction, prediction, and vowel reference at normal size without inner scrolling at 320×568; at 390×844 with 200% root text, the vowel-reference panel measured 547/491px with reachable internal scrolling and controls bottom at 784px. Its 390×500 keyboard-viewport simulation kept the answer button bottom at 452px. These are browser simulations, not actual phone results. The initial restricted Chromium launch failed with `spawn EPERM`; the permitted rerun passed. No executable source changed during this visual preparation.
+
+The current local build is served temporarily at `http://192.168.12.135:8765/?course=curriculum` from the Wi-Fi host's `web/` directory; the URL works only while that computer/server is running and the phone can reach it on the same network. Localhost and host-LAN requests returned HTTP 200. No firewall/router setting or Netlify deployment was changed.
+
+## Blockers and next task
+
+The external design handover was supplied at `C:/Users/jefej/Downloads/Hangul-Tutor-Design-Handover-2026-10-17.md` and read for this update; it is not in the repository. Its referenced `hangul_mascot_pose_assets.zip` has now been supplied and its six files inspected and installed. The referenced `hangul_tutor_interactive_browser.html`, `hangul_composition_lab_fullscreen.html`, `hangul_mascot_360x640.png`, and `hangul_mascot_fullscreen.html` remain unavailable for direct inspection. The companion note's `hangul_mascot_fullscreen-6.html` is also absent. The handover reports that its author read the first two HTML references but did not inspect the ZIP or PNG; this status record does not treat that report as direct asset verification. Its October 17 deployed-site observations used a desktop viewport and predate the pending teaching changes, so they do not describe the uncommitted build or prove phone behavior. Its account of discontinuous animation is a user report; the technical cause is unverified.
+
+Next small scoped task: the coordinator reviews Lesson 1 on an actual phone: browser chrome, keyboard, enlarged text, zoomed pointer targeting, mascot fidelity, transitions, and beginner comprehension. Record any exact screen, viewport, and text setting that clips or hides unreachable content; no current Lesson 1 clipping case is confirmed by the local simulations. A copied actual learner save should separately be migration-tested before deployment. The other lessons' long introductions and JS-authored teaching remain outside the bounded Lesson 1 revision. A separate Sejong composition-animation slice may follow; the design handover proposes it but does not supersede the current milestone.
+
+## Change log
+
+- 2026-10-17: Created this status record after build and verification. No implementation files were changed for this coordination request; no commit, push, tag, branch switch, or deployment was made.
+- 2026-10-17: Read the subsequently supplied external design handover and reconciled selected decisions, proposals, inaccessible visual references, and wording about Jeong. This documentation update occurred after the verification above.
+- 2026-10-17: Owner selected `codex/lesson1-teaching`, reported a verified external backup, approved small static mascot placeholders (one pose per character), bounded implementation to Lesson 1, set at most two passive Continue taps before a meaningful interaction, and marked phone overflow an open acceptance failure. This entry precedes the new Lesson 1 implementation and verification.
+- 2026-10-17: Added the Python Lesson 1 guide, stage/dialogue/exercise rendering, semantic one-pose asset mapping, and deterministic local verifier. Updated status after tests. No commit, push, or deployment.
+- 2026-10-17: Applied the coordinator-approved Jeong prototype copy, split introduction from prediction to fit narrow phones, gave Lesson 1 reading questions an explicit display target, and reran all listed verifiers. Status evidence and unresolved device/art questions were updated after the final test run.
+- 2026-10-17: Replaced the generated web portraits with the unchanged selected mascot pose sheet recovered from the design chat. Updated the renderer and its image-load assertion, then reran Lesson 1 and web browser verifiers. No lesson-flow or layout rules changed. This status edit followed testing.
+- 2026-10-17: Owner supplied the original six-file mascot ZIP. Replaced the interim sheet with its byte-identical individual PNGs, updated pose mapping and image-load verification, fixed grid-item image clipping inside the existing stage, and reran Lesson 1 and web browser verifiers. This status edit followed testing. No commit, push, or deployment.
+- 2026-10-17: Added explicit curriculum save-envelope compatibility, byte-preserving migration backup, blocked autosaves and export/recovery on load failure, a deployed-format migration verifier, and a build-first Netlify package command. Ignored generated `web/teaching.json`; verified regeneration from absence and inclusion in the local package. This status update followed all listed tests. No commit, push, branch switch, or deployment.
+- 2026-10-17: After the owner's Hyojangi QA summary, computed current working-tree hashes, confirmed all six selected PNGs match the original ZIP byte for byte, refreshed and inspected current Jeong/Sejong phone screenshots, reran the focused Lesson 1 verifier, and started a local LAN test server. Corrected historical/current evidence and phone-fit wording. This documentation edit followed the checks; no executable source, Git commit, push, or deployment changed.
