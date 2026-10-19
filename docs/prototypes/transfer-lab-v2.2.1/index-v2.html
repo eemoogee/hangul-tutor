@@ -1,0 +1,658 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#f4f0e7">
+<title>Vowel Transfer Lab v2 · Hangul Tutor experiment</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Noto Sans KR","Malgun Gothic",sans-serif;color:#20393c;background:#ede9dd}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden}
+button,textarea,input{font:inherit}button{cursor:pointer;touch-action:manipulation}
+button:focus-visible,textarea:focus-visible,input:focus-visible{outline:3px solid #1666bc;outline-offset:3px}
+button:disabled{opacity:.42;cursor:default}
+#app{height:100dvh;display:flex;justify-content:center;background:#bac6c1}
+.shell{width:min(100%,390px);height:100dvh;display:flex;flex-direction:column;overflow:hidden;background:#f4f0e7;box-shadow:0 0 35px #152e3030}
+.head{flex:none;display:flex;align-items:center;gap:10px;padding:12px 16px 9px;min-height:60px}
+.brand{flex:1;min-width:0}.brand small{display:block;color:#55716e;letter-spacing:.18em;text-transform:uppercase;font-size:10px;font-weight:900}
+.brand h1{font-family:Georgia,"Noto Serif KR",serif;font-size:22px;letter-spacing:-.04em;margin:1px 0 0;line-height:1}
+.head-pill{flex:none;font-size:10px;font-weight:800;color:#4c6667;border:1px solid #c3d1ca;border-radius:9px;padding:5px 8px;background:#fffaf1}
+.content{min-height:0;flex:1;display:flex;flex-direction:column;gap:8px;padding:0 14px 9px;overflow:auto;overscroll-behavior:contain}
+.card{background:#fffdf7;border:1px solid #d5ddd2;border-radius:15px;padding:12px}
+.card h2{font-family:Georgia,serif;font-size:17px;margin:0 0 6px}
+.card p{font-size:12.5px;line-height:1.45;color:#3d5856;margin:0 0 8px}.card p:last-child{margin-bottom:0}
+.quiet{color:#71817c;font-size:11px}
+.method-grid{display:grid;gap:8px}
+.method-card{display:flex;align-items:center;gap:10px;min-height:56px;border:1.5px solid #c3d1ca;border-radius:13px;background:#fffaf1;color:#35575a;text-align:left;padding:8px 12px;font-size:13px;font-weight:800;line-height:1.2}
+.method-card small{display:block;font-size:11px;font-weight:500;margin-top:3px;color:#6c7c79}
+.method-card[aria-pressed=true]{background:#1e4548;color:#fff;border-color:#1e4548}.method-card[aria-pressed=true] small{color:#bcd6cf}
+.label{display:block;font-size:11px;font-weight:800;color:#4c6667;margin:10px 0 4px}
+.textin{width:100%;min-height:44px;border:1.5px solid #c3d1ca;border-radius:11px;background:#fffdf7;padding:8px 10px;font-size:14px;color:#20393c}
+textarea.textin{min-height:52px;font-size:13px;resize:vertical}
+.stage{display:flex;align-items:center;justify-content:center;gap:10px;padding:2px 4px;flex-wrap:wrap}
+.stage .arrow{font-size:20px;color:#94713e;font-weight:900}
+.shape-box{width:58px;height:58px;display:grid;place-items:center;border-radius:12px;background:#f4f7f1;border:1px solid #dde4da}
+.shape-box svg{width:48px;height:48px}
+.qmark{width:58px;height:58px;display:grid;place-items:center;border:2px dashed #c7a25f;border-radius:12px;background:#fdf6e7;font-size:26px;font-weight:900;color:#b0813a}
+.options{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px}
+.opt{min-height:76px;border:1.5px solid #b9cbc2;border-radius:13px;background:#fffaf2;display:flex;align-items:center;justify-content:center;gap:4px;padding:6px;color:#20393c}
+.opt svg{width:44px;height:44px}
+.opt.text{font-size:19px;font-weight:800;font-family:Georgia,"Noto Serif KR",serif}
+.opt.block svg{width:64px;height:64px}
+.opt[aria-pressed=true]{background:#f4bc75;border-color:#d4974a;box-shadow:0 3px 0 #112c2e20}
+.sm-box{width:40px;height:40px;display:grid;place-items:center;border-radius:9px;background:#f4f7f1;border:1px solid #dde4da}
+.sm-box svg{width:33px;height:33px}
+.sm{font-size:13px;color:#94713e;font-weight:900}
+.repair-wrap{display:flex;flex-direction:column;align-items:center;gap:7px}
+.repair-canvas{background:#f4f7f1;border:1px solid #dde4da;border-radius:14px;padding:6px}
+.repair-canvas svg{width:112px;height:112px;display:block}
+.ghosts{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;width:100%}
+.ghost{min-height:46px;border:1.5px dashed #9db3aa;border-radius:12px;background:#f7faf4;color:#41605c;font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center;gap:5px}
+.ghost[aria-pressed=true]{background:#f4bc75;border:1.5px solid #d4974a;color:#3b3a2e}
+.preview-line{display:flex;align-items:center;gap:8px;font-size:11.5px;color:#476663;font-weight:700;min-height:52px}
+.preview-line svg{width:48px;height:48px;background:#fffdf7;border:1px solid #dde4da;border-radius:9px}
+.teach{display:flex;align-items:center;gap:12px;background:#fdf6e7;border:1.5px solid #e3c98f;border-radius:13px;padding:8px 12px}
+.teach svg{width:46px;height:46px;flex:none}.teach strong{font-size:14.5px}.teach p{margin:0;font-size:11.5px;color:#6b5a35}
+.recorded{min-height:38px;display:flex;align-items:center;justify-content:center;border-radius:11px;background:#eef2ea;color:#41605c;font-weight:800;font-size:13px;margin-top:7px;text-align:center;padding:6px 10px}
+.foot{flex:none;display:flex;align-items:center;gap:8px;padding:8px 14px max(10px,env(safe-area-inset-bottom));background:#f4f0e7;flex-wrap:wrap}
+.primary{min-height:46px;flex:1;border:0;border-radius:12px;background:#147b73;color:#fff;font-weight:850;font-size:13.5px}
+.secondary{min-height:46px;border-radius:12px;border:1px solid #b9cbc2;background:#fffaf2;color:#355d5c;font-weight:800;font-size:11.5px;padding:0 12px}
+.foot-note{flex:none;font-size:9px;color:#75847f;text-align:center;padding:0 14px 6px;background:#f4f0e7}
+.result-table{width:100%;border-collapse:collapse;font-size:11.5px}
+.result-table th,.result-table td{border-bottom:1px solid #e3e9e0;padding:4px 5px;text-align:left}
+.result-table th{color:#55716e;font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+.ok{color:#177a52;font-weight:800}.no{color:#b04a3a;font-weight:800}
+.row-actions{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.row-actions button{flex:1 1 40%;min-height:42px;border-radius:11px;border:1px solid #b9cbc2;background:#fffaf2;color:#355d5c;font-weight:800;font-size:11.5px}
+.row-actions .primary{border:0;background:#147b73;color:#fff}
+.danger{border-color:#d9a199!important;color:#a04434!important}
+.tester-toggle{width:100%;min-height:40px;border:1px solid #b9cbc2;border-radius:11px;background:#fffaf2;color:#355d5c;font-weight:800;font-size:12px;margin-top:6px}
+.note-box{background:#eef2ea;border-radius:11px;padding:8px 10px;font-size:11px;color:#3d5856;line-height:1.45}
+@media(max-height:720px){.head{min-height:50px;padding-top:7px;padding-bottom:5px}.brand h1{font-size:19px}.content{gap:5px;padding-bottom:5px}.card{padding:9px 10px}.card h2{font-size:15px;margin-bottom:4px}.card p{font-size:11.5px;margin-bottom:6px}.opt{min-height:64px}.opt svg{width:38px;height:38px}.opt.block svg{width:54px;height:54px}.ghost{min-height:40px}.teach{padding:6px 10px}.teach svg{width:40px;height:40px}.primary,.secondary{min-height:40px}.foot{padding-top:5px;padding-bottom:7px}.foot-note{display:none}.shape-box{width:50px;height:50px}.shape-box svg{width:42px;height:42px}.qmark{width:50px;height:50px}.repair-canvas svg{width:96px;height:96px}}
+@media(max-width:340px){.head,.content,.foot{padding-left:10px;padding-right:10px}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+(() => {
+'use strict';
+const app = document.getElementById('app');
+const STORE_KEY = 'vowelTransferLab.sessions.v2';
+const ITEM_SET_VERSION = 'transfer-lab-v2.2-eight';
+const PRNG_VERSION = 'mulberry32-v1';
+
+/* ---------------------------------------------------------------------------
+   GEOMETRY
+   Everything is drawn as SVG lines so no font, glyph, or ligature is required.
+   P1 glyph notation is internal only:  V60R = vertical bar, short stroke at
+   60% from the top, on the Right.  H20D = horizontal bar, stroke at 20% from
+   the left end, on the Down side.  This notation is never rendered for a
+   learner; it exists so sessions, verifier output and reports are exact.
+--------------------------------------------------------------------------- */
+const INK = '#20393c';
+const svgWrap = (inner, extra='') => `<svg viewBox="0 0 100 100" role="img" aria-hidden="true" ${extra}>${inner}</svg>`;
+const seg = (x1,y1,x2,y2,sw,color) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color||INK}" stroke-width="${sw||8}" stroke-linecap="round"/>`;
+
+/* P1 abstract glyphs. No stroke sits at 50%, so none of these is a Hangul vowel. */
+const GLYPHS = {
+  'V60R':[[50,12,50,88],[50,60,86,60]],
+  'V60L':[[50,12,50,88],[50,60,14,60]],
+  'V20R':[[50,12,50,88],[50,20,86,20]],
+  'V20L':[[50,12,50,88],[50,20,14,20]],
+  'V40R':[[50,12,50,88],[50,40,86,40]],
+  'V40L':[[50,12,50,88],[50,40,14,40]],
+  'V80R':[[50,12,50,88],[50,80,86,80]],
+  'V80L':[[50,12,50,88],[50,80,14,80]],
+  'H60U':[[12,50,88,50],[60,50,60,14]],
+  'H60D':[[12,50,88,50],[60,50,60,86]],
+  'H20U':[[12,50,88,50],[20,50,20,14]],
+  'H20D':[[12,50,88,50],[20,50,20,86]],
+  'H40U':[[12,50,88,50],[40,50,40,14]],
+  'H40D':[[12,50,88,50],[40,50,40,86]],
+  'H80U':[[12,50,88,50],[80,50,80,14]],
+  'H80D':[[12,50,88,50],[80,50,80,86]]
+};
+const glyphSvg = g => svgWrap(GLYPHS[g].map(l => seg(...l)).join(''));
+
+/* Real Hangul vowel shapes, used only where the learning content is the vowel itself. */
+const VOWEL_LINES = {
+  'ㅏ':[[50,12,50,88],[50,50,86,50]],
+  'ㅓ':[[50,12,50,88],[50,50,14,50]],
+  'ㅗ':[[12,50,88,50],[50,50,50,14]],
+  'ㅜ':[[12,50,88,50],[50,50,50,86]]
+};
+const vowelSvg = v => svgWrap(VOWEL_LINES[v].map(l => seg(...l)).join(''));
+
+/* P2: the long line only. No stroke and no marker, so no position is pre-marked. */
+const stemOnlySvg = axis => svgWrap(seg(...(axis === 'vertical' ? [50,12,50,88] : [12,50,88,50])));
+
+/* P2 placement slots.  mid-* attach at the centre; off-* attach high (vertical)
+   or at the left end (horizontal).  Off-centre placements are not letters. */
+const SLOTS = {
+  vertical:   {'mid-R':[50,50,86,50], 'mid-L':[50,50,14,50], 'off-R':[50,26,86,26], 'off-L':[50,26,14,26]},
+  horizontal: {'mid-D':[50,50,50,86], 'mid-U':[50,50,50,14], 'off-D':[28,50,28,86], 'off-U':[28,50,28,14]}
+};
+const placedSvg = (axis, slot) => svgWrap(seg(...(axis === 'vertical' ? [50,12,50,88] : [12,50,88,50])) + seg(...SLOTS[axis][slot], 8, '#2f6f68'));
+
+/* P3 blocks: ㅁ with one of the four taught vowels.  Vertical vowels (ㅏ ㅓ) sit
+   to the right of the consonant; horizontal vowels (ㅗ ㅜ) sit below it. */
+const BLOCKS = {'모':'ㅗ','무':'ㅜ','마':'ㅏ','머':'ㅓ'};
+const mieumSvg = () => svgWrap(`<rect x="22" y="22" width="56" height="56" rx="9" fill="none" stroke="${INK}" stroke-width="8"/>`);
+function blockSvg(vowel){
+  const vertical = vowel === 'ㅏ' || vowel === 'ㅓ';
+  let inner = vertical
+    ? `<rect x="16" y="26" width="28" height="44" rx="5" fill="none" stroke="${INK}" stroke-width="7"/>`
+    : `<rect x="22" y="14" width="50" height="24" rx="5" fill="none" stroke="${INK}" stroke-width="7"/>`;
+  if(vertical) inner += seg(62,18,62,82,7) + seg(62,50, vowel === 'ㅏ' ? 84 : 40, 50, 7);
+  else inner += seg(18,66,82,66,7) + seg(50,66,50, vowel === 'ㅗ' ? 46 : 86, 7);
+  return svgWrap(inner);
+}
+
+/* ---------------------------------------------------------------------------
+   ITEM BANK  (v2.2, eight items)
+   P1  abstract visual analogy, 2 items.  Calibration only: these measure
+       general visual transformation, not Korean literacy.  Scored separately.
+   P2  sound-to-shape, 4 items, covering a, eo, o, u exactly once per session.
+   P3  new consonant ㅁ, 2 items (encode then decode in a randomized order).
+
+   Keys live in JS only.  Every item's option order is drawn from the session
+   seed, and the whole session -- order, cue assignment, options, keys -- is
+   recorded so any run can be reproduced from (seed, item set version).
+--------------------------------------------------------------------------- */
+const FAMILIES = ['visual', 'sound', 'syllable'];
+
+const P1_ITEMS = [
+  {id:'P1a', family:'visual', kind:'p1',
+   demo:['V60R','V60L'], query:'H20D', key:'H20U',
+   options:['H20U','H80U','H80D','V20R'],
+   prompt:'In the first pair, the stroke <b>keeps its place</b> and <b>moves to the other side</b>. Make that same change to the second shape. Which shape do you get?'},
+  {id:'P1b', family:'visual', kind:'p1',
+   demo:['H60U','H60D'], query:'V40R', key:'V40L',
+   options:['V40L','V80L','V80R','H40U'],
+   prompt:'In the first pair, the stroke <b>keeps its place</b> and <b>moves to the other side</b>. Make that same change to the second shape. Which shape do you get?'}
+];
+
+/* P2: the four cues. Each cue owns a fixed option set, so the option set is a
+   property of the cue, not of the presentation order. */
+const P2_ITEMS = [
+  {id:'S-a',  family:'sound', kind:'p2', axis:'vertical',   cue:'a',  keySlot:'mid-R',
+   options:['mid-R','mid-L','off-R','off-L'], prompt:'Put the short stroke on the line so the print reads <b>“a”</b>.'},
+  {id:'S-eo', family:'sound', kind:'p2', axis:'vertical',   cue:'eo', keySlot:'mid-L',
+   options:['mid-L','mid-R','off-L','off-R'], prompt:'Put the short stroke on the line so the print reads <b>“eo”</b>.'},
+  {id:'S-o',  family:'sound', kind:'p2', axis:'horizontal', cue:'o',  keySlot:'mid-U',
+   options:['mid-U','mid-D','off-U','off-D'], prompt:'Put the short stroke on the line so the print reads <b>“o”</b>.'},
+  {id:'S-u',  family:'sound', kind:'p2', axis:'horizontal', cue:'u',  keySlot:'mid-D',
+   options:['mid-D','mid-U','off-D','off-U'], prompt:'Put the short stroke on the line so the print reads <b>“u”</b>.'}
+];
+
+/* P3: both items use ㅁ only.  Y1's option set and Y2's answer overlap on 머,
+   which is a real, disclosed cross-item elimination path (see report). */
+const P3_ITEMS = [
+  {id:'Y-encode', family:'syllable', kind:'p3encode',
+   options:['모','마','무','머'], key:'모', prompt:'Which block says <b>“mo”</b>?'},
+  {id:'Y-decode', family:'syllable', kind:'p3decode', block:'머',
+   options:['meo','ma','mu','mo'], key:'meo', prompt:'Which sound does this block say?'}
+];
+
+const ALL_ITEMS = [...P1_ITEMS, ...P2_ITEMS, ...P3_ITEMS];
+const ITEM_BY_ID = Object.fromEntries(ALL_ITEMS.map(it => [it.id, it]));
+/* v2.2.1: family lookup, used to derive presented cue/syllable order. */
+const FAMILY_BY_ID = Object.fromEntries(ALL_ITEMS.map(it => [it.id, it.family]));
+
+const FAMILY_LABELS = {visual:'visual transformation', sound:'sound-to-shape', syllable:'syllable transfer'};
+const FAMILY_TITLES = {visual:'Puzzles 1 · abstract shapes', sound:'Puzzles 2 · fix the print', syllable:'Puzzles 3 · new friend ㅁ'};
+const SLOT_LABELS = {
+  'mid-R':'on the right, at the middle', 'mid-L':'on the left, at the middle',
+  'off-R':'on the right, high up', 'off-L':'on the left, high up',
+  'mid-U':'above the line, in the middle', 'mid-D':'below the line, in the middle',
+  'off-U':'above the line, at the left end', 'off-D':'below the line, at the left end'
+};
+const SLOT_ARROWS = {'mid-R':'→','mid-L':'←','off-R':'↗','off-L':'↖','mid-U':'↑','mid-D':'↓','off-U':'↑','off-D':'↓'};
+const SLOT_SHORT = {'mid-R':'right · middle','mid-L':'left · middle','off-R':'right · high','off-L':'left · high',
+  'mid-U':'above · middle','mid-D':'below · middle','off-U':'above · left end','off-D':'below · left end'};
+
+/* ---------------------------------------------------------------------------
+   REPRODUCIBLE RANDOMNESS
+--------------------------------------------------------------------------- */
+function mulberry32(seed){
+  let a = seed >>> 0;
+  return function(){
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function shuffled(arr, rnd){
+  const a = arr.slice();
+  for(let i = a.length - 1; i > 0; i--){ const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+/* Independent stream per purpose, so adding an item cannot silently reshuffle
+   everything else and break old seeds. */
+function stream(seed, salt){ return mulberry32((seed ^ Math.imul(salt, 0x9E3779B1)) >>> 0); }
+function newSeed(){ const r = new Uint32Array(1); crypto.getRandomValues(r); return r[0]; }
+
+/* ---------------------------------------------------------------------------
+   SESSION GENERATION  -- deterministic from seed alone
+--------------------------------------------------------------------------- */
+function buildPlan(seed){
+  const rnd = stream(seed, 1);
+  /* Presentation order: one draw over all eight items. */
+  const order = shuffled(ALL_ITEMS.map(it => it.id), rnd);
+  /* v2.2.1: cueOrder and syllOrder are DERIVED from order, never drawn
+     separately. They must describe what was actually presented. Generating
+     them from independent streams produced exported metadata that disagreed
+     with the presentation order in most sessions (see CHANGES-v2.2.1.md). */
+  const cueOrder = order.filter(id => FAMILY_BY_ID[id] === 'sound');
+  const syllOrder = order.filter(id => FAMILY_BY_ID[id] === 'syllable');
+  /* Option order per item. */
+  const optionOrder = {};
+  for(const it of ALL_ITEMS) optionOrder[it.id] = shuffled([...it.options], stream(seed, 10 + ALL_ITEMS.indexOf(it)));
+  return {order, cueOrder, syllOrder, optionOrder};
+}
+
+function makeSession(method, note, seed){
+  seed = seed >>> 0;
+  const plan = buildPlan(seed);
+  return {
+    id: 's' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36),
+    itemSetVersion: ITEM_SET_VERSION, prngVersion: PRNG_VERSION, seed,
+    startedAt: new Date().toISOString(), method, testerNote: note || '',
+    viewport: [innerWidth, innerHeight],
+    reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
+    plan, itemIndex: 0,
+    items: plan.order.map(id => ({id, family: ITEM_BY_ID[id].family,
+      firstPickSlot: null, previewPath: [], committedSlot: null, committedKey: null,
+      firstPickCorrect: null, committedCorrect: null, latencyMs: null, previewTaps: 0})),
+    explanations: {visual:'', sound:'', syllable:''}, observerNote: '',
+    finishedAt: null
+  };
+}
+
+/* ---------------------------------------------------------------------------
+   STATE
+--------------------------------------------------------------------------- */
+const state = {screen:'setup', method:null, note:'', session:null, selection:null,
+  committed:false, showTester:false, seedInput:''};
+
+/* Resolve an item as this session presents it: options in drawn order, key. */
+function resolve(itemId, session){
+  const def = ITEM_BY_ID[itemId];
+  const opts = session ? session.plan.optionOrder[itemId] : def.options;
+  const keyRaw = def.kind === 'p2' ? def.keySlot : def.key;
+  return {def, opts, keyRaw};
+}
+function optionKey(def, raw){ return raw; }
+function displayPosition(session, itemIndex, raw){
+  const itemId = session.plan.order[itemIndex];
+  const {opts} = resolve(itemId, session);
+  return opts.indexOf(raw);
+}
+
+function loadSessions(){ try { return JSON.parse(localStorage.getItem(STORE_KEY)) || []; } catch(e){ return []; } }
+function upsertSession(s){ const all = loadSessions().filter(x => x.id !== s.id); all.push(s); localStorage.setItem(STORE_KEY, JSON.stringify(all)); }
+
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* ---------------------------------------------------------------------------
+   SCREENS
+--------------------------------------------------------------------------- */
+function setupHtml(){
+  const n = loadSessions().length;
+  return `
+  <div class="card">
+    <h2>Tester setup</h2>
+    <p>Which Vowel Machine method did this learner <b>just</b> finish? Choose <b>Cold control</b> for a learner who has not used it. The puzzles are identical in all three cases.</p>
+    <div class="method-grid" role="group" aria-label="Training method used">
+      <button class="method-card" data-method="rail" aria-pressed="${state.method==='rail'}">Rail<small>Moved the sliding short stroke across the line</small></button>
+      <button class="method-card" data-method="keys" aria-pressed="${state.method==='keys'}">Three keys<small>Tapped ㆍ ㅡ ㅣ pairs to build vowels</small></button>
+      <button class="method-card" data-method="control" aria-pressed="${state.method==='control'}">Cold control<small>No Vowel Machine use before this session</small></button>
+    </div>
+    <label class="label" for="note">Learner label (optional)</label>
+    <input class="textin" id="note" maxlength="24" placeholder="e.g. L3, control-1" value="${esc(state.note)}">
+    <label class="label" for="seed">Session seed (blank = random)</label>
+    <input class="textin" id="seed" inputmode="numeric" maxlength="10" placeholder="for reproducing a session" value="${esc(state.seedInput)}">
+    <p class="quiet" style="margin-top:8px">${n} session${n===1?'':'s'} stored on this device. Nothing leaves the device.</p>
+  </div>
+  <div class="row-actions">
+    <button data-action="copyAll" ${n?'':'disabled'}>Copy all data</button>
+    <button data-action="downloadAll" ${n?'':'disabled'}>Download all data</button>
+    <button class="danger" data-action="erase" ${n?'':'disabled'}>Erase stored data</button>
+  </div>`;
+}
+
+function introHtml(){
+  return `
+  <div class="card">
+    <h2>Eight little puzzles</h2>
+    <p>These are <b>not</b> the machine you may have used. There is no slider and no three keys.</p>
+    <p>There are no points, no timer, and <b>no right-or-wrong signal</b> between puzzles. Each puzzle is one decision: once you confirm, we move on.</p>
+    <p class="quiet">About three minutes. Three kinds of puzzle, mixed in a different order each time.</p>
+  </div>`;
+}
+
+function p1Html(def, opts, sel, locked){
+  return `
+  <p>${def.prompt}</p>
+  <div class="stage">
+    <span class="shape-box">${glyphSvg(def.demo[0])}</span><span class="arrow">→</span><span class="shape-box">${glyphSvg(def.demo[1])}</span>
+  </div>
+  <div class="stage">
+    <span class="shape-box">${glyphSvg(def.query)}</span><span class="arrow">→</span><span class="qmark" aria-label="unknown">?</span>
+  </div>
+  <div class="options" role="group" aria-label="Choose the shape that results">
+    ${opts.map((g,k) => `<button class="opt" data-idx="${k}" data-choice="${esc(g)}" aria-pressed="${sel===k}" aria-label="Shape ${k+1}" ${locked}>${glyphSvg(g)}</button>`).join('')}
+  </div>`;
+}
+
+function p2Html(def, opts, sel, locked){
+  const preview = sel != null
+    ? `<div class="preview-line" id="preview">Your print: ${placedSvg(def.axis, opts[sel])}</div>`
+    : `<div class="preview-line quiet" id="preview">Tap a position to see your print. There is no check here.</div>`;
+  return `
+  <p>${def.prompt}</p>
+  <div class="repair-wrap">
+    <div class="repair-canvas">${stemOnlySvg(def.axis)}</div>
+    <div class="ghosts" role="group" aria-label="Where to place the short stroke">
+      ${opts.map((slot,k) => `<button class="ghost" data-idx="${k}" data-choice="${esc(slot)}" aria-pressed="${sel===k}" aria-label="Place the stroke ${SLOT_LABELS[slot]}" ${locked}>${SLOT_ARROWS[slot]} ${SLOT_SHORT[slot]}</button>`).join('')}
+    </div>
+    ${preview}
+  </div>`;
+}
+
+function p3EncodeHtml(def, opts, sel, locked){
+  return `
+  <div class="teach">${mieumSvg()}<div><strong>New friend: ㅁ says “m”.</strong><p>A vowel joins ㅁ to make one block.</p></div></div>
+  <p>${def.prompt}</p>
+  <div class="options" role="group" aria-label="Choose the block">
+    ${opts.map((blk,k) => `<button class="opt block" data-idx="${k}" data-choice="${esc(blk)}" aria-pressed="${sel===k}" aria-label="Block ${k+1}" ${locked}>${blockSvg(BLOCKS[blk])}</button>`).join('')}
+  </div>`;
+}
+
+function p3DecodeHtml(def, opts, sel, locked){
+  return `
+  <div class="teach">${mieumSvg()}<div><strong>New friend: ㅁ says “m”.</strong><p>Read the consonant and the vowel in this block.</p></div></div>
+  <div class="stage"><span class="shape-box" style="width:96px;height:96px">${blockSvg(BLOCKS[def.block])}</span></div>
+  <p>${def.prompt}</p>
+  <div class="options" role="group" aria-label="Choose the sound">
+    ${opts.map((snd,k) => `<button class="opt text" data-idx="${k}" data-choice="${esc(snd)}" aria-pressed="${sel===k}" aria-label="Sound ${k+1}" ${locked}>${snd}</button>`).join('')}
+  </div>`;
+}
+
+function itemHtml(){
+  const s = state.session;
+  const si = s.items[s.itemIndex];
+  const {def, opts} = resolve(si.id, s);
+  const sel = state.selection;
+  const locked = state.committed ? 'disabled' : '';
+  let body = '';
+  if(def.kind === 'p1') body = p1Html(def, opts, sel, locked);
+  else if(def.kind === 'p2') body = p2Html(def, opts, sel, locked);
+  else if(def.kind === 'p3encode') body = p3EncodeHtml(def, opts, sel, locked);
+  else body = p3DecodeHtml(def, opts, sel, locked);
+  const famIndex = '';
+  return `
+  <div class="card">
+    <h2>${FAMILY_TITLES[def.family]}</h2>
+    ${body}
+    ${state.committed ? `<div class="recorded" role="status">Recorded.</div>` : ''}
+  </div>`;
+}
+
+/* ---------------------------------------------------------------------------
+   REPORT
+   Three separate signals per P2 item:
+     firstPickSlot    what the learner touched first
+     previewPath      every preview they changed through, in order
+     committedSlot    what they finally confirmed
+   Immediate recognition = first pick was the key.
+   Exploratory self-correction = changed after previewing, then committed right.
+--------------------------------------------------------------------------- */
+function itemReport(session, si, idx){
+  const {def, opts} = resolve(si.id, session);
+  const keyRaw = def.kind === 'p2' ? def.keySlot : def.key;
+  return {
+    itemId: si.id, family: si.family, positionInSession: idx + 1,
+    cue: def.family === 'sound' ? def.cue : null,
+    displayOrder: opts.slice(),
+    key: keyRaw, keyDisplayPosition: opts.indexOf(keyRaw),
+    firstPick: si.firstPickSlot, firstPickPosition: si.previewPath.length ? si.previewPath[0].position : null,
+    previewPath: si.previewPath.slice(), previewChanges: Math.max(0, si.previewPath.length - 1),
+    committed: si.committedSlot, committedPosition: si.committedSlot == null ? null : opts.indexOf(si.committedSlot),
+    firstPickCorrect: si.firstPickCorrect, committedCorrect: si.committedCorrect,
+    latencyMs: si.latencyMs
+  };
+}
+function report(session){
+  const items = session.items.map((si, i) => itemReport(session, si, i));
+  const subscores = {};
+  for(const fam of FAMILIES){
+    const rows = items.filter(x => x.family === fam);
+    subscores[fam] = {n: rows.length, firstPick: rows.filter(x => x.firstPickCorrect).length,
+      committed: rows.filter(x => x.committedCorrect).length};
+  }
+  const p2 = items.filter(x => x.family === 'sound');
+  return {
+    tool:'vowel-transfer-lab', version:2, itemSetVersion:session.itemSetVersion,
+    id:session.id, startedAt:session.startedAt, finishedAt:session.finishedAt,
+    method:session.method, testerNote:session.testerNote, seed:session.seed, prngVersion:session.prngVersion,
+    viewport:session.viewport, reducedMotion:session.reducedMotion,
+    /* v2.2.1: presentedOrder is what was actually shown. cueOrder and
+       syllOrder are now derived subsets of it, not independent draws. */
+    plan:{presentedOrder:session.plan.order.slice(),
+      cueOrder:session.plan.order.filter(id => FAMILY_BY_ID[id] === 'sound'),
+      syllOrder:session.plan.order.filter(id => FAMILY_BY_ID[id] === 'syllable'),
+      optionOrder:JSON.parse(JSON.stringify(session.plan.optionOrder))},
+    subscores,
+    previewSummary:{items: p2.length, touchedPreview: p2.filter(x => x.previewPath.length > 0).length,
+      changedPreviewBeforeCommit: p2.filter(x => x.previewChanges > 0).length,
+      firstPickCorrect: p2.filter(x => x.firstPickCorrect).length,
+      committedCorrect: p2.filter(x => x.committedCorrect).length,
+      correctedByPreview: p2.filter(x => !x.firstPickCorrect && x.committedCorrect).length},
+    explanations:session.explanations, observerNote:session.observerNote, items,
+    interpretation:'Descriptive only. P1 is a visual-analogy calibration score and is not Korean-literacy evidence. Correct responses are not mastery or retention evidence. Compare against a cold control and read the learner explanations.'
+  };
+}
+function subscoreLine(session){
+  const r = report(session).subscores;
+  return `Shapes ${r.visual.committed}/${r.visual.n} · Sound-to-shape ${r.sound.committed}/${r.sound.n} · Syllable ㅁ ${r.syllable.committed}/${r.syllable.n}`;
+}
+
+function doneHtml(){
+  const s = state.session, rep = report(s);
+  const rows = rep.items.map(it => `<tr><td>${esc(it.itemId)}${it.cue?' · '+esc(it.cue):''}</td><td class="${it.committedCorrect?'ok':'no'}">${it.committedCorrect?'✓':'✗'}</td><td>${it.firstPickCorrect?'first':(it.committedCorrect?'changed':'—')}</td><td>${it.latencyMs==null?'':(it.latencyMs/1000).toFixed(1)+'s'}</td></tr>`).join('');
+  return `
+  <div class="card">
+    <h2>All eight recorded. Thank you.</h2>
+    <p>Your answers stay on this device.</p>
+    <p class="quiet">Tester: ask the learner to explain each kind of puzzle in their own words, then type it below. Leave blank if none.</p>
+    <label class="label" for="ex-visual">Abstract shapes: how did you decide?</label>
+    <textarea class="textin" id="ex-visual">${esc(s.explanations.visual)}</textarea>
+    <label class="label" for="ex-sound">Fix the print: how did you decide?</label>
+    <textarea class="textin" id="ex-sound">${esc(s.explanations.sound)}</textarea>
+    <label class="label" for="ex-syllable">New friend ㅁ: how did you decide?</label>
+    <textarea class="textin" id="ex-syllable">${esc(s.explanations.syllable)}</textarea>
+    <label class="label" for="obs">Observer note (optional)</label>
+    <textarea class="textin" id="obs">${esc(s.observerNote)}</textarea>
+    <button class="tester-toggle" data-action="toggleTester" aria-expanded="${state.showTester}">Tester: ${state.showTester?'hide':'show'} result summary</button>
+    ${state.showTester ? `
+      <table class="result-table" style="margin-top:8px"><thead><tr><th>Item</th><th>Final</th><th>First pick</th><th>Time</th></tr></thead><tbody>${rows}</tbody></table>
+      <p style="margin-top:7px"><b>${subscoreLine(s)}</b></p>
+      <p class="quiet">Preview on print puzzles: ${rep.previewSummary.firstPickCorrect}/${rep.previewSummary.items} right on first touch, ${rep.previewSummary.committedCorrect}/${rep.previewSummary.items} right when confirmed, ${rep.previewSummary.correctedByPreview} changed after previewing.</p>
+      <p class="quiet">Method: ${esc(s.method)} · seed ${s.seed} · ${s.itemSetVersion}. Descriptive only: not mastery, not retention.</p>
+      <div class="note-box" style="margin-top:6px"><b>Reading this:</b> the abstract-shapes score is a general visual check and can be solved without any Hangul knowledge; it is kept separate from the other two scores on purpose. Do not treat any total, or any single correct answer, as mastery.</div>
+      <div class="row-actions"><button class="primary" data-action="copyReport">Copy report (JSON)</button><button data-action="downloadReport">Download report (JSON)</button></div>` : ''}
+  </div>`;
+}
+
+/* ---------------------------------------------------------------------------
+   RENDER
+--------------------------------------------------------------------------- */
+function render(focusSel){
+  const s = state.session;
+  const phase = state.screen === 'item' && s ? ` · ${s.itemIndex+1}/8` : '';
+  let body = '', foot = '';
+  if(state.screen === 'setup'){
+    body = setupHtml();
+    foot = `<button class="primary" data-action="start" ${state.method?'':'disabled'}>Begin session</button>`;
+  } else if(state.screen === 'intro'){
+    body = introHtml();
+    foot = `<button class="primary" data-action="begin">Start the puzzles</button><button class="secondary" data-action="abort">Back</button>`;
+  } else if(state.screen === 'item'){
+    body = itemHtml();
+    foot = state.committed
+      ? `<button class="primary" data-action="next">${s.itemIndex === s.items.length-1 ? 'Finish' : 'Next puzzle'}</button>`
+      : `<button class="primary" data-action="confirm" ${state.selection==null?'disabled':''}>Confirm my answer</button>`;
+  } else if(state.screen === 'done'){
+    body = doneHtml();
+    foot = `<button class="primary" data-action="saveNotes">Save notes</button><button class="secondary" data-action="newLearner">Next learner</button>`;
+  }
+  const methodLabel = {rail:'after Rail', keys:'after Three Keys', control:'cold control'}[state.method] || 'no method set';
+  app.innerHTML = `<main class="shell"><header class="head"><div class="brand"><small>Hangul Tutor · experiment</small><h1>Vowel Transfer Lab</h1></div><span class="head-pill">${methodLabel}${phase}</span></header><div class="content" id="content">${body}</div><footer class="foot">${foot}</footer><div class="foot-note">Experiment only · one-shot responses · no scores shown to learner · no network</div></main>`;
+  if(focusSel){ const el = app.querySelector(focusSel); if(el) el.focus({preventScroll:true}); }
+}
+
+/* ---------------------------------------------------------------------------
+   ACTIONS
+--------------------------------------------------------------------------- */
+function selectOption(idx){
+  const s = state.session;
+  const si = s.items[s.itemIndex];
+  const {def, opts} = resolve(si.id, s);
+  if(state.committed) return;
+  const slot = opts[idx];
+  if(si.firstPickSlot == null){
+    si.firstPickSlot = slot;
+    si.firstPickCorrect = (slot === (def.kind === 'p2' ? def.keySlot : def.key));
+  }
+  /* Record every position the learner inspects, including repeats, so the
+     preview path shows exploration rather than only distinct states. */
+  si.previewPath.push({position: idx, slot, at: Math.round(performance.now() - si.shownAt)});
+  si.previewTaps = si.previewPath.length;
+  state.selection = idx;
+  render(`[data-idx="${idx}"]`);
+}
+
+function commit(){
+  const s = state.session;
+  const si = s.items[s.itemIndex];
+  const {def, opts} = resolve(si.id, s);
+  if(state.selection == null || state.committed) return;
+  const slot = opts[state.selection];
+  si.committedSlot = slot;
+  si.committedKey = slot;
+  const keyRaw = def.kind === 'p2' ? def.keySlot : def.key;
+  si.committedCorrect = (slot === keyRaw);
+  si.latencyMs = Math.round(performance.now() - si.shownAt);
+  state.committed = true;
+  render('[data-action="next"]');
+}
+
+function next(){
+  const s = state.session;
+  if(s.itemIndex === s.items.length - 1){
+    s.finishedAt = new Date().toISOString();
+    upsertSession(s);
+    state.screen = 'done';
+    render();
+    return;
+  }
+  s.itemIndex++;
+  s.items[s.itemIndex].shownAt = performance.now();
+  state.selection = null; state.committed = false;
+  render();
+}
+
+function beginItems(){
+  state.screen = 'item';
+  state.session.items[0].shownAt = performance.now();
+  state.selection = null; state.committed = false;
+  render();
+}
+
+function copyText(text, btn){
+  const done = () => { if(btn){ const t = btn.textContent; btn.textContent = 'Copied ✓'; setTimeout(()=>{ btn.textContent = t; }, 1400); } };
+  if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text, done)); }
+  else fallbackCopy(text, done);
+}
+function fallbackCopy(text, done){
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); } catch(e) {}
+  document.body.removeChild(ta); done();
+}
+function downloadText(filename, text){
+  const url = URL.createObjectURL(new Blob([text], {type:'application/json'}));
+  const a = document.createElement('a'); a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+/* v2.2.1: harvest the notes textareas into session state BEFORE any rerender.
+   Previously only saveNotes() wrote these fields, so toggling the tester
+   summary silently discarded anything typed but not saved. */
+function harvestNotes(){
+  const s = state.session;
+  if(!s || state.screen !== 'done') return;
+  const grab = id => { const el = document.getElementById(id); return el ? el.value : null; };
+  const v = grab('ex-visual'), so = grab('ex-sound'), sy = grab('ex-syllable'), ob = grab('obs');
+  if(v  !== null) s.explanations.visual   = v;
+  if(so !== null) s.explanations.sound    = so;
+  if(sy !== null) s.explanations.syllable = sy;
+  if(ob !== null) s.observerNote          = ob;
+}
+function saveNotes(){
+  const s = state.session; if(!s) return;
+  harvestNotes();
+  if(!s.explanations) s.explanations = {visual:'', sound:'', syllable:''};
+  upsertSession(s);
+}
+
+app.addEventListener('click', e => {
+  const el = e.target.closest('button');
+  if(!el) return;
+  if(el.dataset.method){ state.method = el.dataset.method; render(); return; }
+  if(el.dataset.idx != null && !state.committed && state.screen === 'item'){ selectOption(Number(el.dataset.idx)); return; }
+  switch(el.dataset.action){
+    case 'start': {
+      const noteEl = document.getElementById('note');
+      state.note = noteEl ? noteEl.value.trim() : state.note;
+      const seedEl = document.getElementById('seed');
+      state.seedInput = seedEl ? seedEl.value.trim() : '';
+      const parsed = parseInt(state.seedInput, 10);
+      const seed = Number.isFinite(parsed) && parsed >= 0 ? parsed : newSeed();
+      state.session = makeSession(state.method, state.note, seed);
+      state.screen = 'intro'; render('[data-action="begin"]'); break;
+    }
+    case 'begin': beginItems(); break;
+    case 'abort': state.screen = 'setup'; state.session = null; render(); break;
+    case 'confirm': commit(); break;
+    case 'next': next(); break;
+    case 'toggleTester': harvestNotes(); state.showTester = !state.showTester; render(); break;
+    case 'saveNotes': saveNotes(); render('[data-action="newLearner"]'); break;
+    case 'copyReport': harvestNotes(); copyText(JSON.stringify(report(state.session), null, 2), el); break;
+    case 'downloadReport': harvestNotes(); downloadText(`transfer-lab-${state.session.id}-seed${state.session.seed}.json`, JSON.stringify(report(state.session), null, 2)); break;
+    case 'copyAll': copyText(JSON.stringify(loadSessions().map(report), null, 2), el); break;
+    case 'downloadAll': downloadText(`transfer-lab-all-${Date.now()}.json`, JSON.stringify(loadSessions().map(report), null, 2)); break;
+    case 'erase': {
+      if(el.dataset.armed){ localStorage.removeItem(STORE_KEY); render(); }
+      else { if(state.session) harvestNotes(); el.dataset.armed = '1'; el.textContent = 'Tap again to erase'; setTimeout(()=>{ delete el.dataset.armed; el.textContent = 'Erase stored data'; }, 2500); }
+      break;
+    }
+    case 'newLearner': if(state.session){ harvestNotes(); upsertSession(state.session); } state.screen = 'setup'; state.session = null; state.method = null; state.note = ''; state.seedInput = ''; state.showTester = false; render(); break;
+  }
+});
+
+/* Test hook. Read-only from the page's point of view: exposes the plan and
+   report builders so a verifier can check the bank without scraping pixels. */
+window.__transferLab = {state, ALL_ITEMS, ITEM_BY_ID, FAMILIES, FAMILY_BY_ID, buildPlan, makeSession, resolve, report,
+  loadSessions, mulberry32, stream, shuffled, SLOTS, BLOCKS, ITEM_SET_VERSION, harvestNotes, saveNotes};
+render();
+})();
+</script>
+</body>
+</html>

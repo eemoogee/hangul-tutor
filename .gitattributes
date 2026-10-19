@@ -3,3 +3,9 @@
 # This is what stops `git status` from showing false "modified" diffs when
 # a file is regenerated on Windows (CRLF) but was committed as LF.
 * text=auto eol=lf
+
+# Transfer Lab release files are published as reviewed artifacts and are
+# checksummed by SHA256SUMS.txt in the same folder. Store every byte exactly
+# as shipped -- no line-ending normalization -- or the recorded checksums stop
+# matching the committed content on a fresh clone.
+docs/prototypes/transfer-lab-v2.2.1/** -text -eol

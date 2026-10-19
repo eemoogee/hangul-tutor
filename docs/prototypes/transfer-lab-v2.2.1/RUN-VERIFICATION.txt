@@ -1,0 +1,57 @@
+VERIFIER RUN AGAINST THE PACKAGED FILES
+======================================
+
+Captured output of verify_transfer_lab_v2.py, run with cwd set to this
+package folder, i.e. against the exact bytes shipped in this ZIP.
+
+This supersedes the v2.2 capture of the same name. v2.2 ran 22 checks;
+v2.2.1 runs 25. The three additions cover the exported-order defect that
+the 22-check run could not detect (see CHANGES-v2.2.1.md).
+
+cwd: <package folder>
+python: Python 3.11.9
+date: 2026-10-19T23:04:56Z
+index-v2.html sha256 (packaged): a6b1113913316a8d5981a39a120d62d01d76f8f8368deb69572d5e61f0fb7a5e
+browser: system Chromium via Playwright, page loaded through a file:// URL.
+         No HTTP server was used in this build, so the "served with HTTP 200"
+         assertion is exercised through a local file URL rather than over HTTP.
+=================================================
+PASS  page served with HTTP 200
+PASS  bank has exactly 8 items
+PASS  families are 2 / 4 / 2
+PASS  sound cues are a, eo, o, u exactly once
+PASS  P1 abstract items have no missing-fourth-symbol shortcut
+PASS  P1 glyph pools are disjoint across the two items
+PASS  P3 options use ㅁ only (no ㄴ distractor)
+PASS  all four sound cues present in each of 240 sessions
+PASS  cue presentation order varies (24 distinct orders)
+PASS  full item order varies (238 distinct of 240)
+PASS  P3 encode/decode start order varies
+PASS  exported cueOrder equals presented order (derived from plan.order)
+PASS  exported syllOrder equals presented order (derived from plan.order)
+PASS  report plan order fields agree with plan.order
+PASS  correct-answer display position varies across all 4 slots for every item (n=240)
+PASS  same seed reproduces the identical plan; a different seed does not
+    random                       mean 1.99/8  fam {'visual': 0.51, 'sound': 0.985, 'syllable': 0.495}  range 0–6
+    fixed_position_first         mean 1.99/8  fam {'visual': 0.485, 'sound': 1, 'syllable': 0.505}  range 0–6
+    fixed_position_last          mean 1.98/8  fam {'visual': 0.58, 'sound': 0.945, 'syllable': 0.455}  range 0–5
+    one_direction_right_below    mean 2.99/8  fam {'visual': 0.485, 'sound': 2, 'syllable': 0.505}  range 2–5
+    one_direction_left_above     mean 2.99/8  fam {'visual': 0.485, 'sound': 2, 'syllable': 0.505}  range 2–5
+    eliminate_displayed          mean 1.99/8  fam {'visual': 0.485, 'sound': 1, 'syllable': 0.505}  range 0–6
+    recall_previous_answers      mean 2.04/8  fam {'visual': 0.485, 'sound': 1.045, 'syllable': 0.505}  range 0–6
+    eliminate_and_recall         mean 1.99/8  fam {'visual': 0.485, 'sound': 1, 'syllable': 0.505}  range 0–6
+    knows_answer                 mean 8.00/8  fam {'visual': 2, 'sound': 4, 'syllable': 2}  range 8–8
+PASS  random guessing averages near 2/8
+PASS  fixed-position adversary gets no more than chance
+PASS  one-direction adversary scores exactly 2/4 on sound-to-shape
+PASS  eliminate-displayed adversary cannot clear the abstract items
+PASS  recall-previous-answers adversary gains nothing on abstract items
+PASS  knowing the answer scores 8/8 (harness sanity)
+PASS  a fixed direction is deterministic per item but totals exactly 2/4 on sound-to-shape
+PASS  no item is beaten >75% of the time by elimination+recall alone
+PASS  no page errors during the whole run
+
+25/25 checks passed -> <package folder>\.verify_out\verify_transfer_lab_v2.json
+
+======================================
+RESULT: 25/25 checks passed -> <package folder>\.verify_out\verify_transfer_lab_v2.json, exit code 0
