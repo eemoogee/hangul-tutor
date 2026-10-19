@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f1efe8">
+  <title>Jamo Interaction Lab · Hangul Tutor</title>
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./app.mjs"></script>
+</head>
+<body>
+  <main class="app">
+    <header class="topline">
+      <div><span class="eyebrow">HANGUL TUTOR / INTERACTION LAB</span><h1>Build the block<span class="period">.</span></h1></div>
+      <span class="lab-stamp" aria-label="Standalone prototype">LAB 01</span>
+    </header>
+
+    <section class="mode-panel" aria-labelledby="mode-label">
+      <div class="section-head"><h2 id="mode-label">Choose an interaction</h2><span>Same builds, different hands</span></div>
+      <div class="mode-list" role="group" aria-label="Interaction mode">
+        <button class="mode-button" data-mode="tap" type="button"><b>A</b><span>Tap</span></button>
+        <button class="mode-button" data-mode="drag" type="button"><b>B</b><span>Drag</span></button>
+        <button class="mode-button" data-mode="rotate" type="button"><b>C</b><span>Rotate</span></button>
+      </div>
+    </section>
+
+    <section class="activity" aria-labelledby="activity-title">
+      <div class="activity-head">
+        <div><span id="phase-label" class="eyebrow">FREE EXPLORATION</span><h2 id="activity-title">What can these pieces make?</h2></div>
+        <span id="task-progress" class="task-progress">No score</span>
+      </div>
+      <p id="prompt" class="prompt">Try a consonant and a vowel. No move is wrong here.</p>
+      <div id="sound-map" class="sound-map" aria-label="Letter sound reference">
+        <span>ㄴ <small>n</small></span><span>ㄷ <small>d*</small></span><span>ㅏ <small>a</small></span>
+        <span>ㅓ <small>eo</small></span><span>ㅗ <small>o</small></span><span>ㅜ <small>u</small></span>
+      </div>
+
+      <div class="workspace" aria-label="Syllable construction workspace">
+        <div class="workspace-top"><span>COMPOSITION BENCH</span><strong id="block-name">Your block</strong></div>
+        <div class="block-area">
+          <div class="block-frame" aria-label="Syllable block positions">
+            <button id="initial-slot" class="slot slot-initial" data-slot="initial" type="button" aria-label="Place starting consonant"><span class="slot-glyph"></span><span class="slot-label">START</span></button>
+            <button id="side-slot" class="slot slot-side" data-slot="side" type="button" aria-label="Place side vowel"><span class="slot-glyph"></span><span class="slot-label">SIDE</span></button>
+            <button id="below-slot" class="slot slot-below" data-slot="below" type="button" aria-label="Place lower vowel"><span class="slot-glyph"></span><span class="slot-label">BELOW</span></button>
+          </div>
+          <div class="block-readout"><span>FORMED BLOCK</span><strong id="formed-block" lang="ko">—</strong><small id="geometry-note">Vowels stand beside or sit below.</small></div>
+        </div>
+      </div>
+
+      <div class="inventory" aria-label="Letter inventory">
+        <div class="tray-group"><div class="tray-title"><span>01 / CONSONANT</span><small>begin the block</small></div><div id="consonants" class="pieces"></div></div>
+        <div class="tray-group"><div class="tray-title"><span>02 / VOWEL</span><small id="vowel-instruction">select a shape</small></div><div id="vowels" class="pieces"></div></div>
+      </div>
+      <p id="drag-alternative" class="drag-alternative" hidden>Drag pieces into the block. For touch or keyboard access, select a piece and tap a position.</p>
+      <p id="rotate-note" class="rotate-note" hidden>Rotation is a <b>physical memory aid</b>, not Hangul’s documented vowel-design history. Place the vowel yourself.</p>
+
+      <div id="feedback" class="feedback" role="status" aria-live="polite">Choose a piece, then place it in the block.</div>
+      <div class="actions">
+        <button id="undo-button" class="small-button" type="button">Undo</button>
+        <button id="clear-button" class="small-button" type="button">Clear</button>
+        <button id="main-button" class="main-button" type="button">Start the four builds <span aria-hidden="true">↗</span></button>
+      </div>
+    </section>
+
+    <details class="observer">
+      <summary>Observer notes & session log <span aria-hidden="true">+</span></summary>
+      <p>Write what the learner says or tries. This stays in this browser tab until you download it. No account, network submission, or production save is used.</p>
+      <label for="observer-note">Qualitative observations</label>
+      <textarea id="observer-note" rows="3" placeholder="What did they expect? Where did they hesitate? What changed their mind?"></textarea>
+      <div class="observer-actions"><button id="download-log" type="button">Download JSON log</button><span id="log-count">0 events</span></div>
+    </details>
+    <footer>* Sound labels approximate · This is not a reading-mastery test.</footer>
+  </main>
+</body>
+</html>
