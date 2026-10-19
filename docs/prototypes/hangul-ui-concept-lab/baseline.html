@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#f5f0e4">
+<title>Hangul Tutor — UI Concept Lab</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Noto Sans KR",sans-serif;--vp-height:100dvh;--mock-height:0px; color:#273046}
+*{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden}button,input{font:inherit}button{touch-action:manipulation;cursor:pointer}button:focus-visible,input:focus-visible{outline:3px solid #e98d37;outline-offset:2px}button:disabled{opacity:.5;cursor:default}
+#app{height:100%;width:100%;display:flex;justify-content:center;background:#b6bbc9}
+.phone{height:calc(var(--vp-height) - var(--mock-height));width:min(100%,390px);display:flex;flex-direction:column;min-height:0;overflow:hidden;position:relative;isolation:isolate;box-shadow:0 0 32px #15203925;transition:background .25s}
+.phone.home{background:#f8f3e6;color:#222d3a}
+.home-inner{height:100%;min-height:0;padding:max(16px,env(safe-area-inset-top)) 20px 22px;display:flex;flex-direction:column;gap:13px}
+.lab-eyebrow{font-weight:800;letter-spacing:.17em;text-transform:uppercase;font-size:10px;color:#7c6c60}
+.home h1{font-family:Georgia,serif;font-size:clamp(25px,4.5vh,36px);line-height:1.06;margin:2px 0 0}
+.home-sub{font-size:12px;color:#667;line-height:1.4;margin:0}
+.chooser{flex:1;min-height:0;display:grid;grid-template-rows:repeat(3,minmax(0,1fr));gap:10px}
+.choice{min-height:0;padding:13px;border:1px solid #d4ccbd;border-radius:17px;text-align:left;position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:space-between;box-shadow:0 4px 1px #00000008}
+.choice.a{background:#f4dbc2}.choice.b{background:#e8f2fb}.choice.c{background:#e0d9f8}
+.choice .letter{font:800 11px system-ui;letter-spacing:.11em;opacity:.65}.choice strong{font:600 clamp(17px,2.8vh,23px) Georgia,serif;line-height:1.04}.choice small{font-size:11px;max-width:65%;color:#465064}.choice .symbol{position:absolute;right:11px;top:45%;transform:translateY(-50%);font-size:clamp(55px,12vh,92px);opacity:.35;font-weight:800}
+.home-foot{font-size:10px;line-height:1.3;color:#7d7066}
+.topbar{flex:none;height:60px;display:flex;align-items:center;gap:8px;padding:6px 12px;padding-top:max(6px,env(safe-area-inset-top));position:relative;z-index:3}
+.icon-btn{height:39px;min-width:39px;display:grid;place-items:center;border-radius:11px;border:1px solid currentColor;background:transparent;color:inherit;font-weight:800}
+.head-center{flex:1;min-width:0;line-height:1.12}.head-center .over{font-size:10px;font-weight:800;letter-spacing:.12em;opacity:.65}.head-center strong{font-size:14px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top-action{font-size:11px;padding:9px 10px;border:1px solid currentColor;border-radius:12px;color:inherit;background:transparent;font-weight:700}
+.progress{height:3px;flex:none;background:#0000000d}.progress-inner{height:100%;transition:width .3s}
+.work-area{min-height:0;flex:1;display:grid;grid-template-rows:minmax(0,1fr) auto;position:relative;padding:10px 15px 8px;gap:8px;overflow:hidden}
+.scene{min-height:0;overflow:hidden;position:relative;display:flex;flex-direction:column;isolation:isolate}
+.infobar{height:91px;flex:none;display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:stretch}
+.info{min-width:0;overflow:hidden;border-radius:13px;padding:10px 11px;display:flex;flex-direction:column;justify-content:center;gap:4px}
+.info small{font-size:10px;letter-spacing:.14em;text-transform:uppercase;font-weight:800;opacity:.65}
+.info .value{font-weight:800;line-height:1.05;font-size:clamp(16px,2.8vh,22px)}
+.info .muted{font-size:12px;font-weight:500;opacity:.5}
+.action-zone{flex:none;padding:9px 15px max(14px,env(safe-area-inset-bottom));min-height:110px;display:flex;flex-direction:column;gap:8px;position:relative;z-index:2}
+.instruction{font-size:12px;font-weight:700;line-height:1.25;opacity:.88;min-height:16px}
+.primary{min-height:49px;width:100%;border:0;border-radius:15px;color:white;font-weight:800;font-size:15px;box-shadow:0 4px 0 #00000019;flex:none}
+.secondary-actions{min-height:20px;display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:11px}
+.text-btn{color:inherit;background:none;border:0;padding:1px 2px;font-size:11px;text-decoration:underline;text-underline-offset:3px;font-weight:700}
+.kicker{font-size:10px;font-weight:800;letter-spacing:.16em;text-transform:uppercase}
+.fiction-note{font-size:9px;font-weight:550;opacity:.66;letter-spacing:0}
+.speech{line-height:1.35;font-size:clamp(12px,1.7vh,15px)}.speaker{font-weight:900;font-size:12px;letter-spacing:.04em;margin-bottom:4px}
+.caption{font-size:11px;line-height:1.35;opacity:.7}
+.kglyph{font-family:"Noto Sans KR",system-ui,sans-serif;font-weight:800;line-height:1}
+.assem{display:flex;align-items:center;justify-content:center;gap:10px;transition:all .4s}
+.assem .tile{font-size:clamp(65px,11vh,108px);font-weight:750;line-height:1;border-radius:20px;position:relative;text-align:center;min-width:clamp(67px,11vh,106px)}
+.assem .join{font-size:28px;font-weight:900;opacity:.5}
+.assembled{font-size:clamp(102px,19vh,177px);line-height:1;display:inline-flex;justify-content:center;align-items:center;font-weight:800;animation:enter .5s both}
+@keyframes enter{from{opacity:.4;transform:scale(.78) translateY(13px)}to{opacity:1;transform:scale(1) translateY(0)}}
+@keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+.mascot{display:block;flex:none;overflow:visible;filter:drop-shadow(0 3px 2px #00000020)}
+.mascot svg{width:100%;height:100%;display:block}
+.explainer{border-radius:11px;padding:8px 10px;font-size:12px;line-height:1.35}
+.exercise{width:100%;min-height:0;display:flex;flex-direction:column;justify-content:center;gap:7px}
+.exercise-label{font-size:14px;font-weight:750}.answer-row{display:flex;gap:8px;align-items:center}.answer-input{min-width:0;flex:1;height:49px;border-radius:12px;padding:7px 12px;font-size:25px;font-weight:700;background:white;border:2px solid #9aa7b4;color:#1b2b3b}
+.feedback{font-size:12px;font-weight:750;line-height:1.2;min-height:18px}.graded{font-size:10px;opacity:.65}
+.review-screen{position:absolute;inset:0;z-index:8;background:#141a24a3;display:flex;align-items:flex-end;justify-content:center}
+.review-panel{background:#fff9ee;color:#263247;border-radius:22px 22px 0 0;padding:20px;width:100%;max-height:82%;overflow:auto;box-shadow:0 -8px 30px #0002}
+.review-panel h2{font:600 23px Georgia,serif;margin:0 0 6px}.review-panel p{font-size:12px;line-height:1.4;margin:0 0 12px}.review-row{display:block;width:100%;text-align:left;border:1px solid #e2d6c6;background:#fff;padding:11px;border-radius:10px;margin:5px 0;font-size:13px}
+.review-row:disabled{opacity:.4}.review-row b{display:inline-block;width:30px}.review-close{float:right;background:#ede3d2;border:0;border-radius:10px;padding:8px 12px;font-weight:700}
+/* Storybook: paper, layered collage, irregular borders and expressive speech */
+.theme-a{background:#f7e7cf;color:#49372a}.theme-a .topbar{background:#efd8b8}.theme-a .progress-inner{background:#ad4f37}.theme-a .scene{border-radius:24px 24px 14px 14px;background:radial-gradient(circle at 84% 20%,#ffd38e 0 10%,transparent 10.5%),linear-gradient(#fcead0 70%,#e8c6a0 70%);border:1.5px solid #cc9a70;box-shadow:0 4px 0 #e4bf91}
+.theme-a .scene:before{content:"〰   〰";position:absolute;bottom:18px;right:18px;font-size:29px;opacity:.2}
+.theme-a .story-top{font:italic 13px Georgia,serif;letter-spacing:.06em;margin:15px 17px;color:#905c40}
+.theme-a .story-scene{flex:1;min-height:0;position:relative;display:flex;align-items:center;justify-content:center;padding:4px 16px 0}
+.theme-a .story-mascot{position:absolute;bottom:0;left:2px;width:clamp(114px,19vh,159px);height:clamp(155px,27vh,214px);z-index:1;transform:rotate(-4deg)}
+.theme-a .story-bubble{z-index:2;position:absolute;top:8px;right:10px;left:clamp(85px,13vh,112px);max-height:45%;overflow:auto;padding:12px 12px 14px;border:2px solid #6d453a;border-radius:17px 17px 16px 6px;background:#fff9e9eE;box-shadow:5px 5px 0 #b9806638}
+.theme-a .story-art{position:absolute;top:43%;right:7px;left:clamp(100px,16vh,143px);bottom:17px;display:flex;align-items:center;justify-content:center;min-width:0}
+.theme-a .story-art .assembled{color:#a23e32;text-shadow:3px 3px 0 #f9e6c6}
+.theme-a .assem .tile{background:#fff5df;border:2px solid #d78f57;color:#8b382c;padding:6px 0}.theme-a .assem .join{color:#9b5031}
+.theme-a .story-note{position:absolute;right:9px;bottom:8px;z-index:3;padding:4px 8px;background:#fff3d5;border:1px dashed #b2704c;border-radius:7px;font:italic 11px Georgia,serif}
+.theme-a .info{background:#fff8e8;border:1px solid #d7b58f}.theme-a .info:first-child{background:#f1cfaf}.theme-a .primary{background:#a44b39}.theme-a .action-zone{background:#f7e7cf}.theme-a .explainer{background:#fff8e8;color:#6b3c2e}
+.theme-a .exercise{padding:6px 16px 0 16px;z-index:2;position:absolute;top:26%;right:0;left:0;height:69%;background:#fff6e8e8;border-radius:20px;margin:0 10px;width:calc(100% - 20px);box-shadow:0 2px 8px #ac7b593f}
+/* Workbook: ruled paper, quiet single-purpose annotations and clear labels */
+.theme-b{background:#f6f9fd;color:#1f354f}.theme-b .topbar{background:#e6f1f8}.theme-b .progress-inner{background:#2869a0}.theme-b .scene{border-radius:8px;background:linear-gradient(90deg, transparent 35px,#edafad 35px,#edafad 36px,transparent 36px),repeating-linear-gradient(0deg,#fff 0px,#fff 27px,#d8e8f3 28px,#fff 29px);border:1px solid #c8dbea}
+.theme-b .workbook-page{display:flex;flex-direction:column;height:100%;min-height:0;position:relative;padding:14px 14px 12px 45px}
+.theme-b .workbook-head{display:flex;gap:8px;justify-content:space-between;align-items:flex-start;min-height:50px}
+.theme-b .workbook-title{font-size:11px;font-weight:900;letter-spacing:.16em;text-transform:uppercase;color:#547ca7}
+.theme-b .workbook-title b{display:block;font-size:17px;letter-spacing:0;color:#18395e;margin-top:4px}
+.theme-b .wb-mascot{width:70px;height:78px;position:absolute;right:2px;top:0;transform:rotate(8deg)}
+.theme-b .wb-note{margin:8px 52px 0 0;max-height:25%;min-height:0;overflow:auto;border-left:3px solid #4e84b4;background:#eef5f9df;padding:7px 9px;font-size:12px;line-height:1.25}
+.theme-b .wb-board{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:8px;position:relative}
+.theme-b .wb-board .assembled{color:#205685}.theme-b .assem .tile{color:#205685;border-bottom:4px solid #73afd9;border-radius:0}
+.theme-b .wb-annotation{border:1px dashed #b4cbdc;color:#476986;background:#f8fcffef;font-size:11px;padding:7px;border-radius:9px;text-align:center}
+.theme-b .info{background:#e7f2fa;border-left:3px solid #527ea7}.theme-b .info:nth-child(2){background:#f1f2df;border-color:#a1a052}.theme-b .primary{background:#256aa3}.theme-b .action-zone{background:#f6f9fd}.theme-b .exercise{background:#fffffff2;border:1px solid #b6cada;border-radius:13px;padding:18px;gap:10px}
+/* Stage: immersive and kinetic, effects subordinate to legibility */
+.theme-c{background:#171a39;color:#f8f0ff}.theme-c .topbar{background:#24264d}.theme-c .progress-inner{background:#f2a969}.theme-c .scene{border-radius:22px;background:radial-gradient(ellipse at 50% 63%,#485ba17d,transparent 61%),radial-gradient(circle at 50% 50%,#313d74 0 25%,#22254a 70%);border:1px solid #6c729d;box-shadow:inset 0 -18px 40px #11132a65}
+.theme-c .scene:after{content:"";height:3px;width:78%;position:absolute;bottom:26px;left:11%;border-radius:50%;background:#ffcf8699;box-shadow:0 0 40px 13px #ec955c30}
+.theme-c .stage-top{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#f3c291;padding:16px 16px 0;font-weight:900}
+.theme-c .stage-space{position:absolute;inset:35px 5px 12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}
+.theme-c .stage-space .assembled{font-size:clamp(132px,22vh,205px);color:#ffe1af;text-shadow:0 6px 25px #facd8299}
+.theme-c .assem .tile{color:#ffecbb;background:#ffffff12;border:1px solid #b0abdb88;padding:8px 0;box-shadow:0 0 25px #acbaff22}.theme-c .assem .join{color:#e6c18a}
+.theme-c .stage-mascot{position:absolute;right:-26px;bottom:13px;width:clamp(88px,14vh,123px);height:clamp(127px,21vh,174px);z-index:2;transform:rotate(9deg)}
+.theme-c .stage-caption{max-width:87%;position:absolute;left:11px;top:8px;padding:9px 10px;border:1px solid #a8a3d9a0;border-radius:11px;background:#262950eB;font-size:12px;line-height:1.3;max-height:35%;overflow:auto;z-index:3}
+.theme-c .stage-caption .speaker{color:#ffd38b}
+.theme-c .stage-caption.expanded{max-height:65%}
+.theme-c .stage-label{position:absolute;bottom:8px;left:14px;font-size:10px;letter-spacing:.1em;color:#d0bbef;z-index:3}
+.theme-c .info{background:#343661;border:1px solid #606697}.theme-c .info:first-child{border-color:#f7bb75}.theme-c .primary{background:#ec985e;color:#201c3c}.theme-c .action-zone{background:#171a39}.theme-c .explainer{background:#44436e;color:#fff1d9}
+.theme-c .exercise{z-index:4;position:absolute;top:30%;left:12px;right:12px;width:auto;height:58%;border-radius:16px;background:#202548ee;border:1px solid #b5a9e680;padding:16px;justify-content:flex-start}
+.theme-c .exercise .answer-input{background:#fcf8fe}
+.stroke-track{position:relative;height:50px;width:min(85%,280px);border-radius:30px;background:#ffffff18;border:1px dashed #e7cb92;touch-action:none;display:flex;align-items:center;padding:4px;margin-top:5px;user-select:none;z-index:4}
+.stroke-track:before{content:"";position:absolute;left:22px;top:50%;width:calc(var(--drag-progress,0) * (100% - 55px));height:8px;border-radius:8px;background:linear-gradient(90deg,#ec9c59,#ffdc9a);transform:translateY(-50%);pointer-events:none}
+.stroke-thumb{height:39px;width:39px;flex:none;display:grid;place-items:center;border-radius:50%;background:#ffbc74;color:#2a2649;font-size:19px;font-weight:800;box-shadow:0 2px 12px #0004;transform:translateX(calc(var(--drag-progress,0) * (min(85vw,280px) - 47px)));transition:transform .06s linear}
+.stroke-track span{margin:auto;font-size:11px;font-weight:800;letter-spacing:.04em;color:#e5d9fd}
+.keyboard-mock{position:absolute;bottom:0;left:0;right:0;height:228px;background:#d6dbe5;border-top:2px solid #a4a9b8;display:grid;grid-template-rows:22px repeat(3,1fr);padding:6px 4px 9px;gap:5px;z-index:50;box-shadow:0 -10px 25px #13182633;color:#374255}
+.keyboard-head{text-align:center;font-size:11px;font-weight:800;letter-spacing:.08em}
+.keyboard-line{display:flex;gap:5px;justify-content:center;align-items:stretch}.keyboard-line button{border:1px solid #acb8c4;flex:1;border-radius:7px;background:#f9fcff;font-size:18px;box-shadow:0 2px 0 #abb7c5}.keyboard-line button.big{flex:2;font-size:13px;font-weight:800}
+.toast{position:absolute;left:18px;right:18px;top:68px;z-index:11;background:#fff6db;color:#563b21;padding:10px 12px;border-radius:11px;border:1px solid #bba07e;font-size:12px;font-weight:700;box-shadow:0 5px 25px #0004}
+
+/* In the interactive stage, the learner supplies ㅏ's missing right-hand stroke. */
+.stroke-assembly{display:flex;gap:14px;align-items:center;justify-content:center;color:#ffecbb;min-height:148px}
+.stroke-consonant{font-size:clamp(77px,12vh,108px)}
+.stroke-assembly .join{opacity:.5;font-size:27px;font-weight:800}
+.vowel-frame{width:69px;height:128px;position:relative;display:block}
+.v-stem,.v-stroke{position:absolute;display:block;background:#ffecbb;border-radius:2px;box-shadow:0 0 15px #facd8233}
+.v-stem{width:11px;height:118px;left:17px;top:5px}
+.v-stroke{height:11px;left:27px;top:64px;width:calc(var(--drag-progress,0) * 36px);background:#ffbd79}
+/* Physical combination is the stage's signature transition: components converge, then the block appears. */
+.merge-wrap{position:relative;width:200px;height:205px;display:flex;align-items:center;justify-content:center}
+.merge-wrap .assembled{animation:merge-reveal .68s .31s both}
+.join-motion{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:6px;font-size:93px;color:#ffe1af;pointer-events:none}
+.join-motion span:first-child{animation:merge-left .55s both}
+.join-motion span:last-child{animation:merge-right .55s both}
+@keyframes merge-left{0%{opacity:1;transform:translateX(-35px)}75%{opacity:1;transform:translateX(17px) scale(.82)}100%{opacity:0;transform:translateX(25px) scale(.72)}}
+@keyframes merge-right{0%{opacity:1;transform:translateX(35px)}75%{opacity:1;transform:translateX(-15px) scale(.82)}100%{opacity:0;transform:translateX(-25px) scale(.72)}}
+@keyframes merge-reveal{0%,32%{opacity:0;transform:scale(.72)}100%{opacity:1;transform:scale(1)}}
+
+/* Very short viewports and mobile keyboards: condense nonessential art, prioritize question and response. */
+.phone.is-typing .topbar{height:45px}.phone.is-typing .action-zone{min-height:68px;padding-top:5px;gap:4px}.phone.is-typing .secondary-actions{display:none}.phone.is-typing .infobar{height:47px}.phone.is-typing .info{padding:3px 8px}.phone.is-typing .info .value{font-size:15px}.phone.is-typing .info small{font-size:8px}
+.phone.is-typing .work-area{padding-top:5px;padding-bottom:4px;gap:4px}
+.phone.is-typing .scene .story-mascot,.phone.is-typing .scene .wb-mascot,.phone.is-typing .scene .stage-mascot{display:none}
+.phone.is-typing .scene .story-top,.phone.is-typing .scene .workbook-head,.phone.is-typing .scene .stage-top{display:none}
+.phone.is-typing .scene .story-bubble,.phone.is-typing .scene .wb-note,.phone.is-typing .scene .stage-caption{display:none}
+.phone.is-typing .scene .exercise{position:relative;inset:auto;margin:0;width:100%;height:100%;border-radius:10px;padding:6px 10px;gap:4px;justify-content:center}
+.phone.is-typing .scene .answer-input{height:42px;font-size:22px}.phone.is-typing .scene .answer-row{gap:4px}
+.phone.is-typing .scene .story-scene{padding:4px}.phone.is-typing .scene .workbook-page{padding:3px 8px 4px 40px}.phone.is-typing .scene .wb-board{justify-content:stretch}
+.phone.is-typing .scene .stage-space{inset:0}.phone.is-typing .scene .stage-label{display:none}
+.phone.is-typing .primary{min-height:38px}.phone.is-typing .instruction{font-size:11px;min-height:11px}
+@media(max-height:740px){.topbar{height:52px}.work-area{padding-top:7px;padding-bottom:5px}.infobar{height:74px}.info{padding:7px 9px}.action-zone{min-height:98px;padding-top:7px;gap:6px}.primary{min-height:43px}.theme-a .story-bubble{max-height:44%}.theme-b .workbook-page{padding-top:8px}.theme-b .wb-note{margin-top:4px}}
+@media(max-height:610px){.merge-wrap{height:150px;width:160px}.join-motion{font-size:70px}.topbar{height:45px}.infobar{height:59px}.info small{font-size:8px}.info .value{font-size:16px}.action-zone{min-height:77px;gap:4px;padding-top:4px}.secondary-actions{font-size:10px}.primary{min-height:35px}.instruction{min-height:13px;font-size:11px}.theme-a .story-top{margin:7px 10px}.theme-a .story-mascot{height:125px;width:95px}.theme-a .story-bubble{padding:7px;max-height:45%}.theme-b .wb-note{max-height:28%}.theme-c .stage-caption{max-height:43%}}
+@media(min-width:700px){#app{padding:12px}.phone{border-radius:24px;height:calc(min(844px,var(--vp-height) - 24px));width:390px;box-shadow:0 15px 60px #17243e80}.keyboard-mock{left:calc(50% - 195px);right:calc(50% - 195px);border-radius:0 0 21px 21px}.phone.simulator{height:calc(min(844px,var(--vp-height) - 24px) - var(--mock-height))}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+(() => {
+'use strict';
+const APP = document.querySelector('#app');
+const concepts = {a:{name:'Illustrated Storybook',verb:'Join the letters',hint:'A living picture book'},b:{name:'Living Workbook',verb:'Build the block',hint:'The letters do the teaching'},c:{name:'Interactive Hangul Stage',verb:'Slide to join →',hint:'Discover by moving'}};
+const stepNames=['The invitation','Meet Jeong','Combine letters','Hear with your eyes','Discover meaning','Jeong reacts','Write it yourself'];
+const dialogue = {
+ 0:{short:'My people spoke Korean, but writing their words was difficult. I wanted them to have letters of their own.',long:'My people spoke Korean every day, but writing their words was difficult. Chinese characters were widely used for formal writing, and learning them took years. I wanted a way for more people to express their thoughts in writing. So I set out to create letters that would fit our language.'},
+ 1:{short:'I am Jeong. Here are two letters: ㄴ and ㅏ. One consonant, one vowel. They belong together.',long:'I am Jeong, one of the scholars who explained these new letters. Let us begin with just two of them. ㄴ is a consonant; ㅏ is a vowel. You do not need to memorize an entire alphabet to see how they can work together. You only need to try.'},
+ 2:{short:'Watch what happens when ㄴ and ㅏ share a single square.',long:'Letters can sit side by side inside an invisible syllable square. Here, ㄴ goes on the left and ㅏ on the right. Bring them together and you will make your first readable Korean syllable.'},
+ 3:{short:'Together they make 나. Read it as na.',long:'This is one syllable: 나. It looks like a single shape, but you already know both of its parts. The ㄴ gives the n sound, and ㅏ gives the a sound. Together: na.'},
+ 4:{short:'And it already means something: I, or me.',long:'Korean does not wait for you to learn a hundred words before offering meaning. 나 is a real Korean word. It means “I” or “me,” especially in informal speech.'},
+ 5:{short:'You have just written yourself.',long:'You have just written yourself. Your first Korean syllable is also a word for the person reading these very letters. Efficient, is it not?'},
+ 6:{short:'Your turn. Type the Korean syllable for na.',long:'Let us see what stayed with you. Type the Hangul syllable that sounds like na. You can use your Korean keyboard, or the practice keys in this prototype.'}
+};
+const state={concept:null,step:0,furthest:0,long:false,review:false,simulated:false,answer:'',attempts:[],correct:false,drag:0,expanded:false,toast:''};
+let toastTimeout=null, autoTimeout=null, pointerStart=null;
+function esc(s){return String(s).replace(/[&<>\"']/g,t=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[t]));}
+function avatar(role){const king=role==='king';return `<div class="mascot" role="img" aria-label="Cartoon ${king?'King Sejong':'scholar Jeong'}"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 168" aria-hidden="true"><ellipse cx="60" cy="158" rx="49" ry="7" fill="#000" opacity=".12"/><path d="M13 146 Q9 101 33 91L48 88L76 88Q104 101 107 146L97 158H24Z" fill="${king?'#cc4e4c':'#6b91a2'}" stroke="#44334b" stroke-width="3"/><path d="M54 89h13l6 63H45z" fill="${king?'#eed88f':'#e9e6dd'}" opacity=".95"/><path d="M48 95l12 12 12-12" fill="none" stroke="${king?'#e5b958':'#577d91'}" stroke-width="4"/><ellipse cx="60" cy="66" rx="38" ry="42" fill="#f2c5a0" stroke="#553e42" stroke-width="2.5"/><path d="M23 50Q20 25 37 17Q58 8 83 20Q97 33 98 51Q82 45 76 38Q61 49 23 50" fill="#373240"/><ellipse cx="46" cy="66" rx="3.3" ry="4" fill="#302b32"/><ellipse cx="73" cy="66" rx="3.3" ry="4" fill="#302b32"/><circle cx="31" cy="78" r="7" fill="#f49b91" opacity=".7"/><circle cx="88" cy="78" r="7" fill="#f49b91" opacity=".7"/><path d="M52 84q8 7 16 0" stroke="#a04e52" stroke-width="2.8" fill="none" stroke-linecap="round"/>${king?`<path d="M24 37L29 5L41 18L57 2L71 18L83 6L94 37Z" fill="#e8af43" stroke="#7c4d33" stroke-width="3"/><rect x="23" y="33" width="72" height="10" rx="3" fill="#c04f48" stroke="#78403d" stroke-width="2"/><path d="M42 86Q59 101 76 86" stroke="#664241" stroke-width="2" fill="none"/>`:`<path d="M15 29Q60 12 105 29L107 39Q60 48 13 39Z" fill="#363647" stroke="#262638" stroke-width="3"/><rect x="36" y="0" width="49" height="32" rx="5" fill="#3c394c" stroke="#272738" stroke-width="3"/><path d="M34 66h22M66 66h21" stroke="#455362" stroke-width="2" opacity=".6"/>`}<path d="M15 114l20-6 13 26 -20 7M105 113l-22-7 -13 27 24 8" fill="${king?'#de6660':'#8db3c3'}" stroke="#493e49" stroke-width="2"/></svg></div>`;}
+function d(){return esc(dialogue[state.step][state.long?'long':'short']);}
+function nametag(){return state.step===0?'Sejong':'Jeong';}
+function role(){return state.step===0?'king':'jeong';}
+function showArt(){return state.step>=2&&state.step<=5;}
+function graphic(){if(state.step<2)return `<div class="assem"><span class="tile kglyph">ㄴ</span><span class="join">+</span><span class="tile kglyph">ㅏ</span></div>`;
+if(state.step===2&&state.concept==='c')return `<div class="stroke-assembly" aria-label="Consonant ㄴ and a vowel whose short stroke is unfinished"><span class="stroke-consonant kglyph">ㄴ</span><span class="join">+</span><span class="vowel-frame" aria-hidden="true"><i class="v-stem"></i><i class="v-stroke"></i></span></div>`;
+if(state.step===2)return `<div class="assem" aria-label="Consonant nieun plus vowel a"><span class="tile kglyph">ㄴ</span><span class="join">+</span><span class="tile kglyph">ㅏ</span></div>`;
+if(state.step===3&&state.concept==='c')return `<div class="merge-wrap"><div class="join-motion" aria-hidden="true"><span>ㄴ</span><span>ㅏ</span></div><div class="assembled kglyph" aria-label="나">나</div></div>`;
+return `<div class="assembled kglyph" aria-label="나">나</div>`;}
+function scoreText(){if(!state.attempts.length)return '';const last=state.attempts[state.attempts.length-1];return `<div class="feedback" aria-live="polite" style="color:${last.ok?'#318f66':'#bc5c48'}">${last.ok?'✓ Correct — 나 reads na.':'Not quite. Try 나 (n + a).'}</div><div class="graded">${state.attempts.length} recorded attempt${state.attempts.length===1?'':'s'} · reviewing never erases them</div>`;}
+function exercise(){return `<section class="exercise"><div class="kicker">Try it yourself · practice</div><label class="exercise-label" for="answer">Type the Hangul syllable for <i>na</i>.</label><div class="answer-row"><input class="answer-input" id="answer" lang="ko" inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Your answer" value="${esc(state.answer)}" aria-label="Type Hangul for na"></div>${scoreText()||'<div class="caption">Korean keyboard works. For desktop testing, enable demo keys.</div>'}</section>`;}
+function infos(){return `<div class="infobar"><div class="info"><small>Pronunciation</small>${state.step>=3?'<div class="value">na <span style="font-weight:500;opacity:.7;font-size:12px">/ nah /</span></div>':'<div class="muted">Reveal by combining</div>'}</div><div class="info"><small>Meaning</small>${state.step>=4?'<div class="value">I / me</div>':'<div class="muted">Still a mystery</div>'}</div></div>`;}
+function story(){return `<div class="scene"><div class="story-top">✦ Chapter One · Two letters</div><div class="story-scene">${avatar(role()).replace('class="mascot"','class="mascot story-mascot"')}<div class="story-bubble" tabindex="0"><div class="speaker">${nametag()} <span class="fiction-note">imagined dialogue</span></div><div class="speech">${d()}</div></div>${state.step===6?exercise():`<div class="story-art">${graphic()}</div>`}${state.step>=4&&state.step<=5?'<span class="story-note">a real Korean word!</span>':''}</div></div>`;}
+function workbook(){return `<div class="scene"><div class="workbook-page"><div class="workbook-head"><div class="workbook-title">LESSON 01 / OBSERVE<b>${state.step===0?'Why letters?':state.step===1?'Meet the parts':state.step===2?'One syllable':state.step===3?'Say it':state.step===4?'What it means':state.step===5?'A word already':'Write it'}</b></div>${avatar(role()).replace('class="mascot"','class="mascot wb-mascot"')}</div><div class="wb-note" tabindex="0"><b>${nametag()}</b> <span class="fiction-note">imagined:</span> ${d()}</div><div class="wb-board">${state.step===6?exercise():graphic()}${state.step===2?'<div class="wb-annotation">Consonant (ㄴ) → left · Vowel (ㅏ) → right</div>':state.step>=3&&state.step<=5?'<div class="wb-annotation">ㄴ + ㅏ = 나 · one syllable block</div>':''}</div></div></div>`;}
+function stage(){let speech=state.step===6?'Now type it yourself.':state.step===2?(state.long?'This vowel began as a vertical line. Trace its short rightward stroke to complete ㅏ, then watch ㄴ and ㅏ come together as a syllable.':'Trace the short rightward stroke to finish ㅏ. Then watch the letters join.'):d();return `<div class="scene" style="--drag-progress:${state.drag}"><div class="stage-top">DISCOVERY ${String(state.step+1).padStart(2,'0')} / 07 · ${esc(stepNames[state.step])}</div><div class="stage-space">${state.step===6?exercise():graphic()}${state.concept==='c'&&state.step===2?`<div class="stroke-track" id="stroke" role="slider" tabindex="0" aria-label="Draw the short stroke of vowel ㅏ to combine the letters" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(state.drag*100)}" style="--drag-progress:${state.drag}"><div class="stroke-thumb">→</div><span>trace the short stroke</span></div>`:''}</div>${avatar(role()).replace('class="mascot"','class="mascot stage-mascot"')}<div class="stage-caption ${state.expanded?'expanded':''}" tabindex="0"><div class="speaker">${nametag()} <span class="fiction-note">imagined dialogue</span></div>${esc(speech)}${state.long?` <button class="text-btn" data-action="expand">${state.expanded?'Less':'More'}</button>`:''}</div><div class="stage-label">✦ letters come alive</div></div>`;}
+function instruction(){return ['One idea before we begin','Meet your guide and first letters','Make your first syllable','A sound you can read','Now discover its meaning','A message from Jeong','Type to check your understanding'][state.step];}
+function primaryLabel(){if(state.step===0)return 'Meet Jeong →';if(state.step===1)return 'Try these letters →';if(state.step===2)return state.concept==='c'?'Or tap to combine →':state.concept==='a'?'Let the letters meet →':'Combine ㄴ + ㅏ →';if(state.step===3)return 'Reveal the meaning →';if(state.step===4)return 'See Jeong react →';if(state.step===5)return 'Try writing it →';return state.correct?'✓ Completed — review or restart':'Check answer →';}
+function phone(){const concept=state.concept;const short=state.simulated?' simulator':'';return `<div class="phone theme-${concept}${short}" id="phone"><header class="topbar"><button class="icon-btn" data-action="back" aria-label="Go back">←</button><div class="head-center"><div class="over">CONCEPT ${concept.toUpperCase()} · ${state.step+1} OF 7</div><strong>${concepts[concept].name}</strong></div><button class="top-action" data-action="long">${state.long?'Short':'Long'} text</button><button class="icon-btn" data-action="home" aria-label="Concept chooser">⌂</button></header><div class="progress"><div class="progress-inner" style="width:${(state.step+1)/7*100}%"></div></div><div class="work-area">${concept==='a'?story():concept==='b'?workbook():stage()}${infos()}</div><footer class="action-zone"><div class="instruction">${instruction()}</div><button class="primary" data-action="primary" ${state.step===6&&state.correct?'disabled':''}>${primaryLabel()}</button><div class="secondary-actions"><button class="text-btn" data-action="review">↶ Review steps</button><button class="text-btn" data-action="keyboard">${state.simulated?'Hide demo keys':'Test keyboard'}</button><button class="text-btn" data-action="reset">Restart</button></div></footer>${state.review?review():''}${state.toast?`<div class="toast" role="status">${esc(state.toast)}</div>`:''}</div>${state.simulated?keyboard():''}`;}
+function keyboard(){return `<div class="keyboard-mock" aria-label="Simulated Korean keyboard for layout testing"><div class="keyboard-head">SIMULATED KEYBOARD · not the phone's keyboard</div><div class="keyboard-line"><button data-key="ㄱ">ㄱ</button><button data-key="ㄴ">ㄴ</button><button data-key="ㄷ">ㄷ</button><button data-key="ㅏ">ㅏ</button><button data-key="ㅓ">ㅓ</button><button data-key="ㅗ">ㅗ</button></div><div class="keyboard-line"><button data-key="가">가</button><button data-key="나">나</button><button data-key="다">다</button><button data-key="라">라</button><button data-key="마">마</button></div><div class="keyboard-line"><button data-key="backspace" class="big">⌫</button><button data-key="space" class="big">space</button><button data-action="keyboard" class="big">Done</button></div></div>`;}
+function review(){return `<div class="review-screen" role="dialog" aria-modal="true" aria-label="Review earlier steps"><div class="review-panel"><button class="review-close" data-action="review">Close ✕</button><h2>Revisit a discovery</h2><p>Return to any visited moment. Submitted answers remain recorded.</p>${stepNames.map((x,i)=>`<button class="review-row" data-step="${i}" ${i>state.furthest?'disabled':''}><b>${i+1}.</b> ${x}${i===state.step?' ✓ current':''}</button>`).join('')}</div></div>`;}
+function home(){return `<div class="phone home"><div class="home-inner"><div class="lab-eyebrow">Hangul Tutor · exploratory build</div><h1>Three ways to<br>meet your letters.</h1><p class="home-sub">One tiny lesson, three different experiences. Tap a concept to play it, then return here to compare.</p><div class="chooser"><button data-concept="a" class="choice a"><span class="letter">A · PERSONALITY</span><strong>Illustrated<br>Storybook</strong><small>Characters, speech and warm narrative</small><span class="symbol">옛</span></button><button data-concept="b" class="choice b"><span class="letter">B · CLARITY</span><strong>Living<br>Workbook</strong><small>Large letters, tidy notes and diagrams</small><span class="symbol">나</span></button><button data-concept="c" class="choice c"><span class="letter">C · DISCOVERY</span><strong>Interactive<br>Hangul Stage</strong><small>Moving letters and a thumb-slide gesture</small><span class="symbol">ㅏ</span></button></div><div class="home-foot">Offline prototype · no tracking or deployment · all character dialogue is dramatized.</div></div></div>`;}
+function updateVP(){const vh=window.visualViewport?.height || window.innerHeight;document.documentElement.style.setProperty('--vp-height',`${vh}px`);}
+function render(){clearTimeout(autoTimeout);document.documentElement.style.setProperty('--mock-height',state.simulated?'228px':'0px');APP.innerHTML=state.concept?phone():home();updateVP();const phoneEl=APP.querySelector('#phone');if(phoneEl){const inp=APP.querySelector('#answer');if(state.step===6 && state.simulated)phoneEl.classList.add('is-typing');}wireStroke();}
+function toast(text){clearTimeout(toastTimeout);state.toast=text;render();toastTimeout=setTimeout(()=>{state.toast='';render();},2300);}
+function move(step,withAuto=false){state.step=Math.max(0,Math.min(6,step));state.furthest=Math.max(state.furthest,state.step);state.review=false;state.expanded=false;state.drag=0;if(state.step!==6)state.simulated=false;render();if(withAuto && step===4){autoTimeout=setTimeout(()=>{if(state.step===4&&!state.review&&!state.simulated)move(5);},1150);}}
+function primary(){if(state.step===6){if(state.correct)return;const v=state.answer.trim().normalize('NFC');if(!v){toast('Type an answer first. The demo keys can enter 나.');return;}const ok=v==='나';state.attempts.push({value:v,ok});if(ok)state.correct=true;render();return;}if(state.step===2&&state.concept==='c'){state.drag=1;move(3);return;}if(state.step===3){move(4,true);return;}move(state.step+1);}
+function reset(){state.step=0;state.furthest=0;state.answer='';state.attempts=[];state.correct=false;state.drag=0;state.expanded=false;state.review=false;state.toast='';state.simulated=false;render();}
+function start(c){state.concept=c;reset();}
+function insertKey(key){if(state.step!==6)return;if(key==='backspace')state.answer=state.answer.slice(0,-1);else if(key==='space')state.answer+=' ';else if(key==='나')state.answer='나';else state.answer+=key;const inp=APP.querySelector('#answer');if(inp){inp.value=state.answer;inp.focus();}}
+function wireStroke(){const track=APP.querySelector('#stroke');if(!track)return;function fraction(e){const r=track.getBoundingClientRect();return Math.min(1,Math.max(0,(e.clientX-r.left-22)/Math.max(1,r.width-44)));}
+track.addEventListener('pointerdown',e=>{pointerStart=e.pointerId;track.setPointerCapture(e.pointerId);state.drag=fraction(e);track.closest('.scene')?.style.setProperty('--drag-progress',state.drag);track.style.setProperty('--drag-progress',state.drag);track.setAttribute('aria-valuenow',Math.round(state.drag*100));});
+track.addEventListener('pointermove',e=>{if(pointerStart!==e.pointerId)return;state.drag=fraction(e);track.closest('.scene')?.style.setProperty('--drag-progress',state.drag);track.style.setProperty('--drag-progress',state.drag);track.setAttribute('aria-valuenow',Math.round(state.drag*100));});
+track.addEventListener('pointerup',e=>{if(pointerStart!==e.pointerId)return;pointerStart=null;state.drag=fraction(e);if(state.drag>.74)move(3);else{state.drag=0;track.closest('.scene')?.style.setProperty('--drag-progress',0);track.style.setProperty('--drag-progress',0);}});
+track.addEventListener('pointercancel',()=>{pointerStart=null;state.drag=0;track.closest('.scene')?.style.setProperty('--drag-progress',0);track.style.setProperty('--drag-progress',0);});
+track.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '||e.key==='ArrowRight'){e.preventDefault();move(3);}});}
+APP.addEventListener('click',e=>{const choice=e.target.closest('[data-concept]');if(choice){start(choice.dataset.concept);return;}const key=e.target.closest('[data-key]');if(key){insertKey(key.dataset.key);return;}const to=e.target.closest('[data-step]');if(to){if(+to.dataset.step<=state.furthest)move(+to.dataset.step);return;}const button=e.target.closest('[data-action]');if(!button)return;switch(button.dataset.action){case 'back': if(state.step===0){state.concept=null;state.simulated=false;render();}else move(state.step-1);break;case 'home':state.concept=null;state.simulated=false;render();break;case 'primary':primary();break;case 'review':state.review=!state.review;render();break;case 'long':state.long=!state.long;render();break;case 'keyboard':state.simulated=!state.simulated;render();break;case 'reset':reset();break;case 'expand':state.expanded=!state.expanded;render();break;}});
+APP.addEventListener('input',e=>{if(e.target.id==='answer')state.answer=e.target.value;});
+APP.addEventListener('keydown',e=>{if(e.target.id==='answer'&&e.key==='Enter'){e.preventDefault();primary();}if(e.key==='Escape'&&state.review){state.review=false;render();}});
+APP.addEventListener('focusin',e=>{if(e.target.id==='answer'){APP.querySelector('#phone')?.classList.add('is-typing');}});
+APP.addEventListener('focusout',e=>{if(e.target.id==='answer'&&!state.simulated){setTimeout(()=>{APP.querySelector('#phone')?.classList.remove('is-typing');},150);}});
+window.visualViewport?.addEventListener('resize',updateVP);window.addEventListener('resize',updateVP);
+render();
+})();
+</script>
+</body>
+</html>
