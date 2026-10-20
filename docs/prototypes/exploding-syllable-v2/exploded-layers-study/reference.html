@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Exploded Layers · CSS reference reproduction</title>
+  <style>
+    body { min-height: 100vh; margin: 0; display: grid; place-items: center; background: #171322; color: white; font: 16px system-ui; }
+    main { display: grid; justify-items: center; gap: 1.5rem; text-align: center; }
+    /* Functional model rules transcribed from CSS 3D Lab's MIT-licensed Layers snippet.
+       Copyright (c) 2026 Edgaras Neverdauskas. See README.md for source and license. */
+    .scene { --u: 0.32vmin; perspective: calc(900 * var(--u)); min-height: min(480px, 76vh); display: grid; place-items: center; }
+    .layers {
+      position: relative;
+      width: calc(140 * var(--u));
+      height: calc(140 * var(--u));
+      transform-style: preserve-3d;
+      transform: rotateX(58deg) rotateZ(-45deg);
+    }
+    .layers i {
+      position: absolute; inset: 0;
+      border-radius: calc(16 * var(--u));
+      border: calc(1 * var(--u)) solid rgb(255 255 255 / 0.35);
+      background: hsl(calc(255 + var(--i) * 32) 85% 62% / 0.78);
+      transform: translateZ(calc((var(--i) - 1.5) * 40 * var(--u)));
+      animation: close 2.6s ease-in-out infinite alternate;
+    }
+    @keyframes close { to { transform: translateZ(0); } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Exploded Layers · CSS reference</h1>
+    <div class="scene"><div class="layers">
+      <i style="--i:0"></i><i style="--i:1"></i><i style="--i:2"></i><i style="--i:3"></i>
+    </div></div>
+    <p>Original model mechanics and repeating close/reopen animation.</p>
+  </main>
+</body>
+</html>

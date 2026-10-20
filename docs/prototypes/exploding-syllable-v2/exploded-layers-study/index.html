@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>나 / 난 · exploded layers study</title>
+  <link rel="stylesheet" href="style.css">
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <p class="eyebrow">EXPLORATORY STUDY · EXPLODING SYLLABLE V2</p>
+      <h1>What if a syllable had layers?</h1>
+      <p>Compare three ways to take apart the same Hangul block. The angled plates are an inspection metaphor; the small front view preserves the actual two-dimensional arrangement.</p>
+    </header>
+
+    <section class="toolbar" aria-label="Study controls">
+      <fieldset><legend>Presentation</legend>
+        <div class="segmented" id="mode-controls">
+          <button type="button" data-mode="flat" aria-pressed="false">Flat explosion</button>
+          <button type="button" data-mode="relief" aria-pressed="false">Jamo relief</button>
+          <button type="button" data-mode="layers" aria-pressed="true">Exploded layers</button>
+        </div>
+      </fieldset>
+      <fieldset><legend>Syllable</legend>
+        <div class="segmented" id="syllable-controls">
+          <button type="button" data-syllable="나" aria-pressed="true">나 · 2 jamo</button>
+          <button type="button" data-syllable="난" aria-pressed="false">난 · 3 jamo</button>
+        </div>
+      </fieldset>
+    </section>
+
+    <section class="study" aria-label="Interactive syllable study">
+      <div class="scene-wrap">
+        <div class="scene" id="scene" role="button" tabindex="0" aria-label="Open the syllable layers" aria-pressed="false">
+          <div class="stack" id="stack"></div>
+        </div>
+      </div>
+      <aside class="readout">
+        <span class="readout-label">Orthographic front view</span>
+        <svg id="front-view" viewBox="0 0 360 320" role="img" aria-label="Completed 나, front view"></svg>
+        <strong id="state-title">Completed 나</strong>
+        <p id="mode-description">Each jamo sits on its own translucent plate. Tap the model to lift the plates into an angled exploded view.</p>
+        <p class="metaphor">The plate depth is invented for inspection. Hangul syllable layout remains two-dimensional.</p>
+      </aside>
+    </section>
+
+    <section class="actions" aria-label="Motion controls">
+      <button type="button" id="toggle">Open layers</button>
+      <button type="button" id="rotate-left" disabled>Rotate left</button>
+      <button type="button" id="rotate-right" disabled>Rotate right</button>
+      <button type="button" id="reset-angle" disabled>Reset angle</button>
+      <label for="progress">Inspect transition <output id="progress-value">0%</output></label>
+      <input id="progress" type="range" min="0" max="100" value="0">
+      <p id="status" role="status" aria-live="polite">Completed 나, front facing.</p>
+    </section>
+
+    <footer><a href="reference.html">Open faithful CSS reference</a><a href="../depth-relief-study/index.html">Open earlier relief study</a><a href="../index.html">Open unchanged v2 baseline</a></footer>
+  </main>
+</body>
+</html>

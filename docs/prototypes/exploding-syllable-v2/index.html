@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Space inside a syllable · Hangul Tutor study</title>
+  <link rel="stylesheet" href="style.css">
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="topline"><span class="mark">ㅎ</span><span>HANGUL TUTOR / TYPE STUDY</span><span class="study">02 — LAB</span></header>
+    <div class="heading"><p class="eyebrow">ONE BLOCK, SHARED SPACE</p><h1>Space inside<br><em>a syllable.</em></h1><p>Move the letters apart. Watch how their room changes when a final consonant joins.</p></div>
+    <section class="experiment" aria-label="Interactive syllable study">
+      <div class="controls-top">
+        <fieldset class="syllables"><legend>SYLLABLE</legend><div class="choices"><button data-syllable="나" aria-pressed="true">나</button><button data-syllable="노" aria-pressed="false">노</button><button data-syllable="난" aria-pressed="false">난</button></div></fieldset>
+        <div class="font-card"><span>FONT REFERENCE</span><strong id="reference">나</strong><small>Your system font</small></div>
+      </div>
+      <div class="method-heading"><span>COMPARE THE MOTION</span><span id="method-caption">01 / Separation</span></div>
+      <div class="methods" role="group" aria-label="Choose an animation model">
+        <button data-method="separation" aria-pressed="true"><b>01</b><span>Separate<small>Rigid pieces</small></span></button>
+        <button data-method="deformation" aria-pressed="false"><b>02</b><span>Reshape<small>Continuous form</small></span></button>
+        <button data-method="reflow" aria-pressed="false"><b>03</b><span>Reflow<small>나 ↔ 난</small></span></button>
+        <button data-method="extraction" aria-pressed="false"><b>04</b><span>Lift<small>Flat / depth</small></span></button>
+      </div>
+      <div id="lift-conditions" class="lift-conditions" role="group" aria-label="Extraction view" hidden>
+        <button data-condition="flat" aria-pressed="true">A · Flat extraction</button>
+        <button data-condition="depth" aria-pressed="false">B · Shallow depth</button>
+      </div>
+      <div class="stage-card">
+        <div class="stage-head"><span id="stage-label">나 / INITIAL + MEDIAL</span><span id="state-label">TOGETHER</span></div>
+        <div class="canvas-area">
+        <svg id="stage" viewBox="0 0 360 320" role="img" aria-labelledby="svg-title svg-desc">
+          <title id="svg-title">나, a syllable made of ㄴ and ㅏ</title>
+          <desc id="svg-desc">Select a component and move it outward or back. The slider can pause at any point.</desc>
+          <defs><pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#9babb0" opacity=".35"/></pattern></defs>
+          <rect width="360" height="320" fill="url(#grid)"></rect>
+          <rect class="block-frame" x="111" y="44" width="148" height="216" rx="13"></rect>
+          <path class="origin" id="origin-initial"></path><path class="origin" id="origin-medial"></path><path class="origin" id="origin-final"></path>
+          <g id="parts"></g>
+        </svg>
+        <div id="relief-scene" class="relief-scene" aria-label="Lift an individual syllable component" hidden></div>
+        </div>
+        <div class="legend" id="legend" aria-label="Choose a component"></div>
+      </div>
+      <div class="tool-card">
+        <p class="instruction" id="instruction">Open all, or drag a letter to inspect it.</p>
+        <div class="actions"><button id="main-action" class="primary">Open all</button><button id="return-action">Reassemble</button></div>
+        <label class="slider-label" for="progress">Transition <output id="progress-output">0%</output></label>
+        <input id="progress" type="range" min="0" max="100" value="0" aria-describedby="slider-help">
+        <p id="slider-help" class="help">Drag a stroke, tap a labeled part then Move selected, or use this slider. Arrow keys work on the slider.</p>
+        <p class="feedback" id="feedback" role="status" aria-live="polite">ㄴ and ㅏ share one block.</p>
+      </div>
+    </section>
+    <section class="reading" aria-labelledby="reading-title"><span class="eyebrow">LOOK CLOSER</span><h2 id="reading-title">The letters keep their identity.</h2><p id="insight">In 나, ㄴ sits beside ㅏ. They use different proportions inside the square.</p><p class="boundary">These are custom instructional strokes. The paths are not extracted font outlines, handwriting order, or a rule for every typeface.</p><a href="../exploding-syllable-lab/index.html">Open the unchanged v1 experiment ↗</a></section>
+    <footer>EXPERIMENT / NO SAVED PROGRESS / NO AUDIO</footer>
+  </main>
+</body>
+</html>

@@ -1,0 +1,49 @@
+:root{color-scheme:light;--paper:#f6f2e9;--ink:#19313a;--muted:#597077;--line:#c8d4d1;--warm:#bd6145;--blue:#3978a7;--warm-side:#74402f;--blue-side:#244d6b}
+*{box-sizing:border-box}
+body{margin:0;background:#dce7e3;color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+button,input{font:inherit}
+button{cursor:pointer}
+button:focus-visible,input:focus-visible,.component:focus-visible{outline:3px solid #e2a040;outline-offset:3px}
+.shell{max-width:940px;min-height:100dvh;margin:auto;padding:18px 20px 28px;background:var(--paper);box-shadow:0 16px 50px #26424419}
+.eyebrow{margin:0;color:#a9563c;font-size:10px;font-weight:850;letter-spacing:.13em}
+h1{margin:5px 0 7px;font:700 clamp(31px,5vw,51px)/1.03 Georgia,serif;letter-spacing:-.035em}
+h1 em{color:#196e73;font-weight:500}
+header>p:last-child{max-width:65ch;margin:0 0 16px;color:var(--muted);font-size:13px}
+.comparison{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+.panel{min-width:0;padding:10px;border:1px solid #9cb5b3;border-radius:15px;background:#eef4ef}
+.panel-heading{display:flex;align-items:center;gap:9px;min-height:48px}
+.badge{display:grid;place-items:center;flex:none;width:28px;height:28px;border-radius:8px;background:var(--ink);color:#fff;font-size:11px;font-weight:900}
+.panel-heading h2{margin:0;font-size:15px;line-height:1.15}
+.panel-heading p{margin:2px 0 0;color:var(--muted);font-size:10px}
+.scene{position:relative;height:clamp(170px,31vw,280px);border:1px solid #bfd0cd;border-radius:12px;background:#e5efea;perspective:650px;perspective-origin:50% 50%;transform-style:preserve-3d;touch-action:manipulation}
+.scene>svg,.piece,.piece svg{position:absolute;inset:0;display:block;width:100%;height:100%;overflow:visible}
+.scene>svg{pointer-events:none}
+.piece{transform-style:preserve-3d;pointer-events:none;will-change:transform}
+.piece svg{pointer-events:none}
+.block-frame{fill:#fffdf899;stroke:#a9bfba;stroke-width:1.6;stroke-dasharray:5 6}
+.grid-dot{fill:#a9bcb8;opacity:.48}
+.footprint{fill:none;stroke:#81989b;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:4 6;opacity:0}
+.contact-shadow{opacity:0}
+.side{fill:none;stroke-width:9;stroke-linecap:round;stroke-linejoin:round;opacity:0;pointer-events:none}
+.piece[data-part="initial"] .side{stroke:var(--warm-side)}
+.piece[data-part="medial"] .side{stroke:var(--blue-side)}
+.front{fill:none;stroke-width:9;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.piece[data-part="initial"] .front{stroke:var(--warm)}
+.piece[data-part="medial"] .front{stroke:var(--blue)}
+.hit{fill:none;stroke:transparent;stroke-width:39;stroke-linecap:round;stroke-linejoin:round;pointer-events:stroke;cursor:pointer;touch-action:manipulation}
+.component{pointer-events:visibleStroke;outline:none}
+.component:focus-visible{outline:3px solid #e2a040}
+.panel-note{min-height:30px;margin:7px 2px 1px;color:var(--muted);font-size:10px}
+.controls{margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:14px;background:#fffaf1}
+.actions{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px}
+.actions button{min-height:45px;padding:7px;border:1px solid #9fb7b3;border-radius:8px;background:#fff;color:var(--ink);font-size:12px;font-weight:800}
+.actions button[aria-pressed="true"]{background:#dcece6;border-color:#5d9790}
+.controls label{display:flex;justify-content:space-between;margin-top:11px;color:var(--muted);font-size:11px;font-weight:800}
+.controls output{color:#176e75;font-variant-numeric:tabular-nums}
+#progress{display:block;width:100%;margin:4px 0;accent-color:#176e75}
+#slider-help{margin:4px 0;color:var(--muted);font-size:10px}
+#status{min-height:31px;margin:8px 0 0;padding:7px 9px;border-left:3px solid #176e75;background:#e9f2ed;color:#31595b;font-size:11px}
+.boundary{max-width:76ch;margin:12px 0 6px;color:var(--muted);font-size:10px}
+.back{color:#176e75;font-size:11px;font-weight:750}
+@media(max-width:500px){.shell{padding:12px 9px 20px}.comparison{gap:6px}.panel{padding:5px;border-radius:11px}.panel-heading{gap:5px;min-height:49px}.badge{width:23px;height:23px;font-size:9px}.panel-heading h2{font-size:11px}.panel-heading p{font-size:8px}.panel-note{font-size:8px;min-height:35px}.scene{height:170px}.actions{gap:4px}.actions button{font-size:10px;padding:4px}}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;animation:none!important;transition:none!important}}

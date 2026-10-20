@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f4efe5">
+  <title>Open a Syllable · Hangul Tutor Lab</title>
+  <link rel="stylesheet" href="./style.css">
+  <script defer src="./app.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="masthead">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">ㅎ</span><span>HANGUL TUTOR <b>/</b> INTERACTION LAB</span></div>
+      <div class="issue">STUDY 01 <span aria-hidden="true">↗</span></div>
+    </header>
+
+    <section class="intro" aria-labelledby="page-title">
+      <p class="eyebrow">A SMALL MACHINE FOR SEEING LETTERS</p>
+      <h1 id="page-title">Open a <em>syllable.</em></h1>
+      <p>A Korean block holds letters together. Pull it apart to see where each one belongs, then put it back.</p>
+    </section>
+
+    <section class="experiment" aria-label="Exploding syllable experiment">
+      <div class="selectors">
+        <div class="selector-group">
+          <span class="selector-label">01 / CHOOSE A BLOCK</span>
+          <div class="segmented" role="group" aria-label="Choose a syllable">
+            <button type="button" data-syllable="나" aria-pressed="true">나 <small>beside</small></button>
+            <button type="button" data-syllable="노" aria-pressed="false">노 <small>below</small></button>
+            <button type="button" data-syllable="난" aria-pressed="false">난 <small>final</small></button>
+          </div>
+        </div>
+        <div class="selector-group">
+          <span class="selector-label">02 / CHOOSE A VIEW</span>
+          <div class="segmented view-switch" role="group" aria-label="Choose a visual explanation">
+            <button type="button" data-view="structure" aria-pressed="true">Structure</button>
+            <button type="button" data-view="type" aria-pressed="false">Glyph bridge</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="board" id="board">
+        <div class="board-top"><span class="board-label">THE SYLLABLE BENCH</span><span class="board-state" id="board-state">CLOSED · 1 BLOCK</span></div>
+        <div class="stage-wrap">
+          <svg id="stage" viewBox="0 0 360 310" role="img" aria-labelledby="stage-title stage-description">
+            <title id="stage-title">나, composed from ㄴ and ㅏ</title>
+            <desc id="stage-description">The two components can separate and return to the block.</desc>
+            <defs>
+              <pattern id="dot-grid" width="18" height="18" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#718091" opacity=".2"/></pattern>
+            </defs>
+            <rect x="0" y="0" width="360" height="310" fill="url(#dot-grid)"/>
+            <rect id="footprint" class="footprint" x="111" y="56" width="139" height="166" rx="18"/>
+            <text id="unicode-glyph" class="unicode-glyph" x="180" y="181" text-anchor="middle">나</text>
+            <g id="parts"></g>
+          </svg>
+          <div class="stage-corner">MOVE TO UNDERSTAND <span aria-hidden="true">✳</span></div>
+        </div>
+        <div class="part-key" id="part-key" aria-label="Component legend"></div>
+      </div>
+
+      <div class="control-card">
+        <div class="mode-row" role="group" aria-label="Interaction behavior">
+          <button type="button" data-mode="auto" aria-pressed="true"><span class="mode-icon" aria-hidden="true">✳</span><span><strong>Open all</strong><small>Watch the structure unfold</small></span></button>
+          <button type="button" data-mode="direct" aria-pressed="false"><span class="mode-icon" aria-hidden="true">↗</span><span><strong>Pull a letter</strong><small>Leave the others in place</small></span></button>
+        </div>
+        <p id="instruction" class="instruction">Open the block, or scrub slowly to watch its letters change shape.</p>
+        <div class="action-row">
+          <button id="primary-action" class="primary" type="button">Open the block <span aria-hidden="true">↗</span></button>
+          <button id="reset-action" class="secondary" type="button">Reassemble</button>
+        </div>
+        <div class="scrub-row"><label for="scrub" id="scrub-label">Separation <output id="scrub-value">0%</output></label><input id="scrub" type="range" min="0" max="100" value="0" aria-describedby="scrub-help"><span id="scrub-help" class="visually-hidden">Use the arrow keys to move the selected letters outward or inward.</span></div>
+        <p id="feedback" class="feedback" role="status" aria-live="polite">The letters are sharing one square.</p>
+      </div>
+    </section>
+
+    <section class="insight" aria-labelledby="insight-title">
+      <span class="eyebrow">WHAT TO NOTICE</span>
+      <h2 id="insight-title">Same letters. Different space.</h2>
+      <p id="insight-copy">In 나, ㄴ sits left of ㅏ. As they separate, both regain room to look like independent letters.</p>
+      <p class="boundary">This is a simplified geometric explanation, not a writing-stroke lesson or a claim that every typeface morphs this way.</p>
+    </section>
+    <footer>EXPERIMENTAL PROTOTYPE <span aria-hidden="true">/</span> NO SAVED PROGRESS <span aria-hidden="true">/</span> NO AUDIO NEEDED</footer>
+  </main>
+</body>
+</html>

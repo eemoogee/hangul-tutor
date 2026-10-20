@@ -1,0 +1,27 @@
+# 나 shallow-relief extraction study
+
+An isolated visual revision beside Exploding Syllable v2. Open [index.html](index.html) directly in a modern browser; there are no network assets or runtime dependencies. The existing v1 and v2 files are unchanged. This page uses only 나, with the same authored packed/free ㄴ and ㅏ endpoints as v2. Both panels share selection, path interpolation, 480 ms easing, and reversible tap interaction. The flat panel reproduces v2's extraction geometry and timing in a smaller shared comparison layout; it is not a pixel-identical copy of the v2 page.
+
+Tap either jamo in either panel to lift it in both. Tap again to return it. Lifting the adjacent part returns the first. Labeled buttons, Reassemble, keyboard Enter/Space on a focused part, and a slider provide non-drag controls. With reduced motion, button and tap transitions reach their endpoints immediately; the slider remains available for deliberate inspection.
+
+## What changed in the relief panel
+
+The front SVG path is identical in both panels. The relief panel adds eight darker SVG path copies behind it. As lift progress grows, these copies separate by up to 12 SVG units horizontally and 14 vertically, exposing a continuous-looking lower-right side surface. The component wrapper moves forward by up to `translateZ(72px)` inside a `650px` CSS perspective and tilts by at most 7° on X and 6° on Y. The other jamo and block stay front-facing and anchored. A radial-gradient oval marks contact with the original plane; the dashed original path remains as a position reference. At rest, the copies, contact mark, Z movement, and tilt are invisible or zero. No Three.js or graphics framework is needed.
+
+This is a bundled visual revision: thickness, contact cue, Z movement, and slight tilt change together. It tests whether the **combination** reads as physical depth, not which cue is responsible. Browser projection changes apparent size and sampling of the lifted stroke. The extrusion is an instructional metaphor, not a claim that Hangul jamo are physical slabs or that these are handwriting strokes.
+
+The side is a view-dependent SVG approximation, not a true solid mesh. True extrusion of arbitrary stroke outlines would require cap/join expansion, side-face geometry, occlusion handling, and a more complex hit model. The chosen path copies are small and reversible. CSS shadows alone made the edge less explicit; a pre-rendered sprite would constrain interaction and scaling. A mesh renderer would only be justified if this simple study earns a clear learning or usability benefit and later shapes require views this approach cannot represent.
+
+## Frame review
+
+The [captures](captures/) show [assembled](captures/na-00-assembled-390.png), [25%](captures/na-25-390.png), [50%](captures/na-50-390.png), [75%](captures/na-75-390.png), [fully lifted ㄴ](captures/na-100-390.png), and [restored](captures/na-restored-390.png) at 390×844. They also show an [in-flight animation frame for ㅏ](captures/na-medial-animated-mid-390.png), [fully lifted ㅏ](captures/na-medial-100-390.png), [midpoint at 320×568](captures/na-50-320.png), [fully lifted ㄴ at 320×568](captures/na-100-320.png), and [fully lifted ㅏ at 320×568](captures/na-medial-100-320.png).
+
+In the inspected Chromium frames, the side surface starts to register around the midpoint and is unmistakable near full lift. The flat panel has only planar separation. The dashed footprint plus low contact mark ties the lifted part to its original plane without leaving a second letter-like shadow. ㄴ and ㅏ remain identifiable at both tested widths. The full lift makes the lower-right stroke appreciably heavier, especially on the narrow 320-pixel page; stronger thickness or tilt would risk turning the front face into a dark wedge. At 25%, the depth cue is still weak. These are visual observations, not learner results.
+
+## Browser verification and limits
+
+Run `verify.py` with Python Playwright and Chromium. It generates the review captures and checks equal front paths in both panels at 0/25/50/75/100%, an actual animated midpoint, direct tap-to-lift and tap-to-return, adjacent selection, keyboard control, simulated touch at 390×844 and 320×568, reduced motion, and horizontal overflow. The most recent run passed with no page or console errors. The visible transformed hit path was checked after lift; `getScreenCTM()` alone did not correctly locate the projected path in Chromium, so the verifier samples the real pointer target on screen.
+
+Physical Android performance, touch accuracy, screen-reader experience, other browser engines, and beginner comprehension have not been tested. At 320 pixels the side-by-side panels necessarily make the SVG strokes small, and the transparent direct-hit stroke projects to roughly 15 CSS pixels across; the 45-pixel-high labeled buttons are the larger touch alternative. A single-panel phone layout might be preferable for instruction, but this study keeps both visible for comparison. The wide SVG viewing area gives the lifted ㅏ branch room without changing its geometry.
+
+**Recommendation:** the physical metaphor is visually worth a small phone usability and beginner component-identification test, but is not ready for a lesson. Compare whether learners identify and reconstruct the jamo more accurately than with flat extraction, not whether they merely prefer the look. If the extra side surface proves distracting, first reduce its 12×14-unit offset before considering a different graphics stack.

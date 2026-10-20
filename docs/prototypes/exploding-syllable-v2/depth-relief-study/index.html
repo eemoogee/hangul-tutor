@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>나 · shallow relief study</title>
+  <link rel="stylesheet" href="style.css">
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <p class="eyebrow">EXPLODING SYLLABLE V2 / ISOLATED VISUAL STUDY</p>
+      <h1>Does a lifted letter<br><em>feel lifted?</em></h1>
+      <p>Tap ㄴ or ㅏ in either view. Both views move together, so the added physical cues are easy to compare.</p>
+    </header>
+    <section class="comparison" aria-label="Side-by-side extraction comparison">
+      <article class="panel" data-mode="flat" aria-labelledby="flat-title">
+        <div class="panel-heading"><span class="badge">A</span><div><h2 id="flat-title">Current flat extraction</h2><p>Planar movement only</p></div></div>
+        <div class="scene" data-scene="flat" aria-label="Flat extraction of 나"></div>
+        <p class="panel-note">The selected jamo leaves a dashed footprint in the original block.</p>
+      </article>
+      <article class="panel" data-mode="relief" aria-labelledby="relief-title">
+        <div class="panel-heading"><span class="badge">B</span><div><h2 id="relief-title">Shallow relief</h2><p>Visible edge and ground plane</p></div></div>
+        <div class="scene" data-scene="relief" aria-label="Shallow relief extraction of 나"></div>
+        <p class="panel-note">A dark side becomes exposed as the piece rises above its original position.</p>
+      </article>
+    </section>
+    <section class="controls" aria-label="Shared comparison controls">
+      <div class="actions">
+        <button type="button" data-lift="initial">Lift or return ㄴ</button>
+        <button type="button" data-lift="medial">Lift or return ㅏ</button>
+        <button type="button" id="reassemble">Reassemble</button>
+      </div>
+      <label for="progress">Selected component position <output id="progress-value">0%</output></label>
+      <input id="progress" type="range" min="0" max="100" value="0" aria-describedby="slider-help">
+      <p id="slider-help">Select a component above or tap it in either view. Scrub this slider to inspect intermediate frames; arrow keys also work.</p>
+      <p id="status" role="status" aria-live="polite">Completed 나. Both pieces are in their original plane.</p>
+    </section>
+    <p class="boundary">These are authored instructional SVG strokes. The shallow relief is a visual metaphor, not a property of Hangul orthography or a guide to handwriting order.</p>
+    <a class="back" href="../index.html">Return to the unchanged v2 comparison</a>
+  </main>
+</body>
+</html>
