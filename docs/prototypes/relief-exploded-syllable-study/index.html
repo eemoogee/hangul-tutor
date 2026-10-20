@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Relief-exploded syllable study</title>
+  <link rel="stylesheet" href="style.css">
+  <script defer src="app.js"></script>
+</head>
+<body>
+<main class="shell">
+  <header>
+    <p class="eyebrow">ISOLATED INTERACTION STUDY</p>
+    <h1>Open the syllable</h1>
+    <p>Compare the same reversible movement with fixed shapes, changing shapes, and shallow relief. Tap a piece after opening to inspect it.</p>
+  </header>
+
+  <section class="choices" aria-label="Comparison settings">
+    <fieldset><legend>Variant</legend><div class="segmented" id="variants">
+      <button type="button" data-variant="v1" aria-pressed="true"><b>V1</b><span>Flat · fixed shape</span></button>
+      <button type="button" data-variant="v2" aria-pressed="false"><b>V2</b><span>Flat · morph</span></button>
+      <button type="button" data-variant="v3" aria-pressed="false"><b>V3</b><span>Relief · morph</span></button>
+    </div></fieldset>
+    <fieldset><legend>Syllable</legend><div class="segmented syllables" id="syllables">
+      <button type="button" data-syllable="나" aria-pressed="true">나</button>
+      <button type="button" data-syllable="노" aria-pressed="false">노</button>
+      <button type="button" data-syllable="난" aria-pressed="false">난</button>
+    </div></fieldset>
+  </section>
+
+  <section class="stage-card" aria-label="Syllable model">
+    <div class="stage-head"><strong id="stage-label">나 · closed</strong><span id="phase-label">REAL TEXT</span></div>
+    <div class="stage" id="stage" tabindex="0" aria-label="Open or close 나">
+      <div class="ground" id="ground"></div>
+      <div class="pieces" id="pieces"></div>
+      <div class="type-glyph visible" id="type-glyph" aria-hidden="true">나</div>
+    </div>
+    <div class="part-buttons" id="part-buttons" aria-label="Inspect a piece after opening"></div>
+  </section>
+
+  <section class="controls" aria-label="Interaction and tuning">
+    <div class="actions"><button type="button" id="toggle" class="primary">Open syllable</button><button type="button" id="clear-inspect" disabled>Return inspected piece</button></div>
+    <div class="tuning">
+      <label>Distance <output id="distance-value">42 units</output><input id="distance" type="range" min="24" max="72" value="42"></label>
+      <label>Duration <output id="duration-value">760 ms</output><input id="duration" type="range" min="400" max="1200" step="20" value="760"></label>
+      <label>Relief depth <output id="depth-value">7 units</output><input id="depth" type="range" min="0" max="12" value="7"></label>
+      <label class="reduce"><input id="reduce" type="checkbox"> Simulate reduced motion</label>
+    </div>
+    <label class="scrub" for="progress">Review the transition <output id="progress-value">0%</output></label>
+    <input id="progress" type="range" min="0" max="100" value="0">
+    <p id="status" role="status" aria-live="polite">Completed 나 in Noto Sans KR. Open to see its components.</p>
+  </section>
+  <p class="note">The paths are a geometric study of completed jamo. Their motion is not handwriting stroke order. Relief is a visual metaphor, not a feature of Hangul spelling.</p>
+  <footer><a href="NOTES.md">Geometry, font, verification, and remaining tests</a></footer>
+</main>
+</body>
+</html>
