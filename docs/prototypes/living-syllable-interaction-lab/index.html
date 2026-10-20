@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#142531">
+  <title>Living Syllable · Interaction Lab</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="page-head">
+      <span class="eyebrow">Hangul Tutor · isolated interaction lab</span>
+      <h1>Make the block move.</h1>
+      <p>Build it with your hands. Then open it to inspect what you made.</p>
+    </header>
+
+    <nav class="area-tabs" aria-label="Experiment area">
+      <button type="button" data-area="build" aria-pressed="true" class="active">01 · Construct</button>
+      <button type="button" data-area="depth" aria-pressed="false">02 · Spatial reveal</button>
+    </nav>
+
+    <section id="build-panel" class="panel" aria-labelledby="build-heading">
+      <div class="section-head">
+        <div><span class="eyebrow">Tactile comparison</span><h2 id="build-heading">Bring the pieces together</h2></div>
+        <span id="task-counter" class="counter">1 / 3</span>
+      </div>
+      <div class="treatments" role="group" aria-label="Construction treatment">
+        <button type="button" data-treatment="basic" aria-pressed="false">A · Basic</button>
+        <button type="button" data-treatment="tactile" aria-pressed="false">B · Tactile</button>
+        <button type="button" data-treatment="transformative" class="active" aria-pressed="true">C · Transform</button>
+      </div>
+      <div class="work-card">
+        <div class="work-head">
+          <div><span id="task-label" class="eyebrow">BUILD 1</span><h3 id="task-title">ㄴ + ㅏ → 나</h3></div>
+          <span id="build-state" class="state-pill">Pieces apart</span>
+        </div>
+        <p id="task-prompt" class="prompt">Tap a letter to lift it, then tap its place in the block. You can also drag.</p>
+        <div class="bench-frame">
+          <svg id="bench" viewBox="0 0 360 320" role="group" aria-labelledby="bench-title bench-desc">
+            <title id="bench-title">Living syllable construction bench</title>
+            <desc id="bench-desc">Two letters are ready to make 나.</desc>
+            <rect class="bench-mat" x="1" y="1" width="358" height="318" rx="23"></rect>
+            <path class="bench-guide" d="M96 50h168M96 259h168"></path>
+            <g id="targets"></g>
+            <g id="pieces"></g>
+          </svg>
+        </div>
+        <div class="input-rail">
+          <div class="rail-label">1 · Lift a piece</div><div id="piece-buttons" class="button-row"></div>
+          <div class="rail-label">2 · Place it</div><div id="slot-buttons" class="button-row"></div>
+        </div>
+        <p id="build-feedback" class="feedback" role="status" aria-live="polite">Choose a piece to begin.</p>
+        <div class="actions">
+          <button type="button" id="back-task">Back</button>
+          <button type="button" id="undo-action">Undo</button>
+          <button type="button" id="reset-task">Reset</button>
+          <button type="button" id="next-task" class="strong" disabled>Next</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="depth-panel" class="panel" aria-labelledby="depth-heading" hidden>
+      <div class="section-head">
+        <div><span class="eyebrow">Spatial comparison · 나 only</span><h2 id="depth-heading">Open what you made</h2></div>
+        <span id="depth-state" class="counter">Assembled</span>
+      </div>
+      <div class="treatments" role="group" aria-label="Spatial treatment">
+        <button type="button" data-spatial="panes" class="active" aria-pressed="true">A · Jamo panes</button>
+        <button type="button" data-spatial="solid" aria-pressed="false">B · Solid strokes</button>
+      </div>
+      <div class="work-card depth-card">
+        <p class="prompt">Two component objects separate from the same flat block. Scrub slowly, or turn the opened view.</p>
+        <div class="spatial-wrap">
+          <div id="spatial-scene" class="spatial-scene" data-spatial="panes" aria-label="Three-dimensional inspection of 나">
+            <div id="spatial-rig" class="spatial-rig"></div>
+            <div class="contact-shadow" aria-hidden="true"></div>
+          </div>
+        </div>
+        <label class="slider-label" for="depth-progress">Separation <output id="depth-output">0%</output></label>
+        <input id="depth-progress" type="range" min="0" max="100" value="0" aria-label="Spatial separation">
+        <div class="actions depth-actions">
+          <button type="button" id="depth-toggle" class="strong">Open</button>
+          <button type="button" id="turn-left" aria-label="Turn view left">↶ Turn</button>
+          <button type="button" id="turn-right" aria-label="Turn view right">Turn ↷</button>
+          <button type="button" id="depth-reset">Reset</button>
+        </div>
+        <p id="depth-feedback" class="feedback" role="status" aria-live="polite">나 is flat and readable. Open it when ready.</p>
+      </div>
+      <p class="small-note">Depth is an optional inspection metaphor. Hangul letters are written on a flat surface; the panes and solid edges are not historical letter forms.</p>
+    </section>
+  </main>
+</body>
+</html>

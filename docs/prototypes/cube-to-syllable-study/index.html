@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101a27">
+  <title>Open a Syllable · Cube Study</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="heading">
+      <div class="eyebrow">Hangul Tutor · visual study 01</div>
+      <h1>Open a syllable</h1>
+      <p>What happens if <strong>나</strong> opens like a small object you can turn?</p>
+    </header>
+
+    <div class="variants" role="group" aria-label="Visual variation">
+      <button type="button" class="variant active" data-variant="panels" aria-pressed="true">01 · Glass panels</button>
+      <button type="button" class="variant" data-variant="bare" aria-pressed="false">02 · Bare letters</button>
+    </div>
+
+    <section class="study" aria-labelledby="study-title">
+      <div class="study-top">
+        <div>
+          <span class="study-kicker">ㄴ + ㅏ</span>
+          <h2 id="study-title">나 <span lang="ko">· na</span></h2>
+        </div>
+        <span class="state-badge" id="state-badge">Assembled</span>
+      </div>
+
+      <div class="scene-wrap">
+        <div class="scene" id="scene" data-open="false" data-variant="panels" tabindex="0" aria-label="Three-dimensional syllable study. Use left and right arrow keys to turn the view.">
+          <div class="turntable" id="turntable">
+            <div class="cube" id="cube" aria-hidden="true">
+              <div class="face letter-face"><span class="glyph" data-glyph="ㄴ">ㄴ</span></div>
+              <div class="face letter-face"><span class="glyph" data-glyph="ㅏ">ㅏ</span></div>
+              <div class="face empty-face"></div>
+              <div class="face empty-face"></div>
+              <div class="face empty-face"></div>
+              <div class="face empty-face"></div>
+            </div>
+          </div>
+          <div class="rest-glyph" id="rest-glyph" aria-hidden="true">나</div>
+          <div class="floor-shadow" aria-hidden="true"></div>
+        </div>
+        <p class="stage-hint" id="stage-hint">Open to inspect · then drag the object or use ← →</p>
+      </div>
+
+      <div class="controls">
+        <button type="button" class="primary" id="open-button" aria-controls="scene" aria-expanded="false">Open the syllable</button>
+        <button type="button" id="motion-button" disabled>Pause rotation</button>
+        <button type="button" id="reset-button" disabled>Reset view</button>
+      </div>
+
+      <div class="legend" aria-label="Components">
+        <div><span class="swatch swatch-n" aria-hidden="true"></span><strong>ㄴ</strong><span>front-facing plane</span></div>
+        <div><span class="swatch swatch-a" aria-hidden="true"></span><strong>ㅏ</strong><span>side-facing plane</span></div>
+      </div>
+    </section>
+
+    <p class="note" id="study-note">The planes are an inspection metaphor. Hangul letters are arranged on a flat page, not literally in 3D space.</p>
+  </main>
+</body>
+</html>
