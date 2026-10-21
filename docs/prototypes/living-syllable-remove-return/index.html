@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Living Syllable — 난 ⇄ 나 + ㄴ</title>
+<style>
+:root {
+  --page:#e9eeeb; --sheet:#f8faf8; --ink:#18232a; --muted:#586d68;
+  --accent:#226f62; --accent-soft:#d9ebe5; --line:#bdcbc5;
+  --edge:#53645f; --shadow:rgba(19,39,34,.26); --slot:#397c6f;
+  font-family:system-ui,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+}
+@media (prefers-color-scheme:dark) {
+  :root { --page:#11191b; --sheet:#1b2729; --ink:#ecf4ee; --muted:#acc0b8;
+    --accent:#80d4bd; --accent-soft:#27473e; --line:#46615b;
+    --edge:#8ba79d; --shadow:rgba(0,0,0,.48); --slot:#9bdbca; }
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--page); color:var(--ink); line-height:1.42; }
+main { width:min(100% - 28px,560px); margin:0 auto; padding:18px 0 40px; display:grid; gap:14px; }
+header { display:grid; gap:4px; }
+.eyebrow { color:var(--accent); text-transform:uppercase; letter-spacing:.13em; font-size:11px; font-weight:750; }
+h1 { margin:0; font-size:clamp(22px,6vw,28px); line-height:1.14; }
+.lede { margin:0; color:var(--muted); font-size:14px; }
+.card,.panel { background:var(--sheet); border:1px solid var(--line); border-radius:14px; }
+.stage-head { display:flex; justify-content:space-between; align-items:center; padding:10px 14px;
+  border-bottom:1px solid var(--line); font-size:12px; color:var(--muted); }
+.stage-head strong { color:var(--ink); font-size:15px; }
+.stage {
+  position:relative; width:min(calc(100% - 12px),370px); aspect-ratio:1560 / 1850;
+  margin:3px auto 0; perspective:950px; transform-style:preserve-3d;
+  touch-action:none; user-select:none; -webkit-user-select:none;
+  -webkit-touch-callout:none; -webkit-tap-highlight-color:transparent;
+  overflow:visible; cursor:pointer;
+}
+.stage svg { position:absolute; inset:0; display:block; width:100%; height:100%; overflow:visible; }
+.static-glyph { z-index:2; pointer-events:none; fill:var(--ink); }
+.stage.dragging .static-glyph,.stage.detached .static-glyph,.stage.settling .static-glyph { display:none; }
+.shadow-plane,.slot-plane,.piece-shell { position:absolute; inset:0; }
+.shadow-plane,.slot-plane { pointer-events:none; }
+.shadow-plane { z-index:0; }
+.slot-plane { z-index:1; }
+.piece-shell { z-index:2; transform-style:preserve-3d; pointer-events:none; }
+.piece-shell.final { z-index:3; }
+.piece-shell svg { pointer-events:none; }
+.face { fill:var(--ink); }
+.edge { fill:var(--edge); }
+.shade { opacity:0; pointer-events:none; }
+.shade.pulse { animation:face-pulse var(--sweep-duration,500ms) ease-out both; }
+@keyframes face-pulse { 0% { opacity:0 } 32% { opacity:.78 } 58% { opacity:.58 } 100% { opacity:0 } }
+.shadow-path { fill:var(--shadow); filter:blur(5px); }
+.slot-path { fill:none; stroke:var(--slot); stroke-width:15; stroke-dasharray:28 24; opacity:0; }
+.stage.ready .slot-path { opacity:.16; }
+.stage.detached .slot-path,.stage.dragging .slot-path,.stage.settling .slot-path { opacity:.7; }
+.hit,.slot-hit { position:absolute; border:0; background:transparent; padding:0; min-width:44px; min-height:44px; }
+.hit { left:31%; top:45%; width:42%; height:27%; pointer-events:auto; cursor:grab; border-radius:12px; }
+.hit:active { cursor:grabbing; }
+.hit::after { content:""; position:absolute; inset:0; border:2px solid transparent; border-radius:12px; }
+.stage.ready .hit:hover::after,.stage.detached .hit:hover::after,.hit:focus-visible::after { border-color:var(--accent); }
+.hit:focus-visible,.slot-hit:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+.stage.closed .hit { pointer-events:none; }
+.slot-hit { z-index:4; left:calc(51.2% - 24px); top:calc(58% - 24px); width:48px; height:48px;
+  border-radius:50%; background:var(--accent-soft); border:2px dashed var(--accent);
+  color:var(--ink); font-size:24px; line-height:1; cursor:pointer; display:none; }
+.stage.detached .slot-hit { display:block; }
+.stage.flat .edge,.stage.flat .shadow-plane,.stage.flat .shade { display:none; }
+.stage.reduced .edge,.stage.reduced .shadow-plane,.stage.reduced .shade { display:none; }
+.stage.reduced .piece-shell { transition:opacity 80ms linear; }
+.stage.reduced.fading .piece-shell { opacity:0; }
+.stage.reduced .slot-path { transition:opacity 80ms linear; }
+.status { min-height:46px; padding:2px 15px 12px; text-align:center; color:var(--muted); font-size:13px; }
+.status strong { color:var(--ink); }
+.panel { padding:13px; display:grid; gap:13px; }
+.group { display:grid; gap:7px; }
+.group-label { font-size:11px; font-weight:750; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+.buttons { display:flex; flex-wrap:wrap; gap:7px; }
+button { font:inherit; }
+.control { min-height:44px; padding:9px 13px; border-radius:9px; border:1px solid var(--accent);
+  background:var(--accent); color:var(--sheet); cursor:pointer; font-weight:650; }
+.control.secondary { background:var(--sheet); color:var(--accent); }
+.control[aria-pressed="true"] { box-shadow:inset 0 0 0 2px var(--accent); background:var(--accent-soft); color:var(--ink); }
+.control:disabled { opacity:.5; cursor:not-allowed; }
+.control:focus-visible,input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+.tuning { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px 15px; }
+label.range { display:grid; gap:3px; min-width:0; font-size:12px; color:var(--muted); }
+label.range span { display:flex; justify-content:space-between; gap:4px; }
+label.range b { color:var(--ink); white-space:nowrap; }
+input[type=range] { width:100%; accent-color:var(--accent); }
+.check { display:flex; align-items:center; gap:9px; min-height:44px; font-size:13px; }
+.check input { width:20px; height:20px; accent-color:var(--accent); }
+.settings { display:block; min-height:1.3em; overflow-wrap:anywhere; color:var(--muted); font-size:11px; }
+.note { margin:0; color:var(--muted); font-size:12px; }
+@media (max-width:350px) { main { width:calc(100% - 20px); } .panel { padding:10px; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Hangul Tutor · interaction study</div>
+    <h1>Remove ㄴ. Return ㄴ.</h1>
+    <p class="lede">Open 난, lift its final ㄴ to reveal 나, then place it back. The depth is an inspection metaphor, not a writing guide.</p>
+  </header>
+  <section class="card" aria-label="Living syllable stage">
+    <div class="stage-head"><span>SYLLABLE <strong id="syllableName">난</strong></span><span id="stateName">closed</span></div>
+    <div class="stage closed" id="stage" aria-label="Syllable 난">
+      <div class="shadow-plane" id="shadows"></div>
+      <div class="slot-plane" id="slotPlane"></div>
+      <!-- Static fallback for local file previewers that do not execute JavaScript. -->
+      <svg class="static-glyph" viewBox="-312 -276 1560 1850" role="img" aria-label="난">
+        <g transform="translate(0 880) scale(1 -1)">
+          <path d="M78 431V322H156C287 322 430 331 581 361L566 469C441 444 321 434 211 432V776H78Z"/>
+          <path d="M636 837V172H769V466H892V578H769V837Z"/>
+          <path d="M173 234V-73H799V34H307V234Z"/>
+        </g>
+      </svg>
+      <div class="piece-shell initial" id="initialShell"></div>
+      <div class="piece-shell vowel" id="vowelShell"></div>
+      <div class="piece-shell final" id="finalShell"></div>
+      <button type="button" class="slot-hit" id="slotHit" aria-label="Return final ㄴ to its slot" tabindex="-1">+</button>
+    </div>
+    <div class="status" id="status" role="status" aria-live="polite">Static preview. Use Open in browser, or download this file and open it in Chrome, to use the controls.</div>
+  </section>
+  <section class="panel" aria-label="Study controls">
+    <div class="group">
+      <div class="group-label">Interaction</div>
+      <div class="buttons">
+        <button type="button" class="control" id="openClose">Open</button>
+        <button type="button" class="control secondary" id="liftReturn" disabled>Lift ㄴ</button>
+        <button type="button" class="control secondary" id="undo" disabled>Undo</button>
+        <button type="button" class="control secondary" id="reset">Reset</button>
+      </div>
+    </div>
+    <div class="group">
+      <div class="group-label">Appearance</div>
+      <div class="buttons" role="group" aria-label="Depth comparison">
+        <button type="button" class="control secondary" id="relief" aria-pressed="true">Relief</button>
+        <button type="button" class="control secondary" id="flat" aria-pressed="false">Flat</button>
+      </div>
+      <label class="check"><input type="checkbox" id="forceReduce">Reduced motion test (system setting also applies)</label>
+    </div>
+    <div class="group">
+      <div class="group-label">Phone tuning</div>
+      <div class="tuning">
+        <label class="range"><span>Lift height <b id="liftValue">38 px</b></span><input id="lift" type="range" min="12" max="64" step="1" value="38"></label>
+        <label class="range"><span>Settle bounce <b id="bounceValue">0.08</b></span><input id="bounce" type="range" min="0" max="0.16" step="0.01" value="0.08"></label>
+        <label class="range"><span>Sweep time <b id="sweepValue">500 ms</b></span><input id="sweep" type="range" min="250" max="850" step="25" value="500"></label>
+        <label class="range"><span>Slot radius <b id="radiusValue">46 px</b></span><input id="radius" type="range" min="30" max="76" step="2" value="46"></label>
+      </div>
+      <div class="buttons"><button type="button" class="control secondary" id="copy">Copy settings</button></div>
+      <output class="settings" id="settingsOut" aria-live="polite"></output>
+    </div>
+    <p class="note">Drag ㄴ directly, or tap it and then tap the marked slot. Releasing near the slot seats it; releasing elsewhere returns it to the detached position. Nothing is scored.</p>
+  </section>
+</main>
+<script>
+"use strict";
+// Exact path strings and ordering from the supplied noto-contours.json (Noto Sans CJK KR Bold).
+// The standalone final form is translated by (+21,-306.5) font units to share the final's center.
+const OUTLINES = {
+  initial: [
+    "M78 431V322H156C287 322 430 331 581 361L566 469C441 444 321 434 211 432V776H78Z",
+    "M69 249V138H148C285 138 433 147 587 179L573 287C444 262 318 252 201 250V750H69Z"
+  ],
+  vowel: [
+    "M636 837V172H769V466H892V578H769V837Z",
+    "M632 839V-87H766V378H895V488H766V839Z"
+  ],
+  final: [
+    "M173 234V-73H799V34H307V234Z",
+    "M188 322.5V-161.5H784V-56.5H322V322.5Z"
+  ]
+};
+const SVGNS="http://www.w3.org/2000/svg", VIEWBOX="-312 -276 1560 1850", FLIP="translate(0 880) scale(1 -1)";
+const stage=document.getElementById("stage");
+const ui={ openClose:document.getElementById("openClose"),liftReturn:document.getElementById("liftReturn"),
+  undo:document.getElementById("undo"),reset:document.getElementById("reset"),slot:document.getElementById("slotHit"),
+  status:document.getElementById("status"),state:document.getElementById("stateName"),syllable:document.getElementById("syllableName"),
+  relief:document.getElementById("relief"),flat:document.getElementById("flat"),forceReduce:document.getElementById("forceReduce"),
+  lift:document.getElementById("lift"),bounce:document.getElementById("bounce"),sweep:document.getElementById("sweep"),
+  radius:document.getElementById("radius"),copy:document.getElementById("copy"),settings:document.getElementById("settingsOut") };
+const systemReduce=matchMedia("(prefers-reduced-motion: reduce)");
+const state={ phase:"closed", p:0, x:0, y:0, mode:"relief", history:[], anim:0, timer:0, transitionFrom:0, gesture:null,
+  lift:38,bounce:.08,sweep:500,radius:46 };
+const pieces={};
+
+function makePath(d,cls) { const el=document.createElementNS(SVGNS,"path"); el.setAttribute("d",d); el.setAttribute("class",cls); return el; }
+function makeSvg() {
+  const s=document.createElementNS(SVGNS,"svg"); s.setAttribute("viewBox",VIEWBOX); s.setAttribute("aria-hidden","true");
+  const g=document.createElementNS(SVGNS,"g"); g.setAttribute("transform",FLIP); s.appendChild(g); return {svg:s,g};
+}
+function makePiece(id) {
+  const shell=document.getElementById(id+"Shell"), {svg,g}=makeSvg();
+  const defs=document.createElementNS(SVGNS,"defs"), grad=document.createElementNS(SVGNS,"linearGradient");
+  grad.id="shade-"+id; grad.setAttribute("gradientUnits","userSpaceOnUse");
+  grad.setAttribute("x1","0"); grad.setAttribute("y1","900"); grad.setAttribute("x2","900"); grad.setAttribute("y2","0");
+  [["0%","#fff",".38"],["40%","#fff","0"],["100%","#000",".68"]].forEach(([offset,color,opacity])=>{
+    const stop=document.createElementNS(SVGNS,"stop"); stop.setAttribute("offset",offset);
+    stop.setAttribute("stop-color",color); stop.setAttribute("stop-opacity",opacity); grad.appendChild(stop);
+  });
+  defs.appendChild(grad); svg.insertBefore(defs,g);
+  const edges=Array.from({length:6},()=>{const e=makePath(OUTLINES[id][0],"edge"); g.appendChild(e); return e;});
+  const face=makePath(OUTLINES[id][0],"face"), shade=makePath(OUTLINES[id][0],"shade");
+  shade.setAttribute("fill","url(#shade-"+id+")"); g.append(face,shade); shell.appendChild(svg);
+  if(id==="final") {
+    const hit=document.createElement("button"); hit.type="button"; hit.className="hit";
+    hit.id="finalHit"; hit.setAttribute("aria-label","Lift final ㄴ"); shell.appendChild(hit);
+    pieces[id]={shell,edges,face,shade,hit};
+  } else pieces[id]={shell,edges,face,shade};
+}
+Object.keys(OUTLINES).forEach(makePiece);
+const slotSvg=makeSvg(), slotPath=makePath(OUTLINES.final[0],"slot-path");
+slotSvg.g.appendChild(slotPath); document.getElementById("slotPlane").appendChild(slotSvg.svg);
+const shadowSvg=makeSvg(), shadowPath=makePath(OUTLINES.final[0],"shadow-path");
+shadowSvg.g.appendChild(shadowPath); document.getElementById("shadows").appendChild(shadowSvg.svg);
+const shadowSvgEl=shadowSvg.svg;
+
+function tokenize(d) { return d.match(/[A-Za-z]|-?\d+(?:\.\d+)?/g).map(v=>/[A-Za-z]/.test(v)?v:Number(v)); }
+const morph={};
+for(const id of Object.keys(OUTLINES)) {
+  const a=tokenize(OUTLINES[id][0]), b=tokenize(OUTLINES[id][1]);
+  if(a.length!==b.length||a.some((v,i)=>typeof v!==typeof b[i]||(typeof v==="string"&&v!==b[i]))) throw Error("Outline topology mismatch: "+id);
+  morph[id]=[a,b];
+}
+function pathAt(id,p) {
+  const [a,b]=morph[id]; return a.map((v,i)=>typeof v==="string"?v:Number((v+(b[i]-v)*p).toFixed(2))).join(" ");
+}
+function clamp(v,min,max) { return Math.min(max,Math.max(min,v)); }
+function reduced() { return systemReduce.matches||ui.forceReduce.checked; }
+function travel() { return stage.clientWidth*.25; } // Intended removal path points downward.
+function projectedProgress(y) { return clamp(y/travel(),0,1); } // Lateral x never changes the morph.
+function seatCenter() { const r=stage.getBoundingClientRect(); return {x:r.left+r.width*.512,y:r.top+r.height*.58}; }
+function pulse(ids) {
+  if(reduced()||state.mode==="flat") return;
+  ids.forEach(id=>{ const el=pieces[id].shade; el.classList.remove("pulse"); void el.getBoundingClientRect(); el.classList.add("pulse"); });
+}
+function render() {
+  const quiet=reduced(), p=state.p, edgePx=quiet||state.mode==="flat"?0:Math.min(13,state.lift*.28)*p;
+  const edgeFont=edgePx*1560/stage.clientWidth/6;
+  for(const id of Object.keys(pieces)) {
+    const part=pieces[id], d=pathAt(id,p); part.face.setAttribute("d",d); part.shade.setAttribute("d",d);
+    part.edges.forEach((e,j)=>{e.setAttribute("d",d); e.setAttribute("transform",`translate(${((j+1)*edgeFont).toFixed(2)} ${(-(j+1)*edgeFont).toFixed(2)})`);});
+    if(id==="final") {
+      const z=quiet||state.mode==="flat"?0:state.lift*p;
+      part.shell.style.transform=`translate3d(${state.x.toFixed(2)}px,${state.y.toFixed(2)}px,${z.toFixed(2)}px)`;
+      part.hit.setAttribute("aria-label",p>.5?"Return final ㄴ to 난":"Lift final ㄴ from 난");
+    }
+  }
+  shadowPath.setAttribute("d",pathAt("final",p));
+  shadowSvgEl.style.transform=`translate(${(state.x*.35).toFixed(2)}px,${(state.y*.35).toFixed(2)}px)`;
+  shadowSvgEl.style.opacity=quiet||state.mode==="flat"?"0":String(.06+.28*p);
+  stage.className=`stage ${state.phase} ${state.mode} ${quiet?"reduced":""} ${stage.classList.contains("fading")?"fading":""}`;
+  stage.style.setProperty("--sweep-duration",state.sweep+"ms");
+  ui.syllable.textContent=p===1?"나 + ㄴ":p===0?"난":"난 → 나 + ㄴ";
+  ui.state.textContent=state.phase;
+  ui.status.innerHTML=state.phase==="closed"?"<strong>난</strong> is assembled. Tap it or use Open.":
+    state.phase==="ready"?(quiet?"<strong>난</strong> is ready. Tap final ㄴ to switch states.":"<strong>난</strong> is ready. Tap or drag its final ㄴ."):
+    state.phase==="detached"?(quiet?"<strong>나 + ㄴ</strong>. Tap the slot to return ㄴ.":"<strong>나 + ㄴ</strong>. Tap the marked slot or return ㄴ."):
+    state.phase==="dragging"?"Move ㄴ to the slot, then release to seat it.":"The letters are settling.";
+  ui.openClose.textContent=state.phase==="closed"?"Open":"Close";
+  ui.openClose.disabled=state.phase==="dragging"||state.phase==="settling"||state.phase==="detached";
+  ui.liftReturn.textContent=state.p>.5?"Return ㄴ":"Lift ㄴ";
+  ui.liftReturn.disabled=state.phase==="closed"||state.phase==="dragging"||state.phase==="settling";
+  ui.undo.disabled=!state.history.length||state.phase==="dragging"||state.phase==="settling";
+  ui.slot.tabIndex=state.phase==="detached"?0:-1;
+  ui.relief.setAttribute("aria-pressed",String(state.mode==="relief"));
+  ui.flat.setAttribute("aria-pressed",String(state.mode==="flat"));
+  stage.setAttribute("aria-label",p===1?"나 plus detached final ㄴ":"Syllable 난");
+}
+function setPhase(v) { state.phase=v; render(); }
+function openClose() {
+  if(state.phase==="closed") { setPhase("ready"); pulse(["initial","vowel","final"]); }
+  else if(state.phase==="ready") { setPhase("closed"); pulse(["initial","vowel","final"]); }
+}
+function stopAnimation() { cancelAnimationFrame(state.anim); clearTimeout(state.timer); state.anim=0; state.timer=0; }
+function finishAt(to,old,record=true) {
+  state.x=0; state.y=to?travel():0; state.p=to;
+  if(record&&old!==to) state.history.push(old);
+  setPhase(to?"detached":"ready");
+}
+function animateTo(to,record=true,oldOverride=null,pulseLift=true) {
+  if(state.phase==="closed") return;
+  stopAnimation();
+  const old=oldOverride===null?(state.p>=.5?1:0):oldOverride, fromX=state.x,fromY=state.y,targetY=to?travel():0;
+  state.transitionFrom=old;
+  if(reduced()) {
+    state.phase="settling"; render(); stage.classList.add("fading");
+    state.timer=setTimeout(()=>{ state.timer=0; finishAt(to,old,record); requestAnimationFrame(()=>stage.classList.remove("fading")); },85);
+    return;
+  }
+  state.phase="settling";
+  if(to&&old!==1&&pulseLift) pulse(["final"]); // The return is intentionally quiet.
+  const duration=to?430:350, start=performance.now();
+  const tick=now=>{
+    const t=clamp((now-start)/duration,0,1), ease=1-Math.pow(1-t,3);
+    const overshoot=to?0:Math.sin(Math.PI*t)*Math.pow(1-t,2)*state.bounce;
+    state.x=fromX*(1-ease); state.y=fromY+(targetY-fromY)*(ease+overshoot);
+    state.p=projectedProgress(state.y); render();
+    if(t<1) state.anim=requestAnimationFrame(tick); else {state.anim=0; finishAt(to,old,record);}
+  };
+  state.anim=requestAnimationFrame(tick);
+}
+function liftOrReturn() { if(state.phase==="ready") animateTo(1); else if(state.phase==="detached") animateTo(0); }
+function undo() {
+  if(!state.history.length||state.phase==="dragging"||state.phase==="settling") return;
+  const to=state.history.pop(); if(state.phase==="closed") setPhase("ready"); animateTo(to,false);
+}
+function reset() {
+  stopAnimation(); state.gesture=null; state.history=[]; stage.classList.remove("fading");
+  state.x=0; state.y=0; state.p=0; setPhase("closed");
+}
+function point(e) { const r=stage.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top}; }
+function pointerDown(e) {
+  if(state.phase!=="ready"&&state.phase!=="detached") return;
+  e.preventDefault(); e.stopPropagation();
+  const q=point(e); state.gesture={id:e.pointerId,start:q,baseX:state.x,baseY:state.y,
+    old:state.p>.5?1:0,moved:false};
+  pieces.final.hit.setPointerCapture(e.pointerId);
+}
+function pointerMove(e) {
+  const g=state.gesture; if(!g||e.pointerId!==g.id) return;
+  if(reduced()) return; // Tap and button paths remain available without moving the piece.
+  const q=point(e), dx=q.x-g.start.x,dy=q.y-g.start.y;
+  if(Math.hypot(dx,dy)<6&&!g.moved) return;
+  if(!g.moved&&g.old===0) pulse(["final"]);
+  g.moved=true; state.phase="dragging";
+  // Pointer movement is direct within the stage's safe visible area; x affects position, not morphing.
+  state.x=clamp(g.baseX+dx,-stage.clientWidth*.2,stage.clientWidth*.2);
+  state.y=clamp(g.baseY+dy,-stage.clientWidth*.12,stage.clientWidth*.29);
+  state.p=projectedProgress(state.y); render();
+}
+function pointerUp(e) {
+  const g=state.gesture; if(!g||e.pointerId!==g.id) return;
+  e.preventDefault(); e.stopPropagation(); state.gesture=null;
+  if(!g.moved) { setPhase(g.old?"detached":"ready"); animateTo(g.old?0:1); return; }
+  const seat=seatCenter(), anchor={x:seat.x+state.x,y:seat.y+state.y};
+  const inside=Math.hypot(anchor.x-seat.x,anchor.y-seat.y)<=state.radius;
+  // Even an intermediate drag always settles at a complete endpoint.
+  setPhase("dragging"); animateTo(inside?0:1,true,g.old,false);
+}
+function pointerCancel(e) {
+  const g=state.gesture; if(!g||e.pointerId!==g.id) return;
+  state.gesture=null; stopAnimation(); finishAt(g.old,g.old,false);
+}
+pieces.final.hit.addEventListener("pointerdown",pointerDown);
+pieces.final.hit.addEventListener("pointermove",pointerMove);
+pieces.final.hit.addEventListener("pointerup",pointerUp);
+pieces.final.hit.addEventListener("pointercancel",pointerCancel);
+pieces.final.hit.addEventListener("click",e=>{e.stopPropagation(); if(e.detail===0&&state.phase!=="dragging") liftOrReturn();});
+pieces.final.hit.addEventListener("keydown",e=>{
+  if(e.key==="Escape"&&state.gesture){e.preventDefault();pointerCancel({pointerId:state.gesture.id});}
+});
+document.addEventListener("keydown",e=>{
+  if(e.key!=="Escape") return;
+  if(state.gesture) { e.preventDefault(); pointerCancel({pointerId:state.gesture.id}); }
+  else if(state.phase==="settling") { e.preventDefault(); stopAnimation(); stage.classList.remove("fading"); finishAt(state.transitionFrom,state.transitionFrom,false); }
+});
+let lastStageTouch=0,lastSlotTouch=0,stageTouch=null;
+ui.slot.addEventListener("pointerup",e=>{
+  if(e.pointerType!=="touch") return;
+  e.preventDefault();e.stopPropagation();lastSlotTouch=performance.now();
+  if(state.phase==="detached") animateTo(0);
+});
+ui.slot.addEventListener("click",e=>{
+  e.stopPropagation();if(performance.now()-lastSlotTouch<500) return;
+  if(state.phase==="detached") animateTo(0);
+});
+stage.addEventListener("pointerdown",e=>{
+  if(e.pointerType!=="touch"||e.target.closest("button")) return;
+  stageTouch={id:e.pointerId,x:e.clientX,y:e.clientY};
+});
+stage.addEventListener("pointerup",e=>{
+  if(!stageTouch||e.pointerId!==stageTouch.id) return;
+  const tap=Math.hypot(e.clientX-stageTouch.x,e.clientY-stageTouch.y)<10;
+  stageTouch=null;if(!tap) return;
+  e.preventDefault();lastStageTouch=performance.now();openClose();
+});
+stage.addEventListener("pointercancel",()=>{stageTouch=null;});
+stage.addEventListener("click",e=>{
+  if(performance.now()-lastStageTouch<500) return;
+  if(e.target===stage||e.target.closest(".piece-shell")&&!e.target.closest("button")) openClose();
+});
+ui.openClose.addEventListener("click",openClose);
+ui.liftReturn.addEventListener("click",liftOrReturn);
+ui.undo.addEventListener("click",undo);
+ui.reset.addEventListener("click",reset);
+ui.relief.addEventListener("click",()=>{state.mode="relief";render();});
+ui.flat.addEventListener("click",()=>{state.mode="flat";render();});
+ui.forceReduce.addEventListener("change",()=>{ if(state.gesture) pointerCancel({pointerId:state.gesture.id}); render(); });
+systemReduce.addEventListener("change",()=>{ if(state.gesture) pointerCancel({pointerId:state.gesture.id}); render(); });
+for(const [key,unit] of [["lift"," px"],["bounce",""],["sweep"," ms"],["radius"," px"]]) {
+  ui[key].addEventListener("input",()=>{state[key]=Number(ui[key].value);
+    document.getElementById(key+"Value").textContent=(key==="bounce"?state[key].toFixed(2):state[key])+unit; render();});
+}
+ui.copy.addEventListener("click",async()=>{
+  const json=JSON.stringify({mode:state.mode,liftHeightPx:state.lift,settleBounce:state.bounce,
+    sweepDurationMs:state.sweep,slotRadiusPx:state.radius});
+  try { await navigator.clipboard.writeText(json); ui.settings.textContent="Copied: "+json; }
+  catch { ui.settings.textContent="Copy manually: "+json; }
+});
+window.addEventListener("resize",()=>{ if(!state.gesture&&state.phase==="detached") state.y=travel(); render(); });
+render();
+</script>
+</body>
+</html>
