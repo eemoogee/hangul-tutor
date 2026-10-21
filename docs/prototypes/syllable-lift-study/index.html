@@ -1,0 +1,546 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- Copy of the Claude artifact "Syllable Lift Study" (version 11, 2026-10-20). Contour data: noto-contours.json. -->
+<title>Syllable Lift Study</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="color-scheme" content="light dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans+KR:wght@400;600&display=swap">
+<style>
+/* Layout: one specimen stage on a celadon-grey "page", controls stacked beneath like a type specimen sheet */
+:root {
+  --page: #e9eeeb;
+  --sheet: #f6f8f6;
+  --ink: #18222b;
+  --muted: #5b6b68;
+  --accent: #2f7d6f;
+  --accent-soft: rgb(47 125 111 / 0.16);
+  --plate: rgb(47 125 111 / 0.14);
+  --plate-edge: rgb(47 125 111 / 0.55);
+  --edge-ink: #55625f;
+  --edge-pick: #1d5248;
+  --shadow: rgb(20 40 36 / 0.42);
+  --ghost: rgb(24 34 43 / 0.32);
+  --line: rgb(24 34 43 / 0.12);
+  --sans: "IBM Plex Sans KR", "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #101618; --sheet: #172024; --ink: #e4ece8; --muted: #93a6a1;
+    --accent: #6cc4b2; --accent-soft: rgb(108 196 178 / 0.18);
+    --plate: rgb(108 196 178 / 0.14); --plate-edge: rgb(108 196 178 / 0.6);
+    --edge-ink: #6b7d78; --edge-pick: #3a8676;
+    --shadow: rgb(0 0 0 / 0.7); --ghost: rgb(228 236 232 / 0.3); --line: rgb(228 236 232 / 0.12);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #101618; --sheet: #172024; --ink: #e4ece8; --muted: #93a6a1;
+  --accent: #6cc4b2; --accent-soft: rgb(108 196 178 / 0.18);
+  --plate: rgb(108 196 178 / 0.14); --plate-edge: rgb(108 196 178 / 0.6);
+  --edge-ink: #6b7d78; --edge-pick: #3a8676;
+  --shadow: rgb(0 0 0 / 0.7); --ghost: rgb(228 236 232 / 0.3); --line: rgb(228 236 232 / 0.12);
+  color-scheme: dark;
+}
+
+body {
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+}
+.wrap {
+  max-width: 520px;
+  margin: 0 auto;
+  padding-block: 20px 40px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid;
+  gap: 16px;
+}
+header { display: grid; gap: 4px; }
+.eyebrow {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--accent);
+}
+h1 { margin: 0; font-size: 26px; line-height: 1.15; font-weight: 600; text-wrap: balance; }
+.lede { margin: 0; color: var(--muted); max-width: 60ch; }
+
+/* ---------- stage ---------- */
+.stage-card {
+  background: var(--sheet);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  display: grid;
+  gap: 0;
+  overflow: visible;
+}
+.stage-bar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 14px; border-bottom: 1px solid var(--line);
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
+}
+.stage-bar b { color: var(--ink); font-weight: 500; }
+.stage {
+  --size: min(84vw, 400px);
+  position: relative;
+  width: var(--size);
+  max-width: 100%;
+  aspect-ratio: 1;
+  margin: 8px auto;
+  perspective: calc(var(--size) * 2.6);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+  outline: none;
+}
+.stage:focus-visible { box-shadow: 0 0 0 3px var(--accent-soft); border-radius: 12px; }
+.orbit, .frame, .layer, .par {
+  position: absolute; inset: 0; transform-style: preserve-3d; pointer-events: none;
+}
+.orbit { transition: transform 140ms ease-out; }
+/* shadows live on their own flat layer, painted first, so a bouncing letter can never pass under one */
+.shadows { position: absolute; inset: 0; pointer-events: none; }
+.frame { transition: transform 760ms cubic-bezier(0.3, 1.12, 0.4, 1); }
+.layer {
+  transition: transform var(--dur, 620ms) cubic-bezier(0.3, var(--bounce, 1.5), 0.5, 1),
+              opacity 260ms ease;
+}
+.par { transition: transform 120ms ease-out; }
+.layer svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.glyph { fill: var(--ink); transition: opacity 260ms ease, fill 260ms ease; }
+.edge { fill: var(--edge-ink); }
+.piece.picked .edge { fill: var(--edge-pick); }
+.piece.dim .edge { fill: var(--line); }
+/* face shading: light at the top-left, shadow at the bottom-right, as if the face turns in the light */
+.shade, .bevel { opacity: 0; transition: opacity 300ms ease; }
+.stage[data-shade="bevel"][data-open="true"] .bevel { opacity: 1; }
+.stage[data-shade="always"][data-open="true"] .shade { opacity: 0.9; }
+.stage[data-shade="motion"][data-open="true"] .shade { opacity: 0.12; }
+.stage[data-shade="motion"] .piece.pulse .shade { animation: shadePulse 1000ms ease-out; }
+@keyframes shadePulse { 0% { opacity: 0; } 30% { opacity: 1; } 55% { opacity: 0.85; } 100% { opacity: 0.12; } }
+@media (prefers-reduced-motion: reduce) { .stage .piece.pulse .shade { animation: none; } }
+.hit { fill: transparent; stroke: transparent; stroke-width: 90; pointer-events: all; }
+.piece.dim .glyph { fill: var(--muted); }
+.piece.picked .glyph { fill: var(--accent); }
+.outline { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; opacity: 0; transition: opacity 200ms ease; }
+.piece.picked .outline { opacity: 1; }
+.plate { fill: var(--plate); stroke: var(--plate-edge); stroke-width: 1.5; vector-effect: non-scaling-stroke; opacity: 0; transition: opacity 320ms ease; }
+.stage[data-mode="layers"][data-open="true"] .plate { opacity: 1; }
+.sheen { fill: url(#sheen); opacity: 0; transition: opacity 320ms ease; }
+.stage[data-mode="layers"][data-open="true"] .sheen { opacity: 0.45; }
+.stage[data-mode="layers"][data-open="true"] .piece.picked .sheen { opacity: 1; }
+/* the peeling corner: a triangle hinged on its diagonal, filling the corner cut from the plate */
+.flap {
+  position: absolute; pointer-events: none; opacity: 0; transform-origin: 50% 50%;
+  transition: transform 520ms cubic-bezier(0.3, 1.45, 0.5, 1), opacity 320ms ease;
+}
+.stage[data-mode="layers"][data-open="true"] .flap { opacity: 1; }
+.shadow .glyph { fill: var(--shadow); }
+.shadow { filter: blur(calc(var(--size) * 0.012)); opacity: 0; }
+.ghosts path { fill: none; stroke: var(--ghost); stroke-width: 1.2; stroke-dasharray: 5 5; vector-effect: non-scaling-stroke; }
+.ghosts { opacity: 0; transition: opacity 300ms ease; }
+.stage[data-open="true"] .ghosts { opacity: 1; }
+
+.status { text-align: center; color: var(--muted); font-size: 13px; padding: 0 14px 12px; min-height: 1.5em; }
+
+/* ---------- controls ---------- */
+.controls { display: grid; gap: 14px; }
+.row { display: grid; gap: 6px; }
+.label {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
+  display: flex; justify-content: space-between;
+}
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; background: var(--line); padding: 4px; border-radius: 10px; }
+.seg button {
+  font: inherit; color: var(--ink); background: transparent; border: 0; border-radius: 7px;
+  padding: 9px 6px; cursor: pointer; display: grid; gap: 1px; line-height: 1.25;
+}
+.seg button small { font-size: 11px; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--sheet); box-shadow: 0 1px 2px rgb(0 0 0 / 0.12); font-weight: 600; }
+.seg button:focus-visible, .btn:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.seg.syl button { font-size: 20px; }
+.pieces { display: flex; flex-wrap: wrap; gap: 6px; }
+.pieces button {
+  font: inherit; font-size: 13px; color: var(--ink); background: var(--sheet); border: 1px solid var(--line);
+  border-radius: 999px; padding: 6px 12px; cursor: pointer;
+}
+.pieces button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.pieces button:disabled { opacity: 0.45; cursor: default; }
+.sliders { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn {
+  font: inherit; font-weight: 600; border-radius: 9px; padding: 10px 16px; cursor: pointer;
+  border: 1px solid var(--accent); background: var(--accent); color: var(--sheet);
+}
+.btn.ghost { background: transparent; color: var(--accent); }
+.notes { border-top: 1px solid var(--line); padding-top: 14px; color: var(--muted); font-size: 13px; display: grid; gap: 8px; }
+.notes p { margin: 0; max-width: 65ch; }
+.notes b { color: var(--ink); font-weight: 600; }
+.copied { font-size: 12px; color: var(--accent); align-self: center; }
+
+@media (prefers-reduced-motion: reduce) {
+  .layer, .frame, .orbit, .par { transition-duration: 1ms !important; }
+}
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">Hangul Tutor · motion study</span>
+    <h1>Open the syllable without turning it</h1>
+    <p class="lede">The pieces are the real font outlines, cut apart. Tap the syllable to open it, then tap a piece to lift it. Move your finger across the stage to tilt the light.</p>
+  </header>
+
+  <section class="stage-card" aria-label="Syllable stage">
+    <div class="stage-bar"><span>Syllable <b id="sylName">나</b></span><span id="stateName">closed</span></div>
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs><linearGradient id="sheen" x1="0" y1="1" x2="0.75" y2="0.25"><stop offset="0" stop-color="#fff" stop-opacity="0.55"/><stop offset="0.6" stop-color="#fff" stop-opacity="0"/></linearGradient><linearGradient id="face" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0.4"/><stop offset="0.4" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.75"/></linearGradient></defs></svg>
+    <div class="stage" id="stage" tabindex="0" role="button" aria-label="Open or close the syllable" data-mode="layers" data-open="false" data-shade="motion">
+      <div class="shadows" id="shadows"></div>
+      <div class="orbit" id="orbit">
+        <div class="frame" id="frame"></div>
+      </div>
+    </div>
+    <div class="status" id="status" aria-live="polite">Tap the syllable to open it.</div>
+  </section>
+
+  <div class="controls">
+    <div class="row">
+      <span class="label">Syllable</span>
+      <div class="seg syl" id="sylSeg" role="group" aria-label="Syllable"></div>
+    </div>
+    <div class="row">
+      <span class="label">Depth style</span>
+      <div class="seg" id="modeSeg" role="group" aria-label="Depth style">
+        <button type="button" id="mode-lift" data-mode="lift" aria-pressed="false">Lift<small>Flat, with shadows</small></button>
+        <button type="button" id="mode-layers" data-mode="layers" aria-pressed="true">Layers<small>Pieces rise toward you</small></button>
+      </div>
+    </div>
+    <div class="row">
+      <span class="label">Face shading</span>
+      <div class="seg" id="shadeSeg" role="group" aria-label="Face shading">
+        <button type="button" id="shade-off" data-shade="off" aria-pressed="false">Off</button>
+        <button type="button" id="shade-motion" data-shade="motion" aria-pressed="true">On lift</button>
+        <button type="button" id="shade-always" data-shade="always" aria-pressed="false">Always</button>
+        <button type="button" id="shade-bevel" data-shade="bevel" aria-pressed="false">Bevel</button>
+      </div>
+    </div>
+    <div class="row">
+      <span class="label">Inspect a piece</span>
+      <div class="pieces" id="pieceRow"></div>
+    </div>
+    <div class="sliders">
+      <div class="row">
+        <label class="label" for="dist">Distance <span id="distVal">1.0×</span></label>
+        <input type="range" id="dist" min="0.5" max="1.8" step="0.1" value="1">
+      </div>
+      <div class="row">
+        <label class="label" for="bounce">Bounce <span id="bounceVal">1.5</span></label>
+        <input type="range" id="bounce" min="1" max="2" step="0.05" value="1.5">
+      </div>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn" id="toggle">Open</button>
+      <button type="button" class="btn ghost" id="copy">Copy settings</button>
+      <span class="copied" id="copied" aria-live="polite"></span>
+    </div>
+  </div>
+
+  <div class="notes">
+    <p><b>What is real.</b> Each piece is a contour from Noto Sans CJK KR Bold. Closed, the pieces sit exactly where the font draws them, so the assembled syllable is the font's own 나, 노 or 난. In this font, 노 is a single joined outline: the ㄴ rests on the top of ㅗ's stem. The study cuts it along that line.</p>
+    <p><b>What is a visual metaphor.</b> Lifting, thickness, shadows and tilt show the parts. They are not how Hangul is written or how it was designed, and the motion is not stroke order.</p>
+    <p><b>Compare.</b> Lift keeps the letters face-on and shows depth with scale, shadow and finger parallax. Layers raises each piece toward you, outer edge first, and shows the letter's thickness. The page underneath never tilts.</p>
+  </div>
+</div>
+
+<script>
+const DATA = {"나": [{"id": "i", "label": "initial ㄴ", "d": "M69 249V138H148C285 138 433 147 587 179L573 287C444 262 318 252 201 250V750H69Z", "b": [69, 138, 587, 750], "dir": [-10, 0], "z": 14}, {"id": "v", "label": "vowel ㅏ", "d": "M632 839V-87H766V378H895V488H766V839Z", "b": [632, -87, 895, 839], "dir": [10, 0], "z": -14}], "노": [{"id": "i", "label": "initial ㄴ", "d": "M135 767V333H791V439H268V767Z", "b": [135, 333, 791, 767], "dir": [0, -9], "z": 14}, {"id": "v", "label": "vowel ㅗ", "d": "M393 333V122H41V15H880V122H526V333Z", "b": [41, 15, 880, 333], "dir": [0, 9], "z": -14}], "난": [{"id": "i", "label": "initial ㄴ", "d": "M78 431V322H156C287 322 430 331 581 361L566 469C441 444 321 434 211 432V776H78Z", "b": [78, 322, 581, 776], "dir": [-8, -5], "z": 18}, {"id": "v", "label": "vowel ㅏ", "d": "M636 837V172H769V466H892V578H769V837Z", "b": [636, 172, 892, 837], "dir": [9, -4], "z": 0}, {"id": "f", "label": "final ㄴ", "d": "M173 234V-73H799V34H307V234Z", "b": [173, -73, 799, 234], "dir": [0, 10], "z": -18}]};
+const VB = "-312 -276 1560 1560";
+const FLIP = "translate(0 880) scale(1 -1)";
+const SVGNS = "http://www.w3.org/2000/svg";
+
+const state = { syl: "나", mode: "layers", open: false, pick: null, dist: 1, bounce: 1.5, px: 0, py: 0 };
+const stage = document.getElementById("stage");
+const frame = document.getElementById("frame");
+const orbit = document.getElementById("orbit");
+const shadowsEl = document.getElementById("shadows");
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let els = [];
+
+function svg(children) {
+  const s = document.createElementNS(SVGNS, "svg");
+  s.setAttribute("viewBox", VB);
+  s.setAttribute("aria-hidden", "true");
+  const g = document.createElementNS(SVGNS, "g");
+  g.setAttribute("transform", FLIP);
+  children.forEach(c => g.appendChild(c));
+  s.appendChild(g);
+  return s;
+}
+function path(d, cls) {
+  const p = document.createElementNS(SVGNS, "path");
+  p.setAttribute("d", d); p.setAttribute("class", cls); return p;
+}
+function rect(b, cls) {
+  const r = document.createElementNS(SVGNS, "rect");
+  const pad = 34;
+  r.setAttribute("x", b[0] - pad); r.setAttribute("y", b[1] - pad);
+  r.setAttribute("width", b[2] - b[0] + pad * 2); r.setAttribute("height", b[3] - b[1] + pad * 2);
+  r.setAttribute("rx", 26); r.setAttribute("class", cls); return r;
+}
+function div(cls) { const d = document.createElement("div"); d.className = cls; return d; }
+
+// Shading gradients for one piece, laid over a square sized by its longest side, so a thin ㅏ
+// shades as strongly as a wide ㄴ. Coordinates are font units (the path's own space).
+function gradDefs(b, gid) {
+  const cx = (b[0] + b[2]) / 2, cy = (b[1] + b[3]) / 2, h = Math.max(b[2] - b[0], b[3] - b[1]) / 2;
+  const defs = document.createElementNS(SVGNS, "defs");
+  const make = (id, stops) => {
+    const g = document.createElementNS(SVGNS, "linearGradient");
+    g.setAttribute("id", id); g.setAttribute("gradientUnits", "userSpaceOnUse");
+    g.setAttribute("x1", cx - h); g.setAttribute("y1", cy + h);   // top-left (font y runs up)
+    g.setAttribute("x2", cx + h); g.setAttribute("y2", cy - h);   // bottom-right
+    stops.forEach(([o, c, a]) => {
+      const s = document.createElementNS(SVGNS, "stop");
+      s.setAttribute("offset", o); s.setAttribute("stop-color", c); s.setAttribute("stop-opacity", a);
+      g.appendChild(s);
+    });
+    defs.appendChild(g);
+  };
+  make(`face-${gid}`, [[0, "#fff", 0.4], [0.4, "#fff", 0], [1, "#000", 0.75]]);
+  make(`bevel-${gid}`, [[0, "#000", 0], [0.66, "#000", 0], [0.72, "#000", 0.38], [1, "#000", 0.5]]);
+  return defs;
+}
+
+// Thickness is tweened by script, writing the SVG transform attribute each frame. A CSS transition on
+// these paths made Chrome drop the whole letter for a few frames while it moved in 3D.
+let edgeAnim = 0;
+function tweenEdges() {
+  const start = performance.now(), dur = reduce ? 1 : 520;
+  els.forEach(({ edges }) => { edges.from = edges.cur || 0; });
+  cancelAnimationFrame(edgeAnim);
+  const tick = now => {
+    const k = Math.min(1, (now - start) / dur), ease = 1 - Math.pow(1 - k, 3);
+    els.forEach(({ edges }) => {
+      const v = edges.from + ((edges.target || 0) - edges.from) * ease;
+      edges.cur = v;
+      edges.forEach((e, j) => e.setAttribute("transform", `translate(${(j + 1) * v} ${-(j + 1) * v})`));
+    });
+    if (k < 1) edgeAnim = requestAnimationFrame(tick);
+  };
+  edgeAnim = requestAnimationFrame(tick);
+}
+
+const PAD = 34, RAD = 26, FLAP = 96;
+// A plate around a piece: rounded corners, except the outer corner, which is cut off for the flap.
+function platePath(b, sx, sy) {
+  const x0 = b[0] - PAD, y0 = b[1] - PAD, x1 = b[2] + PAD, y1 = b[3] + PAD;
+  // screen order TL, TR, BR, BL; font y runs upward, so screen top is y1
+  const pts = [[x0, y1, -1, -1], [x1, y1, 1, -1], [x1, y0, 1, 1], [x0, y0, -1, 1]]
+    .map(([x, y, cx, cy]) => ({ x, y, cut: cx === sx && cy === sy }));
+  const along = (a, c, d) => { const dx = c.x - a.x, dy = c.y - a.y, L = Math.hypot(dx, dy); return [a.x + dx / L * d, a.y + dy / L * d]; };
+  const io = k => { const c = pts[k], d = c.cut ? FLAP : RAD; return { c, in: along(c, pts[(k + 3) % 4], d), out: along(c, pts[(k + 1) % 4], d) }; };
+  const first = io(0);
+  let d = `M${first.out[0]} ${first.out[1]}`;
+  for (let j = 1; j <= 4; j++) {
+    const q = io(j % 4);
+    d += `L${q.in[0]} ${q.in[1]}`;
+    d += q.c.cut ? `L${q.out[0]} ${q.out[1]}` : `Q${q.c.x} ${q.c.y} ${q.out[0]} ${q.out[1]}`;
+  }
+  return d + "Z";
+}
+// The flap that fills the cut corner and peels up toward the viewer.
+function makeFlap(b, sx, sy) {
+  const f = div("flap");
+  const cxF = sx > 0 ? b[2] + PAD : b[0] - PAD;
+  const cyF = sy > 0 ? b[1] - PAD : b[3] + PAD;
+  const X = v => (v + 312) / 15.6, Y = v => (880 - v + 276) / 15.6, L = FLAP / 15.6;
+  f.style.width = f.style.height = L + "%";
+  f.style.left = (sx > 0 ? X(cxF) - L : X(cxF)) + "%";
+  f.style.top = (sy > 0 ? Y(cyF) - L : Y(cyF)) + "%";
+  const ax = sx > 0 ? "100%" : "0%", ay = sy > 0 ? "100%" : "0%";
+  const bx = sx > 0 ? "0%" : "100%", by = sy > 0 ? "0%" : "100%";
+  f.style.clipPath = `polygon(${ax} ${ay}, ${ax} ${by}, ${bx} ${ay})`;
+  const ang = sx > 0 ? (sy > 0 ? 135 : 45) : (sy > 0 ? 225 : 315);
+  f.style.background = `linear-gradient(${ang}deg, var(--flap) 35%, var(--flap-light))`;
+  f.dataset.ax = -sy; f.dataset.ay = sx;
+  return f;
+}
+
+function build() {
+  frame.textContent = "";
+  shadowsEl.textContent = "";
+  const pieces = DATA[state.syl];
+  const ghosts = div("layer ghosts");
+  ghosts.appendChild(svg(pieces.map(p => path(p.d, ""))));
+  frame.appendChild(ghosts);
+  els = pieces.map((p, i) => {
+    const shadow = div("layer shadow");
+    const sPar = div("par");
+    sPar.appendChild(svg([path(p.d, "glyph")]));
+    shadow.appendChild(sPar);
+    const piece = div("layer piece");
+    const par = div("par");
+    const hit = path(p.d, "hit");
+    hit.dataset.id = p.id;
+    const edges = [1, 2, 3, 4, 5, 6].map(() => path(p.d, "edge"));   // stacked copies form the letter's side
+    const gid = `${Object.keys(DATA).indexOf(state.syl)}${p.id}`;
+    const shadeP = path(p.d, "shade"), bevelP = path(p.d, "bevel");
+    shadeP.style.fill = `url(#face-${gid})`;
+    bevelP.style.fill = `url(#bevel-${gid})`;
+    const s = svg([...edges, path(p.d, "glyph"), shadeP, bevelP, path(p.d, "outline"), hit]);
+    s.insertBefore(gradDefs(p.b, gid), s.firstChild);
+    par.appendChild(s);
+    piece.appendChild(par);
+    shadowsEl.appendChild(shadow);
+    frame.appendChild(piece);
+    return { p, i, shadow, sPar, piece, par, edges };
+  });
+  document.getElementById("sylName").textContent = state.syl;
+  const row = document.getElementById("pieceRow");
+  row.textContent = "";
+  pieces.forEach(p => {
+    const b = document.createElement("button");
+    b.type = "button"; b.id = "pick-" + p.id; b.textContent = p.label; b.dataset.id = p.id;
+    b.addEventListener("click", () => { if (!state.open) setOpen(true); pick(p.id); });
+    row.appendChild(b);
+  });
+}
+
+function render() {
+  const u = stage.clientWidth / 100;
+  const { open, mode, pick: picked, dist, px, py } = state;
+  stage.dataset.open = open; stage.dataset.mode = mode;
+  stage.style.setProperty("--bounce", state.bounce);
+  const n = els.length;
+  els.forEach(({ p, i, shadow, sPar, piece, par, edges }) => {
+    const isPick = picked === p.id;
+    const delay = open ? i * 45 : (n - 1 - i) * 35;
+    piece.style.transitionDelay = shadow.style.transitionDelay = delay + "ms";
+    let t = "translate3d(0,0,0)", st = "translate3d(0,0,-2px)", sOp = 0, parT = "translate(0,0)", sParT = "translate(0,0)";
+    if (open && mode === "lift") {
+      const dx = p.dir[0] * dist, dy = p.dir[1] * dist;
+      const lift = isPick ? 2.2 : 1;
+      const sc = isPick ? 1.12 : 1.05;
+      t = `translate3d(${dx}%, ${dy}%, 1px) scale(${sc})`;   // never at the shadow's depth: same-depth layers flicker in 3D
+      st = `translate3d(${dx + 1.4 * lift}%, ${dy + 2.4 * lift}%, -2px) scale(${sc})`;
+      sOp = picked && !isPick ? 0.25 : (isPick ? 0.85 : 0.6);
+      parT = `translate(${px * 1.6 * lift}%, ${py * 1.6 * lift}%)`;
+      sParT = `translate(${-px * 1.2 * lift}%, ${-py * 1.2 * lift}%)`;
+    } else if (open && mode === "layers") {
+      const dx = p.dir[0] * dist * 0.75, dy = p.dir[1] * dist * 0.75;
+      const lift = isPick ? 2 : 1;
+      const z = ([22, 16, 12][i] * dist + (isPick ? 14 : 0)) * u;
+      const rx = p.dir[1] * 0.9, ry = -p.dir[0] * 0.9;   // outer edge peels up toward the viewer
+      t = `translate3d(${dx}%, ${dy}%, ${z}px) rotateX(${rx}deg) rotateY(${ry}deg)`;
+      st = `translate3d(${dx + 1.2 * lift}%, ${dy + 2.2 * lift}%, -2px) scale(${1 + 0.05 * lift})`;   // the shadow stays on the page, and spreads as the piece rises
+      sOp = picked && !isPick ? 0.25 : (isPick ? 0.85 : 0.55);
+      parT = `translate(${px * 1.4 * lift}%, ${py * 1.4 * lift}%)`;
+      sParT = `translate(${-px * lift}%, ${-py * lift}%)`;
+    }
+    piece.style.transform = t;
+    shadow.style.transform = st;
+    shadow.style.opacity = sOp;
+    par.style.transform = parT;
+    sPar.style.transform = sParT;
+    edges.target = open ? (isPick ? 6 : 3.5) : 0;   // the letter's thickness appears as it lifts
+    piece.classList.toggle("picked", open && isPick);
+    piece.classList.toggle("dim", open && !!picked && !isPick);
+  });
+  tweenEdges();
+  frame.style.transform = "none";
+  orbit.style.transform = "none";
+  document.getElementById("toggle").textContent = open ? "Close" : "Open";
+  document.getElementById("stateName").textContent = open ? (picked ? "inspecting" : "open") : "closed";
+  document.getElementById("status").textContent = !open
+    ? "Tap the syllable to open it."
+    : picked ? `${labelOf(picked)} is lifted. Tap it again to set it down, or tap empty space to close.`
+             : "Tap a piece to lift it. Tap empty space to close.";
+  document.querySelectorAll("#pieceRow button").forEach(b => {
+    b.setAttribute("aria-pressed", String(open && picked === b.dataset.id));
+  });
+  stage.setAttribute("aria-label", open ? `${state.syl} is open. Activate to close.` : `${state.syl} is closed. Activate to open.`);
+}
+function labelOf(id) { return DATA[state.syl].find(p => p.id === id).label; }
+// replay the shading sweep whenever pieces move
+// ids: which pieces to flash; none given means all. Pieces not listed keep whatever they were doing.
+function pulse(ids) {
+  els.forEach(({ p, piece }) => {
+    if (ids && !ids.includes(p.id)) return;
+    piece.classList.remove("pulse"); void piece.offsetWidth; piece.classList.add("pulse");
+  });
+}
+function setOpen(v) { state.open = v; if (!v) state.pick = null; render(); pulse(); }   // opening and closing flash every piece
+function pick(id) {
+  state.pick = state.pick === id ? null : id;
+  render();
+  if (state.pick) pulse([state.pick]);   // only the newly lifted piece flashes; setting one down is quiet
+}
+
+stage.addEventListener("click", e => {
+  const id = e.target && e.target.dataset ? e.target.dataset.id : null;
+  if (state.open && id) { pick(id); return; }
+  setOpen(!state.open);
+});
+stage.addEventListener("keydown", e => {
+  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(!state.open); }
+  if (e.key === "Escape") setOpen(false);
+});
+stage.addEventListener("pointermove", e => {
+  const r = stage.getBoundingClientRect();
+  state.px = Math.max(-1, Math.min(1, ((e.clientX - r.left) / r.width) * 2 - 1));
+  state.py = Math.max(-1, Math.min(1, ((e.clientY - r.top) / r.height) * 2 - 1));
+  if (state.open) render();
+});
+const resetPointer = () => { state.px = 0; state.py = 0; if (state.open) render(); };
+stage.addEventListener("pointerleave", resetPointer);
+stage.addEventListener("pointerup", e => { if (e.pointerType !== "mouse") resetPointer(); });
+stage.addEventListener("pointercancel", resetPointer);
+
+const sylSeg = document.getElementById("sylSeg");
+Object.keys(DATA).forEach((s, i) => {
+  const b = document.createElement("button");
+  b.type = "button"; b.id = "syl-" + i; b.textContent = s; b.setAttribute("aria-pressed", String(s === state.syl));
+  b.addEventListener("click", () => {
+    state.syl = s; state.pick = null;
+    sylSeg.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+    const wasOpen = state.open; state.open = false; build(); render();
+    if (wasOpen) requestAnimationFrame(() => requestAnimationFrame(() => setOpen(true)));
+  });
+  sylSeg.appendChild(b);
+});
+document.querySelectorAll("#modeSeg button").forEach(b => b.addEventListener("click", () => {
+  state.mode = b.dataset.mode;
+  document.querySelectorAll("#modeSeg button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+  render();
+}));
+document.querySelectorAll("#shadeSeg button").forEach(b => b.addEventListener("click", () => {
+  stage.dataset.shade = b.dataset.shade;
+  document.querySelectorAll("#shadeSeg button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+  pulse();
+}));
+document.getElementById("toggle").addEventListener("click", () => setOpen(!state.open));
+const dist = document.getElementById("dist"), bounce = document.getElementById("bounce");
+dist.addEventListener("input", () => { state.dist = +dist.value; document.getElementById("distVal").textContent = (+dist.value).toFixed(1) + "×"; render(); });
+bounce.addEventListener("input", () => { state.bounce = +bounce.value; document.getElementById("bounceVal").textContent = (+bounce.value).toFixed(2); render(); });
+document.getElementById("copy").addEventListener("click", () => {
+  const text = JSON.stringify({ syllable: state.syl, mode: state.mode, distance: state.dist, bounce: state.bounce });
+  const done = msg => { document.getElementById("copied").textContent = msg; };
+  try {
+    navigator.clipboard.writeText(text).then(() => done("Copied"), () => done(text));
+  } catch (err) { done(text); }
+});
+window.addEventListener("resize", () => { if (state.open) render(); });
+
+build(); render();
+if (!reduce) setTimeout(() => { if (!state.open) setOpen(true); }, 700);
+else setOpen(true);
+</script>

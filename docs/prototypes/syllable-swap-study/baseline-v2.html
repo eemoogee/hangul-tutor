@@ -1,0 +1,583 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- Copy of the Claude artifact "Syllable Swap Study" (baseline-v2.html, 2026-10-20). -->
+<title>Syllable Swap Study</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="color-scheme" content="light dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans+KR:wght@400;600&display=swap">
+<style>
+/* Layout: one specimen stage with the letter tray built into its lower edge; status and controls beneath */
+:root {
+  --page: #e9eeeb;
+  --sheet: #f6f8f6;
+  --ink: #18222b;
+  --muted: #8a9895;
+  --accent: #2f7d6f;
+  --accent-soft: rgb(47 125 111 / 0.16);
+  --shadow: rgb(20 40 36 / 0.42);
+  --edge-ink: #55625f;
+  --edge-pick: #1d5248;
+  --ghost: rgb(24 34 43 / 0.28);
+  --line: rgb(24 34 43 / 0.12);
+  --warn: #b0543a;
+  --sans: "IBM Plex Sans KR", "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #101618; --sheet: #172024; --ink: #e4ece8; --muted: #6f807c;
+    --accent: #6cc4b2; --accent-soft: rgb(108 196 178 / 0.18);
+    --shadow: rgb(0 0 0 / 0.7); --edge-ink: #6b7d78; --edge-pick: #3a8676;
+    --ghost: rgb(228 236 232 / 0.28); --line: rgb(228 236 232 / 0.12); --warn: #e08a6c;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #101618; --sheet: #172024; --ink: #e4ece8; --muted: #6f807c;
+  --accent: #6cc4b2; --accent-soft: rgb(108 196 178 / 0.18);
+  --shadow: rgb(0 0 0 / 0.7); --edge-ink: #6b7d78; --edge-pick: #3a8676;
+  --ghost: rgb(228 236 232 / 0.28); --line: rgb(228 236 232 / 0.12); --warn: #e08a6c;
+  color-scheme: dark;
+}
+body { background: var(--page); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.5; }
+.wrap {
+  max-width: 480px; margin: 0 auto;
+  padding-block: 20px 40px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 14px;
+}
+header { display: grid; gap: 4px; }
+.eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
+h1 { margin: 0; font-size: 26px; line-height: 1.15; font-weight: 600; text-wrap: balance; }
+.lede { margin: 0; color: var(--muted); max-width: 60ch; }
+.lede { color: color-mix(in srgb, var(--ink) 62%, var(--page)); }
+
+.card { background: var(--sheet); border: 1px solid var(--line); border-radius: 14px; overflow-x: clip; }
+.bar {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: 10px 14px; border-bottom: 1px solid var(--line);
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: color-mix(in srgb, var(--ink) 55%, var(--sheet));
+}
+.bar b { color: var(--ink); font-weight: 500; font-size: 15px; letter-spacing: 0; text-transform: none; font-family: var(--sans); }
+
+.stage {
+  position: relative; width: min(100%, 400px); margin: 8px auto 6px;
+  perspective: 1040px;
+  touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent; cursor: pointer; outline: none;
+}
+.stage:focus-visible { box-shadow: 0 0 0 3px var(--accent-soft); border-radius: 12px; }
+.square { position: relative; width: 100%; aspect-ratio: 1; }
+.shadows, .space { position: absolute; left: 0; top: 0; width: 100%; aspect-ratio: 1; pointer-events: none; }
+.space { transform-style: preserve-3d; }
+.pv, .sv { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; will-change: transform; }
+.pv { transform-style: preserve-3d; }
+.pv svg, .sv svg, .ghosts svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.sv { filter: blur(4px); }
+.sv path { fill: var(--shadow); }
+.glyph { fill: var(--ink); }
+.edge { fill: var(--edge-ink); }
+.pv.sel .glyph { fill: var(--accent); }
+.pv.sel .edge { fill: var(--edge-pick); }
+.pv.dim .glyph { fill: var(--muted); }
+.pv.dim .edge { fill: var(--line); }
+.ghosts { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 260ms ease; }
+.stage[data-open="true"] .ghosts { opacity: 1; }
+.ghosts path { fill: none; stroke: var(--ghost); stroke-width: 1.2; stroke-dasharray: 5 5; vector-effect: non-scaling-stroke; }
+
+.tray {
+  position: relative; display: flex; justify-content: center; align-items: center; gap: 4px;
+  padding: 8px 6px 4px; border-top: 1px dashed var(--line); margin-top: 4px;
+}
+.tray .sep { width: 1px; height: 30px; background: var(--line); margin: 0 4px; }
+.tray button {
+  width: 34px; height: 44px; padding: 0; border-radius: 9px; border: 1px solid var(--line);
+  background: var(--page); cursor: pointer; display: grid; place-items: center; color: var(--ink);
+  transition: opacity 200ms ease, border-color 200ms ease;
+}
+.tray button svg { width: 22px; height: 28px; overflow: visible; }
+.tray button path { fill: var(--ink); }
+.tray button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 360px) {
+  .tray { gap: 3px; padding-inline: 2px; }
+  .tray .sep { margin: 0 2px; }
+  .tray button { width: 30px; }
+  .tray button svg { width: 20px; height: 26px; }
+}
+.tray button.inuse { opacity: 0.32; }
+.tray button.away { opacity: 0.12; }
+.tray button.home { animation: home 420ms ease-out; }
+@keyframes home { 0% { transform: scale(1); } 40% { transform: scale(1.14); border-color: var(--accent); } 100% { transform: scale(1); } }
+.tray-label { display: flex; justify-content: space-between; padding: 0 10px 8px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: color-mix(in srgb, var(--ink) 50%, var(--sheet)); }
+
+.status { text-align: center; padding: 4px 14px 12px; min-height: 3em; font-size: 14px; }
+.status.warn { color: var(--warn); }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.btn {
+  font: inherit; font-size: 14px; font-weight: 600; border-radius: 9px; padding: 9px 14px; cursor: pointer;
+  border: 1px solid var(--accent); background: var(--accent); color: var(--sheet);
+}
+.btn.ghost { background: transparent; color: var(--accent); }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pick-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.pick-row button {
+  font: inherit; font-size: 13px; color: var(--ink); background: var(--sheet); border: 1px solid var(--line);
+  border-radius: 999px; padding: 6px 12px; cursor: pointer;
+}
+.pick-row button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.pick-row button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.notes { border-top: 1px solid var(--line); padding-top: 14px; font-size: 13px; display: grid; gap: 8px; color: color-mix(in srgb, var(--ink) 65%, var(--page)); }
+.notes p { margin: 0; max-width: 65ch; }
+.notes b { color: var(--ink); font-weight: 600; }
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">Hangul Tutor · motion study</span>
+    <h1>Swap a letter inside the syllable</h1>
+    <p class="lede">Tap the syllable to open it. Tap a letter to pick it up, then tap its replacement in the tray. The other letter makes room for its new housemate.</p>
+  </header>
+
+  <section class="card" aria-label="Syllable stage">
+    <div class="bar"><span>Syllable <b id="sylName">나</b> <span id="sylRom">na</span></span><span id="stateName">closed</span></div>
+    <div class="stage" id="stage" tabindex="0" role="button" aria-label="Open or close the syllable" data-open="false">
+      <div class="square" id="square">
+        <div class="ghosts" id="ghosts"></div>
+        <div class="shadows" id="shadows"></div>
+        <div class="space" id="space"></div>
+      </div>
+      <div class="tray" id="tray" aria-label="Replacement letters"></div>
+      <div class="tray-label"><span>Consonants</span><span>Vowels</span></div>
+    </div>
+    <div class="status" id="status" aria-live="polite">Tap the syllable to open it.</div>
+  </section>
+
+  <div class="pick-row" id="pickRow" role="group" aria-label="Pick a letter in the syllable"></div>
+  <div class="controls">
+    <button type="button" class="btn" id="toggle">Open</button>
+    <button type="button" class="btn ghost" id="reset">Reset to 나</button>
+  </div>
+
+  <div class="notes">
+    <p><b>What is real.</b> Every shape is an outline from Noto Sans CJK KR Bold. Each syllable's letters are its own font shapes, so 노's ㄴ really is wider and lower than 나's. In six syllables (노 도 모 보 머 버) the font joins consonant and vowel into one outline; the study cuts them apart along the join and changes no outline.</p>
+    <p><b>What is a visual metaphor.</b> Lifting, thickness, shadows and the shading sweep show the parts. Between two shapes, a letter stretches to its new size and fades from one outline to the other. That in-between moment is animation, not handwriting or stroke order.</p>
+  </div>
+</div>
+
+<script>
+const D = {"syl":{"나":{"c":"ㄴ","v":"ㅏ","layout":"v","i":{"d":"M69 249V138H148C285 138 433 147 587 179L573 287C444 262 318 252 201 250V750H69Z","clip":null,"b":[69,137,588,750]},"vw":{"d":"M632 839V-87H766V378H895V488H766V839Z","clip":null,"b":[632,-88,896,839]}},"노":{"c":"ㄴ","v":"ㅗ","layout":"h","i":{"d":"M135 767V333H393V122H41V15H880V122H526V333H791V439H268V767Z","clip":[-5000,332,5000,5000],"b":[135,331,792,767]},"vw":{"d":"M135 767V333H393V122H41V15H880V122H526V333H791V439H268V767Z","clip":[-5000,-5000,5000,332],"b":[41,14,881,332]}},"너":{"c":"ㄴ","v":"ㅓ","layout":"v","i":{"d":"M88 237V126H167C303 126 444 135 593 165L579 274C455 249 335 240 220 237V739H88Z","clip":null,"b":[88,125,594,739]},"vw":{"d":"M436 551V444H685V-91H818V838H685V551Z","clip":null,"b":[436,-92,819,838]}},"누":{"c":"ㄴ","v":"ㅜ","layout":"h","i":{"d":"M145 796V444H792V549H278V796Z","clip":null,"b":[145,443,793,796]},"vw":{"d":"M41 338V231H390V-89H522V231H880V338Z","clip":null,"b":[41,-90,881,338]}},"다":{"c":"ㄷ","v":"ㅏ","layout":"v","i":{"d":"M76 753V132H154C315 132 442 137 582 162L569 272C450 251 341 244 209 242V646H508V753Z","clip":null,"b":[76,131,583,753]},"vw":{"d":"M632 839V-90H766V386H900V496H766V839Z","clip":null,"b":[632,-91,901,839]}},"도":{"c":"ㄷ","v":"ㅗ","layout":"h","i":{"d":"M139 774V318H393V124H41V15H880V124H525V318H790V425H271V668H783V774Z","clip":[-5000,317,5000,5000],"b":[139,316,791,774]},"vw":{"d":"M139 774V318H393V124H41V15H880V124H525V318H790V425H271V668H783V774Z","clip":[-5000,-5000,5000,317],"b":[41,14,881,317]}},"더":{"c":"ㄷ","v":"ㅓ","layout":"v","i":{"d":"M85 756V133H160C328 133 439 137 564 160L551 268C445 249 350 243 218 242V650H504V756Z","clip":null,"b":[85,132,565,756]},"vw":{"d":"M459 518V410H685V-91H818V838H685V518Z","clip":null,"b":[459,-92,819,838]}},"두":{"c":"ㄷ","v":"ㅜ","layout":"h","i":{"d":"M147 789V404H783V510H283V683H773V789Z","clip":null,"b":[147,403,784,789]},"vw":{"d":"M41 313V206H390V-88H523V206H879V313Z","clip":null,"b":[41,-89,880,313]}},"마":{"c":"ㅁ","v":"ㅏ","layout":"v","i":{"d":"M69 751V137H512V751ZM381 646V241H200V646Z","clip":null,"b":[69,136,513,751]},"vw":{"d":"M632 837V-89H766V379H900V488H766V837Z","clip":null,"b":[632,-90,901,837]}},"모":{"c":"ㅁ","v":"ㅗ","layout":"h","i":{"d":"M129 769V314H393V127H41V19H880V127H525V314H788V769ZM657 664V420H260V664Z","clip":[-5000,313,5000,5000],"b":[129,312,789,769]},"vw":{"d":"M129 769V314H393V127H41V19H880V127H525V314H788V769Z","clip":[-5000,-5000,5000,313],"b":[41,18,881,313]}},"머":{"c":"ㅁ","v":"ㅓ","layout":"v","i":{"d":"M685 839V519H516V757H75V137H516V412H685V-90H818V839ZM385 652V241H206V652Z","clip":[-5000,-5000,517,5000],"b":[75,136,518,757]},"vw":{"d":"M685 839V519H516V757H75V137H516V412H685V-90H818V839Z","clip":[517,-5000,5000,5000],"b":[517,-91,819,839]}},"무":{"c":"ㅁ","v":"ㅜ","layout":"h","i":{"d":"M137 792V419H779V792ZM649 688V523H268V688Z","clip":null,"b":[137,418,780,792]},"vw":{"d":"M41 320V213H390V-89H523V213H879V320Z","clip":null,"b":[41,-90,880,320]}},"바":{"c":"ㅂ","v":"ㅏ","layout":"v","i":{"d":"M69 765V126H519V765H387V539H201V765ZM201 436H387V232H201Z","clip":null,"b":[69,125,520,765]},"vw":{"d":"M632 837V-89H766V383H900V493H766V837Z","clip":null,"b":[632,-90,901,837]}},"보":{"c":"ㅂ","v":"ㅗ","layout":"h","i":{"d":"M129 779V297H393V127H41V19H880V127H525V297H788V779H656V636H262V779ZM262 532H656V403H262Z","clip":[-5000,296,5000,5000],"b":[129,295,789,779]},"vw":{"d":"M129 779V297H393V127H41V19H880V127H525V297H788V779H656V636H262V779Z","clip":[-5000,-5000,5000,296],"b":[41,18,881,296]}},"버":{"c":"ㅂ","v":"ㅓ","layout":"v","i":{"d":"M75 766V128H520V406H685V-90H818V839H685V513H520V766H389V541H207V766ZM207 438H389V234H207Z","clip":[-5000,-5000,521,5000],"b":[75,127,522,766]},"vw":{"d":"M75 766V128H520V406H685V-90H818V839H685V513H520V766H389V541H207V766Z","clip":[521,-5000,5000,5000],"b":[521,-91,819,839]}},"부":{"c":"ㅂ","v":"ㅜ","layout":"h","i":{"d":"M136 802V393H780V802H649V697H268V802ZM268 593H649V498H268Z","clip":null,"b":[136,392,781,802]},"vw":{"d":"M41 305V200H390V-89H523V200H879V305Z","clip":null,"b":[41,-90,880,305]}}},"jamo":{"ㄴ":{"d":"M167 629V145H763V250H301V629Z","b":[167,144,764,629]},"ㄷ":{"d":"M171 236V130H756V236H304V526H748V631H171Z","b":[171,129,757,631]},"ㅁ":{"d":"M169 627V137H756V627ZM624 520V243H301V520Z","b":[169,136,757,627]},"ㅂ":{"d":"M169 641V129H754V641H622V497H301V641ZM301 379H622V245H301Z","b":[169,128,755,641]},"ㅏ":{"d":"M364 830V-87H498V368H687V478H498V830Z","b":[364,-88,688,830]},"ㅗ":{"d":"M393 641V285H42V178H878V285H525V641Z","b":[42,177,879,641]},"ㅓ":{"d":"M292 488V379H485V-86H618V831H485V488Z","b":[292,-87,619,831]},"ㅜ":{"d":"M44 534V427H395V50H528V427H880V534Z","b":[44,49,881,534]}}};
+const VB = [-312, -276, 1560, 1560];
+const SVGNS = "http://www.w3.org/2000/svg";
+const CJ = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ", VJ = "ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ";
+const CONS = ["ㄴ", "ㄷ", "ㅁ", "ㅂ"], VOWS = ["ㅏ", "ㅗ", "ㅓ", "ㅜ"];
+const ROM = { "ㄴ": "n", "ㄷ": "d", "ㅁ": "m", "ㅂ": "b", "ㅏ": "a", "ㅗ": "o", "ㅓ": "eo", "ㅜ": "u" };
+const compose = (c, v) => String.fromCharCode(0xAC00 + (CJ.indexOf(c) * 21 + VJ.indexOf(v)) * 28);
+const KEY = { i: "i", v: "vw" };
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+const stage = document.getElementById("stage");
+const space = document.getElementById("space");
+const shadowsEl = document.getElementById("shadows");
+const statusEl = document.getElementById("status");
+let S = 360;                       // square size in px, measured
+let uid = 0;
+
+// ---------- geometry ----------
+const X = fx => (fx - VB[0]) / VB[2] * S;
+const Y = fy => (880 - fy - VB[1]) / VB[3] * S;
+const lerp = (a, b, t) => a + (b - a) * t;
+const boxLerp = (a, b, t) => a.map((v, k) => lerp(v, b[k], t));
+const centerOf = b => ({ x: X((b[0] + b[2]) / 2), y: Y((b[1] + b[3]) / 2) });
+const shapeOf = (syl, role) => D.syl[syl][KEY[role]];
+const jamoShape = j => D.jamo[j];
+const isCons = j => CONS.includes(j);
+
+function el(tag, attrs = {}, parent) {
+  const n = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) n.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(n);
+  return n;
+}
+
+// ---------- piece views ----------
+// A view draws one letter. During a change it holds two shapes (A then B) laid over one moving box.
+function makeView(shape) {
+  const v = { A: shape, B: null, m: 0, C: { x: 0, y: 0 }, k: 1, z: 0, rx: 0, ry: 0, thick: 0, flash: 0, op: 1, layers: [] };
+  v.el = document.createElement("div"); v.el.className = "pv";
+  v.sh = document.createElement("div"); v.sh.className = "sv";
+  v.svg = el("svg", { viewBox: VB.join(" "), "aria-hidden": "true" });
+  v.ssvg = el("svg", { viewBox: VB.join(" "), "aria-hidden": "true" });
+  v.defs = el("defs", {}, v.svg); v.sdefs = el("defs", {}, v.ssvg);
+  v.g = el("g", { transform: "translate(0 880) scale(1 -1)" }, v.svg);
+  v.sg = el("g", { transform: "translate(0 880) scale(1 -1)" }, v.ssvg);
+  v.el.appendChild(v.svg); v.sh.appendChild(v.ssvg);
+  space.appendChild(v.el); shadowsEl.appendChild(v.sh);
+  setShapes(v, shape, null);
+  const c = centerOf(shape.b); v.C = { x: c.x, y: c.y };
+  return v;
+}
+function removeView(v) { v.el.remove(); v.sh.remove(); }
+
+function buildLayer(v, shape) {
+  const id = ++uid;
+  const L = { b: shape.b };
+  L.g = el("g", {}, v.g); L.sg = el("g", {}, v.sg);
+  let clipRef = null;
+  if (shape.clip) {
+    const [x0, y0, x1, y1] = shape.clip;
+    for (const [defs, sfx] of [[v.defs, "m"], [v.sdefs, "s"]]) {
+      const cp = el("clipPath", { id: `c${id}${sfx}` }, defs);
+      el("rect", { x: x0, y: y0, width: x1 - x0, height: y1 - y0 }, cp);
+    }
+    clipRef = id;
+  }
+  const clip = (p, sfx) => { if (clipRef) p.setAttribute("clip-path", `url(#c${clipRef}${sfx})`); return p; };
+  // shading gradient sized by the shape's longest side, so thin and wide letters shade alike
+  const b = shape.b, cx = (b[0] + b[2]) / 2, cy = (b[1] + b[3]) / 2, h = Math.max(b[2] - b[0], b[3] - b[1]) / 2;
+  const gr = el("linearGradient", { id: `f${id}`, gradientUnits: "userSpaceOnUse", x1: cx - h, y1: cy + h, x2: cx + h, y2: cy - h }, v.defs);
+  [[0, "#fff", 0.4], [0.4, "#fff", 0], [1, "#000", 0.75]].forEach(([o, c, a]) => el("stop", { offset: o, "stop-color": c, "stop-opacity": a }, gr));
+  L.edges = [1, 2, 3, 4, 5, 6].map(() => clip(el("path", { d: shape.d, class: "edge" }, L.g), "m"));
+  L.glyph = clip(el("path", { d: shape.d, class: "glyph" }, L.g), "m");
+  L.shade = clip(el("path", { d: shape.d, fill: `url(#f${id})`, opacity: 0 }, L.g), "m");
+  clip(el("path", { d: shape.d }, L.sg), "s");
+  v.layers.push(L);
+  return L;
+}
+function setShapes(v, A, B) {
+  v.layers.forEach(L => { L.g.remove(); L.sg.remove(); });
+  v.layers = []; v.defs.textContent = ""; v.sdefs.textContent = "";
+  v.A = A; v.B = B; v.m = 0;
+  buildLayer(v, A);
+  if (B) buildLayer(v, B);
+}
+function settleShapes(v) { if (v.B) { const B = v.B; setShapes(v, B, null); } }
+
+const smooth = (e0, e1, t) => { const x = Math.min(1, Math.max(0, (t - e0) / (e1 - e0))); return x * x * (3 - 2 * x); };
+function draw(v) {
+  const t = v.B ? v.m : 0;
+  const cb = v.B ? boxLerp(v.A.b, v.B.b, t) : v.A.b;
+  const fade = v.B ? smooth(0.35, 0.65, t) : 0;
+  v.layers.forEach((L, idx) => {
+    const sx = (cb[2] - cb[0]) / (L.b[2] - L.b[0]), sy = (cb[3] - cb[1]) / (L.b[3] - L.b[1]);
+    const tr = `translate(${cb[0]} ${cb[1]}) scale(${sx} ${sy}) translate(${-L.b[0]} ${-L.b[1]})`;
+    L.g.setAttribute("transform", tr); L.sg.setAttribute("transform", tr);
+    const o = idx === 0 ? 1 - fade : fade;
+    L.g.setAttribute("opacity", o); L.sg.setAttribute("opacity", o);
+    L.edges.forEach((e, j) => e.setAttribute("transform", `translate(${(j + 1) * v.thick / sx} ${-(j + 1) * v.thick / sy})`));
+    L.shade.setAttribute("opacity", v.flash);
+  });
+  const c0 = centerOf(cb);
+  v.el.style.transformOrigin = `${c0.x}px ${c0.y}px`;
+  v.el.style.transform = `translate3d(${v.C.x - c0.x}px, ${v.C.y - c0.y}px, ${v.z}px) rotateX(${v.rx}deg) rotateY(${v.ry}deg) scale(${v.k})`;
+  v.el.style.opacity = v.op;
+  const lift = Math.max(0, v.z) / S;
+  v.sh.style.transformOrigin = `${c0.x}px ${c0.y}px`;
+  v.sh.style.transform = `translate(${v.C.x - c0.x + lift * 0.22 * S}px, ${v.C.y - c0.y + lift * 0.36 * S}px) scale(${v.k * (1 + lift * 0.25)})`;
+  v.sh.style.opacity = Math.min(0.8, lift * 4.5) * v.op;
+}
+
+// ---------- tween engine ----------
+const tweens = new Set();
+let running = false;
+const ease = {
+  out: t => 1 - Math.pow(1 - t, 3),
+  inOut: t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2,
+  back: (s = 1.5) => t => 1 + (s + 1) * Math.pow(t - 1, 3) + s * Math.pow(t - 1, 2),
+};
+function tween(dur, fn, ez = ease.out, delay = 0) {
+  return new Promise(res => {
+    tweens.add({ start: performance.now() + delay, dur: reduce ? 1 : dur, fn, ez, res });
+    if (!running) { running = true; requestAnimationFrame(loop); }
+  });
+}
+function loop(now) {
+  for (const tw of [...tweens]) {
+    if (now < tw.start) continue;
+    const t = Math.min(1, (now - tw.start) / tw.dur);
+    tw.fn(tw.ez(t), t);
+    if (t >= 1) { tweens.delete(tw); tw.res(); }
+  }
+  liveViews().forEach(draw);
+  if (tweens.size) requestAnimationFrame(loop); else running = false;
+}
+// tween a view's numeric props (and its centre, optionally along an arc through ctrl)
+function move(v, to, dur, ez, delay = 0, ctrl = null) {
+  let from = null;
+  return tween(dur, (e) => {
+    if (!from) from = { C: { ...v.C }, k: v.k, z: v.z, rx: v.rx, ry: v.ry, thick: v.thick, m: v.m, op: v.op };
+    for (const p of ["k", "z", "rx", "ry", "thick", "m", "op"]) if (p in to) v[p] = lerp(from[p], to[p], e);
+    if (to.C) {
+      if (ctrl) {
+        const u = e, a = (1 - u) * (1 - u), b = 2 * (1 - u) * u, c = u * u;
+        v.C = { x: a * from.C.x + b * ctrl.x + c * to.C.x, y: a * from.C.y + b * ctrl.y + c * to.C.y };
+      } else v.C = { x: lerp(from.C.x, to.C.x, e), y: lerp(from.C.y, to.C.y, e) };
+    }
+  }, ez, delay);
+}
+// the shading sweep: up fast, then settle to a faint tint (or nothing when closed)
+function sweep(v, rest, delay = 0) {
+  return tween(500, (e, t) => { v.flash = t < 0.3 ? t / 0.3 : lerp(1, rest, (t - 0.3) / 0.7); }, x => x, delay);
+}
+
+// ---------- state ----------
+const state = { syl: "나", open: false, sel: null, busy: false };
+const views = { i: null, v: null };
+const extras = new Set();
+const liveViews = () => [views.i, views.v, ...extras].filter(Boolean);
+
+function openTarget(syl, role, selected) {
+  const b = shapeOf(syl, role).b, c = centerOf(b);
+  const layout = D.syl[syl].layout;
+  const dir = layout === "v" ? (role === "i" ? [-0.10, 0] : [0.10, 0]) : (role === "i" ? [0, -0.09] : [0, 0.09]);
+  const f = selected ? 1.35 : 1;
+  const n = Math.hypot(dir[0], dir[1]);
+  return {
+    C: { x: c.x + dir[0] * S * f, y: c.y + dir[1] * S * f },
+    z: (role === "i" ? 0.15 : 0.11) * S + (selected ? 0.1 * S : 0),
+    rx: (dir[1] / n) * 8, ry: -(dir[0] / n) * 9,
+    thick: selected ? 6 : 3.5, k: 1,
+  };
+}
+function restTarget(syl, role) {
+  const c = centerOf(shapeOf(syl, role).b);
+  return { C: { x: c.x, y: c.y }, z: 0, rx: 0, ry: 0, thick: 0, k: 1 };
+}
+const other = r => (r === "i" ? "v" : "i");
+const jamoOf = (syl, role) => (role === "i" ? D.syl[syl].c : D.syl[syl].v);
+const label = role => (role === "i" ? "consonant" : "vowel");
+
+// ---------- tray ----------
+const tray = document.getElementById("tray");
+const trayBtn = {};
+function jamoSvg(j) {
+  const b = D.jamo[j].b, pad = 40;
+  const s = el("svg", { viewBox: `${b[0] - pad} ${880 - b[3] - pad} ${b[2] - b[0] + 2 * pad} ${b[3] - b[1] + 2 * pad}`, "aria-hidden": "true", preserveAspectRatio: "xMidYMid meet" });
+  const g = el("g", { transform: "translate(0 880) scale(1 -1)" }, s);
+  el("path", { d: D.jamo[j].d }, g);
+  return s;
+}
+[...CONS, "|", ...VOWS].forEach(j => {
+  if (j === "|") { const s = document.createElement("span"); s.className = "sep"; tray.appendChild(s); return; }
+  const btn = document.createElement("button");
+  btn.type = "button"; btn.id = "tray-" + ROM[j]; btn.dataset.j = j;
+  btn.setAttribute("aria-label", `${j} (${ROM[j]}), ${isCons(j) ? "consonant" : "vowel"}`);
+  btn.appendChild(jamoSvg(j));
+  btn.addEventListener("click", e => { e.stopPropagation(); onTray(j); });
+  tray.appendChild(btn); trayBtn[j] = btn;
+});
+function trayCenter(j) {
+  const r = trayBtn[j].getBoundingClientRect(), s = stage.getBoundingClientRect();
+  return { x: r.left - s.left + r.width / 2, y: r.top - s.top + r.height / 2 };
+}
+function trayScale(j) {
+  const b = D.jamo[j].b, size = Math.max(b[2] - b[0], b[3] - b[1]) / VB[2] * S;
+  return 26 / size;
+}
+function refreshTray() {
+  for (const j in trayBtn) trayBtn[j].classList.toggle("inuse", j === jamoOf(state.syl, "i") || j === jamoOf(state.syl, "v"));
+}
+
+// ---------- ghosts (where the pieces sit when closed) ----------
+function refreshGhosts() {
+  const g = document.getElementById("ghosts");
+  g.textContent = "";
+  const s = el("svg", { viewBox: VB.join(" "), "aria-hidden": "true" });
+  const grp = el("g", { transform: "translate(0 880) scale(1 -1)" }, s);
+  for (const r of ["i", "v"]) {
+    const sh = shapeOf(state.syl, r), p = el("path", { d: sh.d }, grp);
+    if (sh.clip) {
+      const id = "gc" + (++uid); const cp = el("clipPath", { id }, grp);
+      const [x0, y0, x1, y1] = sh.clip; el("rect", { x: x0, y: y0, width: x1 - x0, height: y1 - y0 }, cp);
+      p.setAttribute("clip-path", `url(#${id})`);
+    }
+  }
+  g.appendChild(s);
+}
+
+// ---------- status ----------
+function say(text, warn = false) { statusEl.textContent = text; statusEl.classList.toggle("warn", warn); }
+function refreshLabels() {
+  document.getElementById("sylName").textContent = state.syl;
+  document.getElementById("sylRom").textContent = ROM[jamoOf(state.syl, "i")] + ROM[jamoOf(state.syl, "v")];
+  document.getElementById("stateName").textContent = state.open ? (state.sel ? "letter picked up" : "open") : "closed";
+  document.getElementById("toggle").textContent = state.open ? "Close" : "Open";
+  stage.dataset.open = state.open;
+  const row = document.getElementById("pickRow"); row.textContent = "";
+  for (const r of ["i", "v"]) {
+    const b = document.createElement("button");
+    b.type = "button"; b.id = "pick-" + r;
+    b.textContent = `${label(r)} ${jamoOf(state.syl, r)}`;
+    b.setAttribute("aria-pressed", String(state.open && state.sel === r));
+    b.addEventListener("click", () => onPiece(r));
+    row.appendChild(b);
+  }
+  for (const r of ["i", "v"]) {
+    if (!views[r]) continue;
+    views[r].el.classList.toggle("sel", state.open && state.sel === r);
+    views[r].el.classList.toggle("dim", state.open && !!state.sel && state.sel !== r);
+  }
+  refreshTray();
+}
+
+// ---------- actions ----------
+async function setOpen(open) {
+  if (state.busy) return;
+  state.open = open; if (!open) state.sel = null;
+  refreshLabels();
+  const jobs = [];
+  ["i", "v"].forEach((r, n) => {
+    const v = views[r];
+    const to = open ? openTarget(state.syl, r, false) : restTarget(state.syl, r);
+    jobs.push(move(v, to, open ? 620 : 520, ease.back(open ? 1.5 : 1.2), open ? n * 45 : (1 - n) * 35));
+    jobs.push(sweep(v, open ? 0.12 : 0, open ? n * 45 : 0));
+  });
+  say(open ? "Tap a letter to pick it up." : "Tap the syllable to open it.");
+  await Promise.all(jobs);
+}
+function onPiece(r) {
+  if (state.busy) return;
+  if (!state.open) { setOpen(true).then(() => onPiece(r)); return; }
+  const was = state.sel;
+  state.sel = was === r ? null : r;
+  refreshLabels();
+  for (const role of ["i", "v"]) move(views[role], openTarget(state.syl, role, state.sel === role), 380, ease.back(1.3));
+  if (state.sel) {
+    sweep(views[state.sel], 0.12);
+    say(`Now tap a ${label(state.sel)} in the tray to replace ${jamoOf(state.syl, state.sel)}.`);
+  } else say("Tap a letter to pick it up.");
+}
+async function onTray(j) {
+  if (state.busy) return;
+  if (!state.open) { say("Open the syllable first: tap it.", true); return; }
+  if (!state.sel) { say(`Pick up the ${isCons(j) ? "consonant" : "vowel"} you want to replace first.`, true); return; }
+  const r = state.sel, cur = jamoOf(state.syl, r);
+  if (j === cur) { say(`${j} is already in this syllable.`); return; }
+  if (isCons(j) !== (r === "i")) return refuse(j, r);
+  await swap(r, j);
+}
+async function refuse(j, r) {
+  state.busy = true;
+  const T = makeView(jamoShape(j)); extras.add(T);
+  T.C = trayCenter(j); T.k = trayScale(j); T.z = 0.12 * S; draw(T);
+  trayBtn[j].classList.add("away");
+  const target = views[r].C;
+  const mid = { x: lerp(T.C.x, target.x, 0.62), y: lerp(T.C.y, target.y, 0.62) };
+  say(`This spot holds a ${label(r)}. ${j} is a ${isCons(j) ? "consonant" : "vowel"}, so it goes back.`, true);
+  await move(T, { C: mid, k: trayScale(j) * 1.6 }, 300, ease.out);
+  const sv = views[r], home = { ...sv.C };
+  await tween(260, (e, t) => { sv.C = { x: home.x + Math.sin(t * Math.PI * 5) * 7 * (1 - t), y: home.y }; }, x => x);
+  await move(T, { C: trayCenter(j), k: trayScale(j), z: 0 }, 380, ease.back(1.3));
+  removeView(T); extras.delete(T);
+  trayBtn[j].classList.remove("away"); trayBtn[j].classList.add("home");
+  setTimeout(() => trayBtn[j].classList.remove("home"), 450);
+  state.busy = false;
+}
+async function swap(r, j) {
+  state.busy = true;
+  const s = state.syl, o = other(r);
+  const s2 = r === "i" ? compose(j, D.syl[s].v) : compose(D.syl[s].c, j);
+  const oldJ = jamoOf(s, r);
+  const O = views[r], H = views[o];
+  const layoutChange = D.syl[s].layout !== D.syl[s2].layout;
+
+  // outgoing: back to its tray spot, relaxing into its standalone shape
+  extras.add(O); views[r] = null;
+  O.el.classList.remove("sel", "dim");
+  setShapes(O, O.A, jamoShape(oldJ));
+  const out = move(O, { C: trayCenter(oldJ), k: trayScale(oldJ), z: 0, rx: 0, ry: 0, thick: 0, m: 1 }, 520, ease.inOut)
+    .then(() => { removeView(O); extras.delete(O); trayBtn[oldJ].classList.remove("inuse", "away"); trayBtn[oldJ].classList.add("home"); setTimeout(() => trayBtn[oldJ].classList.remove("home"), 450); });
+
+  // incoming: swoops from the tray along an arc, taking on its in-syllable shape as it lands
+  const N = makeView(jamoShape(j));
+  setShapes(N, jamoShape(j), shapeOf(s2, r));
+  N.C = trayCenter(j); N.k = trayScale(j); N.z = 0; draw(N);
+  N.el.classList.add("sel");
+  trayBtn[j].classList.add("away");
+  const land = openTarget(s2, r, true);
+  const ctrl = { x: lerp(N.C.x, land.C.x, 0.5) + (r === "i" ? -0.18 : 0.18) * S, y: Math.min(N.C.y, land.C.y) - 0.28 * S };
+  views[r] = N;
+  const inc = move(N, { ...land, m: 1 }, 700, ease.back(1.25), 120, ctrl);
+  const incSweep = sweep(N, 0.12, 120 + 520);
+
+  // housemate: shifts, shrinks or grows into its shape in the new syllable
+  setShapes(H, H.A, shapeOf(s2, o));
+  const hm = move(H, { ...openTarget(s2, o, false), m: 1 }, 600, ease.inOut, 100);
+  const hmSweep = sweep(H, 0.12, 100);
+
+  await Promise.all([out, inc, incSweep, hm, hmSweep]);
+  settleShapes(N); settleShapes(H); draw(N); draw(H);
+  trayBtn[j].classList.remove("away");
+  state.syl = s2; state.busy = false;
+  refreshGhosts(); refreshLabels();
+  const how = layoutChange
+    ? (D.syl[s2].layout === "h" ? `The new vowel sits below, so ${jamoOf(s2, "i")} moved up and widened.` : `The new vowel sits to the side, so ${jamoOf(s2, "i")} moved left and grew taller.`)
+    : (r === "i" ? `${jamoOf(s2, "v")} stayed and adjusted to its new neighbour.` : `${jamoOf(s2, "i")} stayed and adjusted to its new neighbour.`);
+  say(`${s} → ${s2}. ${oldJ} went back to the tray. ${how}`);
+}
+function reset() {
+  if (state.busy) return;
+  for (const r of ["i", "v"]) if (views[r]) removeView(views[r]);
+  extras.forEach(removeView); extras.clear();
+  state.syl = "나"; state.open = false; state.sel = null;
+  build();
+  say("Tap the syllable to open it.");
+}
+function build() {
+  S = document.getElementById("square").clientWidth || S;
+  for (const r of ["i", "v"]) {
+    views[r] = makeView(shapeOf(state.syl, r));
+    Object.assign(views[r], restTarget(state.syl, r));
+    draw(views[r]);
+  }
+  refreshGhosts(); refreshLabels();
+}
+
+// ---------- input ----------
+function hitPiece(clientX, clientY) {
+  let best = null;
+  for (const r of ["i", "v"]) {
+    const v = views[r]; if (!v) continue;
+    const L = v.layers[v.layers.length - 1];
+    const b = L.glyph.getBoundingClientRect(), pad = 14;
+    if (clientX >= b.left - pad && clientX <= b.right + pad && clientY >= b.top - pad && clientY <= b.bottom + pad) {
+      const d = Math.hypot(clientX - (b.left + b.right) / 2, clientY - (b.top + b.bottom) / 2);
+      if (!best || d < best.d) best = { r, d };
+    }
+  }
+  return best && best.r;
+}
+stage.addEventListener("click", e => {
+  if (state.busy || tray.contains(e.target)) return;
+  if (!state.open) { setOpen(true); return; }
+  const r = hitPiece(e.clientX, e.clientY);
+  if (r) onPiece(r); else setOpen(false);
+});
+stage.addEventListener("keydown", e => {
+  if (e.target !== stage) return;
+  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(!state.open); }
+  if (e.key === "Escape" && state.open) setOpen(false);
+});
+document.getElementById("toggle").addEventListener("click", () => setOpen(!state.open));
+document.getElementById("reset").addEventListener("click", reset);
+let lastW = 0;
+window.addEventListener("resize", () => {
+  const w = document.getElementById("square").clientWidth;
+  if (state.busy || Math.abs(w - lastW) < 2) return;
+  lastW = w; S = w;
+  for (const r of ["i", "v"]) {
+    Object.assign(views[r], state.open ? openTarget(state.syl, r, state.sel === r) : restTarget(state.syl, r));
+    draw(views[r]);
+  }
+  refreshGhosts();
+});
+
+build();
+lastW = S;
+if (!reduce) setTimeout(() => { if (!state.open) setOpen(true); }, 700);
+</script>

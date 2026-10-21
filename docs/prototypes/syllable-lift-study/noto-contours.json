@@ -1,0 +1,109 @@
+{
+ "source": {
+  "font": "Noto Sans CJK KR Bold (KR face of NotoSansCJK-Bold.ttc, Debian/Ubuntu fonts-noto-cjk package)",
+  "licence": "SIL Open Font License 1.1",
+  "extraction": "fontTools 4.65, RecordingPen per contour, SVG path commands, 2026-10-19 (Claude)",
+  "units": "font units, unitsPerEm 1000, y axis points UP (flip with translate(0 880) scale(1 -1) for screen)",
+  "notes": [
+   "Each entry lists the glyph's contours unchanged, with bounds [xMin, yMin, xMax, yMax].",
+   "노 is ONE joined contour in this font (ㄴ rests on ㅗ's stem). The Syllable Lift Study splits it at y=333: ㄴ = M135 767V333H791V439H268V767Z, ㅗ = M393 333V122H41V15H880V122H526V333Z. This split is a manual edit, not font data.",
+   "Matched command structures (directly interpolable): 나 ㄴ <-> 난 initial ㄴ (MVHCLCVHZ); 나 ㅏ <-> 난 ㅏ <-> standalone ㅏ (MVHVHVHVZ); 난 final ㄴ <-> standalone ㄴ (MVHVHVZ).",
+   "Not matched: initial ㄴ (curved, upturned foot) <-> standalone ㄴ (straight)."
+  ]
+ },
+ "glyphs": {
+  "나": [
+   {
+    "d": "M632 839V-87H766V378H895V488H766V839Z",
+    "bounds": [
+     632,
+     -87,
+     895,
+     839
+    ]
+   },
+   {
+    "d": "M69 249V138H148C285 138 433 147 587 179L573 287C444 262 318 252 201 250V750H69Z",
+    "bounds": [
+     69,
+     138,
+     587,
+     750
+    ]
+   }
+  ],
+  "노": [
+   {
+    "d": "M135 767V333H393V122H41V15H880V122H526V333H791V439H268V767Z",
+    "bounds": [
+     41,
+     15,
+     880,
+     767
+    ]
+   }
+  ],
+  "난": [
+   {
+    "d": "M78 431V322H156C287 322 430 331 581 361L566 469C441 444 321 434 211 432V776H78Z",
+    "bounds": [
+     78,
+     322,
+     581,
+     776
+    ]
+   },
+   {
+    "d": "M636 837V172H769V466H892V578H769V837Z",
+    "bounds": [
+     636,
+     172,
+     892,
+     837
+    ]
+   },
+   {
+    "d": "M173 234V-73H799V34H307V234Z",
+    "bounds": [
+     173,
+     -73,
+     799,
+     234
+    ]
+   }
+  ],
+  "ㄴ": [
+   {
+    "d": "M167 629V145H763V250H301V629Z",
+    "bounds": [
+     167,
+     145,
+     763,
+     629
+    ]
+   }
+  ],
+  "ㅏ": [
+   {
+    "d": "M364 830V-87H498V368H687V478H498V830Z",
+    "bounds": [
+     364,
+     -87,
+     687,
+     830
+    ]
+   }
+  ],
+  "ㅗ": [
+   {
+    "d": "M393 641V285H42V178H878V285H525V641Z",
+    "bounds": [
+     42,
+     178,
+     878,
+     641
+    ]
+   }
+  ]
+ }
+}
