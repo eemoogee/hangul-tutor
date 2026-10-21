@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>난 · direct reassembly study</title>
+  <link rel="stylesheet" href="style.css">
+  <script defer src="app.js"></script>
+</head>
+<body>
+<main class="shell">
+  <header>
+    <p class="eyebrow">ISOLATED DIRECT REASSEMBLY STUDY</p>
+    <h1>Fit the final ㄴ</h1>
+    <p>Open 난, lift its lower ㄴ, then return it to the lower slot. Watch the upper letters make room as it approaches.</p>
+  </header>
+
+  <fieldset class="treatments"><legend>Compare the same task</legend><div class="segmented">
+    <button type="button" data-mode="flat" aria-pressed="true"><b>Flat morph</b><span>Shape and position</span></button>
+    <button type="button" data-mode="relief" aria-pressed="false"><b>Relief morph</b><span>Same motion, mild depth</span></button>
+  </div></fieldset>
+
+  <section class="stage-card" aria-label="Reassemble 난">
+    <div class="stage-head"><strong id="phase">ASSEMBLED</strong><span>난 · initial ㄴ + ㅏ + final ㄴ</span></div>
+    <div class="stage" id="stage" tabindex="0" role="button" aria-label="Open 난">
+      <div class="ground" id="ground"></div>
+      <div class="pieces" id="pieces"></div>
+      <div class="type-glyph visible" id="type-glyph" aria-hidden="true">난</div>
+    </div>
+    <div class="piece-controls">
+      <button id="final-control" type="button" disabled>Lift final ㄴ</button>
+      <button id="slot-control" type="button" disabled>Return to lower slot</button>
+    </div>
+  </section>
+
+  <section class="controls" aria-label="Study controls">
+    <div class="actions">
+      <button id="open" type="button" class="primary">Open 난</button>
+      <button id="undo" type="button" disabled>Undo</button>
+      <button id="reset" type="button">Reset</button>
+    </div>
+    <label class="reduce"><input id="reduce" type="checkbox"> Simulate reduced motion</label>
+    <p id="status" role="status" aria-live="polite">Completed 난. Open it to inspect three components.</p>
+    <p id="font-status" class="font-status" role="status"></p>
+  </section>
+  <p class="note">Tap the lower ㄴ twice to lift and return it, tap its outlined slot, or drag the lifted ㄴ near the slot. The visible shapes are a typeface-specific instructional study, not handwriting order or a universal font rule.</p>
+  <footer><a href="README.md">Controls, geometry, font, verification, and phone checklist</a></footer>
+</main>
+</body>
+</html>
